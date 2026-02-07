@@ -1,0 +1,14 @@
+{
+  "name": "seattle-afrobeats",
+  "version": "1.0.0",
+  "description": "Seattle Afrobeats Documentary - Full Stack Application",
+  "scripts": {
+    "build": "cd app && npm run build",
+    "start": "cd backend/data && npm start",
+    "dev": "./start.sh",
+    "install:all": "cd app && npm install && cd ../backend/data && npm install"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
