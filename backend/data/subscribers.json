@@ -1,0 +1,14 @@
+[
+  {
+    "id": "15e38340-bde5-4574-95a7-93e92de13c83",
+    "email": "test@example.com",
+    "name": "Test User",
+    "subscribedAt": 1770450715592
+  },
+  {
+    "id": "f385d7ea-9f7f-4ff5-aea5-43ad265dd95b",
+    "email": "newuser@example.com",
+    "name": "New User",
+    "subscribedAt": 1770450791623
+  }
+]

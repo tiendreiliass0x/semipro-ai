@@ -1,0 +1,11 @@
+{
+  "name": "afrobeats-timeline-backend",
+  "version": "1.0.0",
+  "description": "Backend for Afrobeats in Seattle documentary timeline",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {}
+}
