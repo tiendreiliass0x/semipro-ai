@@ -20,9 +20,12 @@ const YEAR_SPACING = YEAR_ITEM_WIDTH + YEAR_GAP;
 
 export function Timeline() {
   const { 
+    anecdotes,
+    isLoading,
     selectedYear, 
     selectYear, 
     getAnecdotesByYear, 
+    getAllYears,
     expandedAnecdote,
     setExpandedAnecdote 
   } = useTimeline();
@@ -35,6 +38,7 @@ export function Timeline() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const yearRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+  const hasAutoSelectedYear = useRef(false);
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -60,6 +64,15 @@ export function Timeline() {
 
     return () => ctx.revert();
   }, []);
+
+  useEffect(() => {
+    if (hasAutoSelectedYear.current || isLoading || selectedYear !== null) return;
+    const yearsWithStories = getAllYears();
+    if (yearsWithStories.length > 0) {
+      selectYear(yearsWithStories[0]);
+      hasAutoSelectedYear.current = true;
+    }
+  }, [isLoading, selectedYear, selectYear, getAllYears, anecdotes]);
 
   const handleYearClick = (year: number) => {
     if (selectedYear === year) {

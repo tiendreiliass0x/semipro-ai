@@ -15,7 +15,7 @@ An interactive timeline webapp documenting the rise of Afrobeats in Seattle from
 
 ## Node Version
 
-This project targets Node.js 20.19+ (or 22.12+). If you use nvm:
+This project targets Node.js 22.12.0. If you use nvm:
 
 ```bash
 nvm use

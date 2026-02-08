@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import { Calendar, User, MapPin, Tag, X, ChevronLeft, ChevronRight, Network, Clock } from 'lucide-react';
 import { useTimeline } from '@/context/TimelineContext';
 import type { Anecdote } from '@/types';
@@ -57,9 +57,11 @@ export function StoryGraph() {
           conns.push({ from: a1.id, to: a2.id, type: 'storyteller', label: a1.storyteller });
         }
         const sharedTags = a1.tags.filter(t => a2.tags.includes(t));
-        sharedTags.forEach(tag => {
-          conns.push({ from: a1.id, to: a2.id, type: 'tag', label: tag });
-        });
+        if (sharedTags.length > 0) {
+          const topTags = sharedTags.slice(0, 2).join(', ');
+          const suffix = sharedTags.length > 2 ? ` +${sharedTags.length - 2}` : '';
+          conns.push({ from: a1.id, to: a2.id, type: 'tag', label: `${topTags}${suffix}` });
+        }
       }
     }
     return conns;
@@ -257,52 +259,130 @@ function NetworkView({ anecdotes, connections, onSelectStory }: {
   connections: Connection[];
   onSelectStory: (story: Anecdote) => void;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const dimensions = { width: 800, height: 500 };
+  const [dimensions, setDimensions] = useState({ width: 960, height: 540 });
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const updateSize = () => {
+      const width = Math.max(320, Math.floor(containerRef.current!.clientWidth));
+      const height = Math.min(640, Math.max(460, 420 + Math.ceil(anecdotes.length / 8) * 40));
+      setDimensions({ width, height });
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [anecdotes.length]);
+
+  const yearGroups = useMemo(() => {
+    const groups: Record<number, Anecdote[]> = {};
+    anecdotes.forEach(a => {
+      if (!groups[a.year]) groups[a.year] = [];
+      groups[a.year].push(a);
+    });
+    return groups;
+  }, [anecdotes]);
+
+  const years = useMemo(() => {
+    return Object.keys(yearGroups).map(Number).sort((a, b) => a - b);
+  }, [yearGroups]);
 
   const nodes = useMemo(() => {
     const nodeMap = new Map<string, { x: number; y: number; anecdote: Anecdote }>();
-    const yearGroups: Record<number, Anecdote[]> = {};
-    anecdotes.forEach(a => {
-      if (!yearGroups[a.year]) yearGroups[a.year] = [];
-      yearGroups[a.year].push(a);
-    });
-    const years = Object.keys(yearGroups).map(Number).sort((a, b) => a - b);
-    const yearWidth = dimensions.width / (years.length + 1);
+    if (!years.length) return nodeMap;
+
+    const leftPad = 70;
+    const rightPad = 70;
+    const topPad = 84;
+    const bottomPad = 56;
+    const laneWidth = Math.max(1, dimensions.width - leftPad - rightPad);
+
+    const seededOffset = (seed: string, spread: number) => {
+      let hash = 0;
+      for (let i = 0; i < seed.length; i++) {
+        hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+      }
+      const normalized = ((hash % 1000) + 1000) % 1000;
+      return ((normalized / 999) * 2 - 1) * spread;
+    };
+
     years.forEach((year, yearIndex) => {
-      const stories = yearGroups[year];
-      const storyHeight = dimensions.height / (stories.length + 1);
+      const stories = (yearGroups[year] || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+      const laneX = years.length === 1
+        ? dimensions.width / 2
+        : leftPad + (yearIndex * laneWidth) / (years.length - 1);
+      const storyHeight = Math.max(1, dimensions.height - topPad - bottomPad);
+      const storyGap = storyHeight / (stories.length + 1);
+
       stories.forEach((story, storyIndex) => {
-        const jitterX = (Math.random() - 0.5) * 60;
-        const jitterY = (Math.random() - 0.5) * 40;
+        const jitterX = seededOffset(`${story.id}-${year}-x`, 22);
+        const jitterY = seededOffset(`${story.id}-${year}-y`, 14);
         nodeMap.set(story.id, {
-          x: (yearIndex + 1) * yearWidth + jitterX,
-          y: (storyIndex + 1) * storyHeight + jitterY,
+          x: laneX + jitterX,
+          y: topPad + (storyIndex + 1) * storyGap + jitterY,
           anecdote: story
         });
       });
     });
     return nodeMap;
-  }, [anecdotes, dimensions.width, dimensions.height]);
+  }, [yearGroups, years, dimensions.width, dimensions.height]);
+
+  const connectionCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    connections.forEach(conn => {
+      counts.set(conn.from, (counts.get(conn.from) || 0) + 1);
+      counts.set(conn.to, (counts.get(conn.to) || 0) + 1);
+    });
+    return counts;
+  }, [connections]);
 
   return (
-    <div className="glass rounded-2xl p-6 overflow-hidden">
-      <svg viewBox={`0 0 ${dimensions.width} ${dimensions.height}`} className="w-full h-[500px]">
+    <div ref={containerRef} className="glass rounded-2xl p-6 overflow-hidden border border-gray-700/70 bg-gradient-to-b from-gray-900/80 to-black/40">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-gray-400">Story clusters by year, linked by storyteller and shared themes.</p>
+        <p className="text-xs text-gray-500">{years.length} year lanes</p>
+      </div>
+      <svg viewBox={`0 0 ${dimensions.width} ${dimensions.height}`} className="w-full" style={{ height: `${dimensions.height}px` }}>
+        {years.map((year, index) => {
+          const x = years.length === 1
+            ? dimensions.width / 2
+            : 70 + (index * Math.max(1, dimensions.width - 140)) / (years.length - 1);
+          return (
+            <g key={`lane-${year}`}>
+              <line
+                x1={x}
+                y1={56}
+                x2={x}
+                y2={dimensions.height - 40}
+                stroke="#374151"
+                strokeWidth={1}
+                strokeDasharray="4 6"
+                opacity={0.45}
+              />
+              <rect x={x - 28} y={20} width={56} height={24} rx={12} fill="#111827" stroke="#4B5563" />
+              <text x={x} y={36} textAnchor="middle" fill="#D1D5DB" fontSize="11" fontWeight={600}>{year}</text>
+            </g>
+          );
+        })}
+
         {connections.map((conn, i) => {
           const from = nodes.get(conn.from);
           const to = nodes.get(conn.to);
           if (!from || !to) return null;
           const isHighlighted = hoveredId === conn.from || hoveredId === conn.to;
+          const midX = (from.x + to.x) / 2;
+          const midY = (from.y + to.y) / 2 - Math.min(38, Math.abs(from.x - to.x) * 0.12);
           return (
-            <line
+            <path
               key={i}
-              x1={from.x}
-              y1={from.y}
-              x2={to.x}
-              y2={to.y}
+              d={`M ${from.x} ${from.y} Q ${midX} ${midY} ${to.x} ${to.y}`}
+              fill="none"
               stroke={conn.type === 'storyteller' ? '#3B82F6' : '#EC4899'}
-              strokeWidth={isHighlighted ? 3 : 1}
-              strokeOpacity={isHighlighted ? 1 : 0.3}
+              strokeWidth={isHighlighted ? 2.8 : 1.2}
+              strokeOpacity={isHighlighted ? 0.95 : 0.24}
               strokeDasharray={conn.type === 'tag' ? '5,5' : 'none'}
               className="transition-all duration-300"
             />
@@ -311,7 +391,7 @@ function NetworkView({ anecdotes, connections, onSelectStory }: {
 
         {Array.from(nodes.entries()).map(([id, node]) => {
           const anecdote = node.anecdote;
-          const storyConns = connections.filter(c => c.from === id || c.to === id);
+          const storyConns = connectionCount.get(id) || 0;
           const isHighlighted = hoveredId === id;
           return (
             <g
@@ -322,15 +402,15 @@ function NetworkView({ anecdotes, connections, onSelectStory }: {
               onMouseEnter={() => setHoveredId(id)}
               onMouseLeave={() => setHoveredId(null)}
             >
-              <circle r={isHighlighted ? 30 : 25} fill="#D0FF59" stroke="#000" strokeWidth={2} className="transition-all duration-300" filter="url(#glow)" />
-              <text textAnchor="middle" dy="0.35em" fill="#000" fontSize="14" fontWeight="bold">{anecdote.title.charAt(0).toUpperCase()}</text>
-              {storyConns.length > 0 && (
+              <circle r={isHighlighted ? 28 : 23} fill={isHighlighted ? '#E7FF9A' : '#D0FF59'} stroke="#0F172A" strokeWidth={2} className="transition-all duration-300" filter="url(#glow)" />
+              <text textAnchor="middle" dy="0.35em" fill="#0B0F1A" fontSize="13" fontWeight="bold">{anecdote.title.charAt(0).toUpperCase()}</text>
+              {storyConns > 0 && (
                 <>
-                  <circle cx={20} cy={-20} r={10} fill="#374151" />
-                  <text x={20} y={-20} textAnchor="middle" dy="0.35em" fill="#fff" fontSize="9">{storyConns.length}</text>
+                  <circle cx={18} cy={-18} r={9} fill="#111827" stroke="#4B5563" />
+                  <text x={18} y={-18} textAnchor="middle" dy="0.35em" fill="#fff" fontSize="8.5">{storyConns}</text>
                 </>
               )}
-              <text y={40} textAnchor="middle" fill="#fff" fontSize="10" className="pointer-events-none">
+              <text y={38} textAnchor="middle" fill="#E5E7EB" fontSize="10" className="pointer-events-none">
                 {anecdote.title.length > 20 ? anecdote.title.slice(0, 20) + '...' : anecdote.title}
               </text>
             </g>
@@ -348,7 +428,7 @@ function NetworkView({ anecdotes, connections, onSelectStory }: {
         </defs>
       </svg>
 
-      <div className="flex justify-center gap-6 mt-4 text-sm">
+      <div className="flex justify-center gap-6 mt-4 text-sm bg-black/30 border border-gray-800 rounded-xl py-3">
         <div className="flex items-center gap-2">
           <div className="w-4 h-0.5 bg-blue-500" />
           <span className="text-gray-400">Same Storyteller</span>
