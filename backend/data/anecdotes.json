@@ -1,7 +1,116 @@
 [
-  {"id":"sample-1","date":"2015-06-15","year":2015,"title":"First Afrobeats Night at The Crocodile","story":"The energy was electric. DJ Khaled was spinning Wizkid and Davido tracks, and the dance floor was packed from wall to wall.","storyteller":"Amara Johnson","location":"The Crocodile, Belltown","notes":"This event marked the beginning of the Seattle Afrobeats scene.","media":[],"tags":["milestone","dj","dance"],"createdAt":1704067200000,"updatedAt":1704067200000},
-  {"id":"sample-2","date":"2017-08-22","year":2017,"title":"Wizkid's First Seattle Performance","story":"When Wizkid stepped on stage at Showbox SoDo, the crowd went wild. He performed 'Ojuelegba' and 'Come Closer'.","storyteller":"Tunde Olatunji","location":"Showbox SoDo","notes":"Tickets sold out in 2 hours.","media":[],"tags":["concert","wizkid","nigeria"],"createdAt":1704067200000,"updatedAt":1704067200000},
-  {"id":"sample-3","date":"2019-03-10","year":2019,"title":"Afrobeats Dance Workshop at UW","story":"We organized a free dance workshop teaching Azonto and Shaku Shaku moves. Over 200 people showed up!","storyteller":"Chioma Nwosu","location":"University of Washington","notes":"Co-hosted by the African Student Association.","media":[],"tags":["dance","workshop","education"],"createdAt":1704067200000,"updatedAt":1704067200000},
-  {"id":"sample-4","date":"2022-07-04","year":2022,"title":"Burna Boy at Climate Pledge Arena","story":"Burna Boy's 'Love, Damini' tour stop in Seattle was absolutely massive. The African Giant brought his full band.","storyteller":"Marcus Williams","location":"Climate Pledge Arena","notes":"First Afrobeats artist to headline Climate Pledge Arena.","media":[],"tags":["concert","burna-boy","arena"],"createdAt":1704067200000,"updatedAt":1704067200000},
-  {"id":"sample-5","date":"2023-11-18","year":2023,"title":"Seattle Afrobeats Festival Launch","story":"The inaugural Seattle Afrobeats Festival brought together local DJs, dancers, food vendors, and artists.","storyteller":"Amina Diallo","location":"Seattle Center","notes":"Over 5,000 attendees throughout the day.","media":[],"tags":["festival","food","community"],"createdAt":1704067200000,"updatedAt":1704067200000}
+  {
+    "id": "sample-1",
+    "date": "2015-06-15",
+    "year": 2015,
+    "title": "First Afrobeats Night at The Crocodile",
+    "story": "The energy was electric. DJ Khaled was spinning Wizkid and Davido tracks, and the dance floor was packed from wall to wall.",
+    "storyteller": "Amara Johnson",
+    "location": "The Crocodile, Belltown",
+    "notes": "This event marked the beginning of the Seattle Afrobeats scene.",
+    "media": [],
+    "tags": [
+      "milestone",
+      "dj",
+      "dance"
+    ],
+    "createdAt": 1704067200000,
+    "updatedAt": 1704067200000
+  },
+  {
+    "id": "sample-2",
+    "date": "2017-08-22",
+    "year": 2017,
+    "title": "Wizkid's First Seattle Performance",
+    "story": "When Wizkid stepped on stage at Showbox SoDo, the crowd went wild. He performed 'Ojuelegba' and 'Come Closer'.",
+    "storyteller": "Tunde Olatunji",
+    "location": "Showbox SoDo",
+    "notes": "Tickets sold out in 2 hours.",
+    "media": [],
+    "tags": [
+      "concert",
+      "wizkid",
+      "nigeria"
+    ],
+    "createdAt": 1704067200000,
+    "updatedAt": 1704067200000
+  },
+  {
+    "id": "sample-3",
+    "date": "2019-03-10",
+    "year": 2019,
+    "title": "Afrobeats Dance Workshop at UW",
+    "story": "We organized a free dance workshop teaching Azonto and Shaku Shaku moves. Over 200 people showed up!",
+    "storyteller": "Chioma Nwosu",
+    "location": "University of Washington",
+    "notes": "Co-hosted by the African Student Association.",
+    "media": [],
+    "tags": [
+      "dance",
+      "workshop",
+      "education"
+    ],
+    "createdAt": 1704067200000,
+    "updatedAt": 1704067200000
+  },
+  {
+    "id": "sample-4",
+    "date": "2022-07-04",
+    "year": 2022,
+    "title": "Burna Boy at Climate Pledge Arena",
+    "story": "Burna Boy's 'Love, Damini' tour stop in Seattle was absolutely massive. The African Giant brought his full band.",
+    "storyteller": "Marcus Williams",
+    "location": "Climate Pledge Arena",
+    "notes": "First Afrobeats artist to headline Climate Pledge Arena.",
+    "media": [],
+    "tags": [
+      "concert",
+      "burna-boy",
+      "arena"
+    ],
+    "createdAt": 1704067200000,
+    "updatedAt": 1704067200000
+  },
+  {
+    "id": "sample-5",
+    "date": "2023-11-18",
+    "year": 2023,
+    "title": "Seattle Afrobeats Festival Launch",
+    "story": "The inaugural Seattle Afrobeats Festival brought together local DJs, dancers, food vendors, and artists.",
+    "storyteller": "Amina Diallo",
+    "location": "Seattle Center",
+    "notes": "Over 5,000 attendees throughout the day.",
+    "media": [],
+    "tags": [
+      "festival",
+      "food",
+      "community"
+    ],
+    "createdAt": 1704067200000,
+    "updatedAt": 1704067200000
+  },
+  {
+    "id": "5fefa25f-3b18-4517-b6cc-1e002d62beb3",
+    "date": "2019-01-17",
+    "year": 2019,
+    "title": "Crazy night",
+    "story": "It was a movie",
+    "storyteller": "Iliass",
+    "location": "RedLounge",
+    "notes": "",
+    "media": [
+      {
+        "id": "",
+        "type": "image",
+        "url": "/uploads/1770512882233-lond925yy1.png",
+        "caption": ""
+      }
+    ],
+    "tags": [
+      "dancehall",
+      "wizkid"
+    ],
+    "createdAt": 1770513003297,
+    "updatedAt": 1770513003297
+  }
 ]
