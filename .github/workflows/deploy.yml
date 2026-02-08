@@ -1,0 +1,68 @@
+name: Deploy to Digital Ocean Droplet
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+    
+    - name: Install frontend dependencies
+      run: |
+        cd app
+        npm ci
+    
+    - name: Build frontend
+      run: |
+        cd app
+        npm run build
+    
+    - name: Install backend dependencies
+      run: |
+        cd backend/data
+        npm ci
+    
+    - name: Deploy to server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.DROPLET_IP }}
+        username: root
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        source: "app/dist/,backend/data/,backend/uploads/"
+        target: "/var/www/docu-maker/"
+        strip_components: 0
+        overwrite: true
+    
+    - name: Restart PM2 services
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.DROPLET_IP }}
+        username: root
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          cd /var/www/docu-maker/backend/data
+          pm2 restart afrobeats-api || pm2 start server.js --name afrobeats-api
+          pm2 save
+          echo "✅ Deployment complete!"
+    
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "🎉 Deployment successful!"
+        else
+          echo "❌ Deployment failed"
+          exit 1
+        fi
