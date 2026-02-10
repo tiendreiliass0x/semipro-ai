@@ -14,6 +14,16 @@ interface AnecdoteFormProps {
 
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.ogv', '.mov', '.m4v'];
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'];
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.heic'];
+
+const inferMediaType = (url: string, fallback: 'image' | 'video' | 'audio'): 'image' | 'video' | 'audio' => {
+  const lower = url.toLowerCase();
+  if (lower.includes('youtube.com') || lower.includes('youtu.be') || lower.includes('vimeo.com')) return 'video';
+  if (VIDEO_EXTENSIONS.some(ext => lower.includes(ext))) return 'video';
+  if (AUDIO_EXTENSIONS.some(ext => lower.includes(ext))) return 'audio';
+  if (IMAGE_EXTENSIONS.some(ext => lower.includes(ext))) return 'image';
+  return fallback;
+};
 
 export function AnecdoteForm({ year, onClose }: AnecdoteFormProps) {
   const { addAnecdote } = useTimeline();
@@ -38,6 +48,20 @@ export function AnecdoteForm({ year, onClose }: AnecdoteFormProps) {
     
     if (!title.trim() || !story.trim() || !storyteller.trim()) return;
 
+    const normalizedMedia = mediaUrls.map(item => ({
+      ...item,
+      type: inferMediaType(item.url, item.type),
+    }));
+
+    // If user pasted a URL but forgot to click "+", include it on submit.
+    if (newMediaUrl.trim()) {
+      normalizedMedia.push({
+        url: newMediaUrl.trim(),
+        type: inferMediaType(newMediaUrl.trim(), newMediaType),
+        caption: newMediaCaption.trim(),
+      });
+    }
+
     addAnecdote({
       date,
       year,
@@ -46,7 +70,7 @@ export function AnecdoteForm({ year, onClose }: AnecdoteFormProps) {
       storyteller: storyteller.trim(),
       location: location.trim(),
       notes: notes.trim(),
-      media: mediaUrls.map(m => ({
+      media: normalizedMedia.map(m => ({
         id: '',
         type: m.type,
         url: m.url,
@@ -60,9 +84,10 @@ export function AnecdoteForm({ year, onClose }: AnecdoteFormProps) {
 
   const addMedia = () => {
     if (!newMediaUrl.trim()) return;
+    const url = newMediaUrl.trim();
     setMediaUrls(prev => [...prev, { 
-      url: newMediaUrl.trim(), 
-      type: newMediaType,
+      url,
+      type: inferMediaType(url, newMediaType),
       caption: newMediaCaption.trim()
     }]);
     setNewMediaUrl('');
