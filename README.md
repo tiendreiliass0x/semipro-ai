@@ -32,7 +32,7 @@ This starts both backend (port 3001) and frontend (port 5173).
 
 **Terminal 1 - Backend:**
 ```bash
-cd backend/data
+cd backend
 node server.js
 ```
 
@@ -107,11 +107,11 @@ The backend is a simple Node.js server. Deploy to any VPS or platform:
 
 **Railway/Render/Heroku:**
 - Set `PORT` environment variable
-- Start command: `node backend/data/server.js`
+- Start command: `node backend/server.js`
 
 **PM2:**
 ```bash
-pm2 start backend/data/server.js --name afrobeats-api
+pm2 start backend/server.js --name afrobeats-api
 ```
 
 ## Environment Variables
@@ -132,8 +132,9 @@ pm2 start backend/data/server.js --name afrobeats-api
 │   │   └── services/       # API services
 │   └── dist/               # Built frontend
 ├── backend/
+│   ├── server.js           # Backend server
+│   ├── package.json        # Backend package
 │   ├── data/               # Data files
-│   │   ├── server.js       # Backend server
 │   │   ├── anecdotes.json  # Stories data
 │   │   └── subscribers.json
 │   └── uploads/            # Image uploads

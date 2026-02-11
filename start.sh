@@ -16,7 +16,7 @@ NC='\033[0m'
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$SCRIPT_DIR"
 
 # Check if Node.js is installed
 if ! command -v node &> /dev/null; then
@@ -35,12 +35,12 @@ trap cleanup INT TERM
 
 # Start backend
 echo -e "${BLUE}🔧 Starting backend on port 3001...${NC}"
-cd "$PROJECT_DIR/backend/data"
+cd "$PROJECT_DIR/backend"
 
 # Create data files if they don't exist
-[ ! -f "anecdotes.json" ] && echo "[]" > anecdotes.json
-[ ! -f "subscribers.json" ] && echo "[]" > subscribers.json
-mkdir -p ../uploads
+[ ! -f "data/anecdotes.json" ] && echo "[]" > data/anecdotes.json
+[ ! -f "data/subscribers.json" ] && echo "[]" > data/subscribers.json
+mkdir -p uploads
 
 node server.js &
 BACKEND_PID=$!

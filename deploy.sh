@@ -55,21 +55,21 @@ echo -e "${GREEN}✓ Frontend built successfully${NC}"
 # Check backend
 echo ""
 echo "🔧 Checking backend..."
-cd "$PROJECT_DIR/backend/data"
+cd "$PROJECT_DIR/backend"
 
 # Create data files if they don't exist
-if [ ! -f "anecdotes.json" ]; then
-    echo "[]" > anecdotes.json
+if [ ! -f "data/anecdotes.json" ]; then
+    echo "[]" > data/anecdotes.json
     echo -e "${YELLOW}⚠ Created empty anecdotes.json${NC}"
 fi
 
-if [ ! -f "subscribers.json" ]; then
-    echo "[]" > subscribers.json
+if [ ! -f "data/subscribers.json" ]; then
+    echo "[]" > data/subscribers.json
     echo -e "${YELLOW}⚠ Created empty subscribers.json${NC}"
 fi
 
 # Create uploads directory
-mkdir -p ../uploads
+mkdir -p uploads
 
 echo -e "${GREEN}✓ Backend ready${NC}"
 
@@ -81,7 +81,7 @@ echo ""
 echo "To start the application:"
 echo ""
 echo "  1. Start the backend:"
-echo "     cd backend/data && node server.js"
+echo "     cd backend && node server.js"
 echo ""
 echo "  2. Serve the frontend (in another terminal):"
 echo "     cd app/dist && npx serve -s . -l 5173"
