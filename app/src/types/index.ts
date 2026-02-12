@@ -114,3 +114,14 @@ export interface StorylineGenerationResult {
     pullQuotes: string[];
   };
 }
+
+export interface StorylinePackageRecord {
+  id: string;
+  storylineId: string;
+  payload: StorylineGenerationResult;
+  prompt: string;
+  status: 'draft' | 'review' | 'approved';
+  version: number;
+  createdAt: number;
+  updatedAt: number;
+}

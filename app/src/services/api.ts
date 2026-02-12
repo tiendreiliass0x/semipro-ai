@@ -1,4 +1,4 @@
-import type { Anecdote, Storyline, StorylineGenerationResult } from '@/types';
+import type { Anecdote, Storyline, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
 
 // Get the base URL without /api suffix for uploads
 const getBaseUrl = () => {
@@ -30,8 +30,8 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
     ...options?.headers as Record<string, string>,
   };
   
-  // Add access key header for write operations
-  if (accessKey && (options?.method === 'POST' || options?.method === 'PUT' || options?.method === 'DELETE')) {
+  // Add access key header when available
+  if (accessKey) {
     headers['X-Access-Key'] = accessKey;
   }
 
@@ -168,10 +168,23 @@ export const api = {
 
   // Generate write-up + storyboard (requires auth)
   generateStoryPackage: (storyline: Storyline, prompt?: string) =>
-    fetchApi<{ success: boolean; result: StorylineGenerationResult }>('/storylines/generate', {
+    fetchApi<{ success: boolean; result: StorylineGenerationResult; package: StorylinePackageRecord }>('/storylines/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ storyline, prompt }),
+    }),
+
+  getLatestStorylinePackage: (storylineId: string) =>
+    fetchApi<{ item: StorylinePackageRecord | null }>(`/storylines/package?storylineId=${encodeURIComponent(storylineId)}`),
+
+  getStorylinePackages: (storylineId: string) =>
+    fetchApi<{ items: StorylinePackageRecord[] }>(`/storylines/packages?storylineId=${encodeURIComponent(storylineId)}`),
+
+  saveStorylinePackage: (storylineId: string, payload: StorylineGenerationResult, prompt: string, status: StorylinePackageRecord['status'] = 'draft') =>
+    fetchApi<{ success: boolean; item: StorylinePackageRecord }>('/storylines/package', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storylineId, payload, prompt, status }),
     }),
 
   // Verify access key

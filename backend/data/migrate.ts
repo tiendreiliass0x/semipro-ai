@@ -56,6 +56,19 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS storyline_packages (
+    id TEXT PRIMARY KEY,
+    storylineId TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    prompt TEXT DEFAULT '',
+    status TEXT DEFAULT 'draft',
+    version INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+  )
+`);
+
 const anecdoteCount = db.query('SELECT COUNT(*) as count FROM anecdotes').get() as { count: number };
 const subscriberCount = db.query('SELECT COUNT(*) as count FROM subscribers').get() as { count: number };
 

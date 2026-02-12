@@ -4,7 +4,7 @@ import { useTimeline } from '@/context/TimelineContext';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
 import { generateStorylines } from '@/lib/storylineGenerator';
-import type { Storyline, StorylineBeat, StorylineGenerationResult, StorylineStyle } from '@/types';
+import type { Storyline, StorylineBeat, StorylineGenerationResult, StorylinePackageRecord, StorylineStyle } from '@/types';
 
 const STYLE_META: Record<StorylineStyle, { label: string; badge: string; glow: string; icon: ReactElement }> = {
   nightlife: {
@@ -45,6 +45,9 @@ export function Storylines() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
   const [generatedByStoryline, setGeneratedByStoryline] = useState<Record<string, StorylineGenerationResult>>({});
+  const [packageHistoryByStoryline, setPackageHistoryByStoryline] = useState<Record<string, StorylinePackageRecord[]>>({});
+  const [activePackageTab, setActivePackageTab] = useState<'writeup' | 'storyboard' | 'extras'>('writeup');
+  const [isSavingPackage, setIsSavingPackage] = useState(false);
   const lastSavedSignature = useRef<string | null>(null);
   const canViewStorylineInsights = isAuthenticated;
   const showDebug = canViewStorylineInsights && (import.meta.env.DEV || import.meta.env.VITE_STORYLINE_DEBUG === 'true');
@@ -84,6 +87,7 @@ export function Storylines() {
 
   const selected = storylines.find(line => line.id === selectedId) || storylines[0];
   const generatedPackage = selected ? generatedByStoryline[selected.id] : null;
+  const packageHistory = selected ? (packageHistoryByStoryline[selected.id] || []) : [];
   const orderedStorylines = useMemo(() => {
     if (!storylines.length || !selectedId) return storylines;
     const selectedLine = storylines.find(line => line.id === selectedId);
@@ -120,13 +124,41 @@ export function Storylines() {
     });
   }, [generatedStorylines, isAuthenticated]);
 
+  useEffect(() => {
+    if (!isAuthenticated || !selected) return;
+    let isMounted = true;
+
+    const loadPackages = async () => {
+      try {
+        const [latest, history] = await Promise.all([
+          api.getLatestStorylinePackage(selected.id),
+          api.getStorylinePackages(selected.id),
+        ]);
+
+        if (!isMounted) return;
+        if (latest.item?.payload) {
+          setGeneratedByStoryline(prev => ({ ...prev, [selected.id]: latest.item!.payload }));
+        }
+        setPackageHistoryByStoryline(prev => ({ ...prev, [selected.id]: history.items || [] }));
+      } catch {
+        if (!isMounted) return;
+        setPackageHistoryByStoryline(prev => ({ ...prev, [selected.id]: prev[selected.id] || [] }));
+      }
+    };
+
+    loadPackages();
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated, selected?.id]);
+
   const handleSave = async () => {
     if (!storylines.length) return;
     setIsSaving(true);
     setSaveMessage(null);
     try {
       const result = await api.saveStorylines(storylines);
-      setSaveMessage(`Saved ${result.count} storyline${result.count === 1 ? '' : 's'} to storylines.json`);
+      setSaveMessage(`Saved ${result.count} storyline${result.count === 1 ? '' : 's'} to SQLite`);
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : 'Failed to save storylines');
     } finally {
@@ -142,11 +174,34 @@ export function Storylines() {
     try {
       const response = await api.generateStoryPackage(selected, directorPrompt);
       setGeneratedByStoryline(prev => ({ ...prev, [selected.id]: response.result }));
-      setGenerationMessage('Generated write-up and storyboard.');
+      setPackageHistoryByStoryline(prev => ({
+        ...prev,
+        [selected.id]: [response.package, ...(prev[selected.id] || [])],
+      }));
+      setGenerationMessage(`Generated and saved as version v${response.package.version}.`);
     } catch (error) {
       setGenerationMessage(error instanceof Error ? error.message : 'Failed to generate story package');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleSaveCurrentPackage = async () => {
+    if (!selected || !generatedPackage) return;
+    setIsSavingPackage(true);
+    setGenerationMessage(null);
+
+    try {
+      const response = await api.saveStorylinePackage(selected.id, generatedPackage, directorPrompt, 'draft');
+      setPackageHistoryByStoryline(prev => ({
+        ...prev,
+        [selected.id]: [response.item, ...(prev[selected.id] || [])],
+      }));
+      setGenerationMessage(`Saved current package as version v${response.item.version}.`);
+    } catch (error) {
+      setGenerationMessage(error instanceof Error ? error.message : 'Failed to save package');
+    } finally {
+      setIsSavingPackage(false);
     }
   };
 
@@ -243,6 +298,13 @@ export function Storylines() {
                           className="text-xs px-3 py-1.5 rounded-full border border-gray-700 text-gray-200 hover:border-sky-300 hover:text-sky-300 transition-colors disabled:opacity-60"
                         >
                           {isGenerating ? 'Generating...' : 'Generate write-up'}
+                        </button>
+                        <button
+                          onClick={handleSaveCurrentPackage}
+                          disabled={isSavingPackage || !generatedPackage}
+                          className="text-xs px-3 py-1.5 rounded-full border border-gray-700 text-gray-200 hover:border-emerald-300 hover:text-emerald-300 transition-colors disabled:opacity-60"
+                        >
+                          {isSavingPackage ? 'Saving package...' : 'Save current package'}
                         </button>
                       </>
                     )}
@@ -375,31 +437,98 @@ export function Storylines() {
                 )}
 
                 {generatedPackage && (
-                  <div className="mt-6 border border-gray-800 bg-black/40 rounded-2xl p-5 space-y-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">Generated Write-Up</p>
-                      <h4 className="text-xl text-white font-semibold">{generatedPackage.writeup.headline}</h4>
-                      <p className="text-gray-400 text-sm mt-1">{generatedPackage.writeup.deck}</p>
-                      <p className="text-gray-300 text-sm leading-relaxed mt-3 whitespace-pre-line">{generatedPackage.writeup.narrative}</p>
+                  <div className="mt-6 border border-gray-800 bg-black/40 rounded-2xl p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                      <p className="text-xs uppercase tracking-widest text-gray-500">Story Package Workspace</p>
+                      {packageHistory.length > 0 && (
+                        <p className="text-[11px] text-gray-500">
+                          Latest version: v{packageHistory[0].version} ({new Date(packageHistory[0].updatedAt).toLocaleString()})
+                        </p>
+                      )}
                     </div>
 
-                    <div>
-                      <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">Generated Storyboard</p>
-                      <div className="space-y-2">
-                        {generatedPackage.storyboard.map(scene => (
-                          <div key={`${selected?.id}-${scene.sceneNumber}-${scene.beatId}`} className="rounded-xl border border-gray-800 bg-black/35 p-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm text-gray-100 font-medium">Scene {scene.sceneNumber} - {scene.slugline}</p>
-                              <span className="text-[11px] text-gray-500">{scene.durationSeconds}s</span>
-                            </div>
-                            <p className="text-xs text-gray-400 mt-1">{scene.visualDirection}</p>
-                            <p className="text-xs text-gray-500 mt-1">Camera: {scene.camera}</p>
-                            <p className="text-xs text-gray-500">Audio: {scene.audio}</p>
-                            <p className="text-xs text-gray-300 mt-1">VO: {scene.voiceover}</p>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {(['writeup', 'storyboard', 'extras'] as const).map(tab => (
+                        <button
+                          key={tab}
+                          onClick={() => setActivePackageTab(tab)}
+                          className={`px-3 py-1.5 rounded-full border text-xs uppercase tracking-wide transition-colors ${
+                            activePackageTab === tab
+                              ? 'border-[#D0FF59] text-[#D0FF59] bg-[#D0FF59]/10'
+                              : 'border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                          }`}
+                        >
+                          {tab}
+                        </button>
+                      ))}
                     </div>
+
+                    {activePackageTab === 'writeup' && (
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">Generated Write-Up</p>
+                        <h4 className="text-xl text-white font-semibold">{generatedPackage.writeup.headline}</h4>
+                        <p className="text-gray-400 text-sm mt-1">{generatedPackage.writeup.deck}</p>
+                        <p className="text-gray-300 text-sm leading-relaxed mt-3 whitespace-pre-line">{generatedPackage.writeup.narrative}</p>
+                      </div>
+                    )}
+
+                    {activePackageTab === 'storyboard' && (
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">Generated Storyboard</p>
+                        <div className="space-y-2">
+                          {generatedPackage.storyboard.map(scene => (
+                            <div key={`${selected?.id}-${scene.sceneNumber}-${scene.beatId}`} className="rounded-xl border border-gray-800 bg-black/35 p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm text-gray-100 font-medium">Scene {scene.sceneNumber} - {scene.slugline}</p>
+                                <span className="text-[11px] text-gray-500">{scene.durationSeconds}s</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-1">{scene.visualDirection}</p>
+                              <p className="text-xs text-gray-500 mt-1">Camera: {scene.camera}</p>
+                              <p className="text-xs text-gray-500">Audio: {scene.audio}</p>
+                              <p className="text-xs text-gray-300 mt-1">VO: {scene.voiceover}</p>
+                              <p className="text-xs text-gray-500 mt-1">On-screen: {scene.onScreenText}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {activePackageTab === 'extras' && (
+                      <div className="space-y-3">
+                        <div className="rounded-xl border border-gray-800 bg-black/35 p-3">
+                          <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Logline</p>
+                          <p className="text-sm text-gray-200">{generatedPackage.extras.logline}</p>
+                        </div>
+                        <div className="rounded-xl border border-gray-800 bg-black/35 p-3">
+                          <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Social Caption</p>
+                          <p className="text-sm text-gray-200">{generatedPackage.extras.socialCaption}</p>
+                        </div>
+                        <div className="rounded-xl border border-gray-800 bg-black/35 p-3">
+                          <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Pull Quotes</p>
+                          <ul className="space-y-1 text-sm text-gray-200">
+                            {generatedPackage.extras.pullQuotes.map((quote, index) => (
+                              <li key={`${selected?.id}-quote-${index}`}>"{quote}"</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+
+                    {packageHistory.length > 0 && (
+                      <details className="mt-4 rounded-xl border border-gray-800 bg-black/30 p-3">
+                        <summary className="cursor-pointer text-[11px] uppercase tracking-widest text-gray-500">
+                          Version History ({packageHistory.length})
+                        </summary>
+                        <div className="mt-2 space-y-2">
+                          {packageHistory.slice(0, 8).map(item => (
+                            <div key={item.id} className="flex items-center justify-between text-[11px] text-gray-500 border border-gray-800 rounded-lg px-3 py-2">
+                              <span>v{item.version} - {item.status}</span>
+                              <span>{new Date(item.updatedAt).toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
                   </div>
                 )}
               </div>

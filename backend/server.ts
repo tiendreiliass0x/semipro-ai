@@ -72,6 +72,19 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS storyline_packages (
+    id TEXT PRIMARY KEY,
+    storylineId TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    prompt TEXT DEFAULT '',
+    status TEXT DEFAULT 'draft',
+    version INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+  )
+`);
+
 const generateId = (): string => crypto.randomUUID();
 
 const getContentType = (ext: string): string => {
@@ -194,6 +207,62 @@ const saveStorylines = (data: any) => {
     return true;
   }
   catch { return false; }
+};
+
+const listStorylinePackages = (storylineId: string) => {
+  const rows = db.query(`
+    SELECT id, storylineId, payload, prompt, status, version, createdAt, updatedAt
+    FROM storyline_packages
+    WHERE storylineId = ?
+    ORDER BY version DESC
+  `).all(storylineId) as any[];
+
+  return rows.map(row => ({
+    id: row.id,
+    storylineId: row.storylineId,
+    prompt: row.prompt || '',
+    status: row.status || 'draft',
+    version: row.version,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    payload: JSON.parse(row.payload),
+  }));
+};
+
+const getLatestStorylinePackage = (storylineId: string) => {
+  const row = db.query(`
+    SELECT id, storylineId, payload, prompt, status, version, createdAt, updatedAt
+    FROM storyline_packages
+    WHERE storylineId = ?
+    ORDER BY version DESC
+    LIMIT 1
+  `).get(storylineId) as any;
+
+  if (!row) return null;
+  return {
+    id: row.id,
+    storylineId: row.storylineId,
+    prompt: row.prompt || '',
+    status: row.status || 'draft',
+    version: row.version,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    payload: JSON.parse(row.payload),
+  };
+};
+
+const saveStorylinePackage = (storylineId: string, payload: any, prompt: string, status: string = 'draft') => {
+  const now = Date.now();
+  const latest = db.query('SELECT version FROM storyline_packages WHERE storylineId = ? ORDER BY version DESC LIMIT 1').get(storylineId) as { version?: number } | null;
+  const version = (latest?.version || 0) + 1;
+  const id = generateId();
+
+  db.query(`
+    INSERT INTO storyline_packages (id, storylineId, payload, prompt, status, version, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, storylineId, JSON.stringify(payload), prompt || '', status || 'draft', version, now, now);
+
+  return { id, storylineId, payload, prompt: prompt || '', status: status || 'draft', version, createdAt: now, updatedAt: now };
 };
 
 const buildStorylineContext = (storyline: any) => ({
@@ -478,6 +547,7 @@ const getDbStats = () => {
   const anecdotes = (db.query('SELECT COUNT(*) as count FROM anecdotes').get() as { count: number }).count;
   const media = (db.query('SELECT COUNT(*) as count FROM media').get() as { count: number }).count;
   const subscribers = (db.query('SELECT COUNT(*) as count FROM subscribers').get() as { count: number }).count;
+  const storylinePackages = (db.query('SELECT COUNT(*) as count FROM storyline_packages').get() as { count: number }).count;
   const storylineRow = db.query('SELECT payload, updatedAt FROM storylines_cache WHERE id = 1').get() as { payload?: string; updatedAt?: number } | null;
 
   let storylines = 0;
@@ -495,6 +565,7 @@ const getDbStats = () => {
     media,
     subscribers,
     storylines,
+    storylinePackages,
     storylinesUpdatedAt: storylineRow?.updatedAt || null,
   };
 };
@@ -560,10 +631,47 @@ serve({
 
       try {
         const result = await generateStoryPackage(storyline, prompt);
-        return new Response(JSON.stringify({ success: true, result }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const storylineId = String(storyline.id || 'unknown-storyline');
+        const saved = saveStorylinePackage(storylineId, result, prompt, 'draft');
+        return new Response(JSON.stringify({ success: true, result, package: saved }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to generate story package';
         return new Response(JSON.stringify({ error: message }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
+    if (pathname === '/api/storylines/packages' && method === 'GET') {
+      if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const storylineId = url.searchParams.get('storylineId');
+      if (!storylineId) return new Response(JSON.stringify({ error: 'storylineId is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ items: listStorylinePackages(storylineId) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (pathname === '/api/storylines/package' && method === 'GET') {
+      if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const storylineId = url.searchParams.get('storylineId');
+      if (!storylineId) return new Response(JSON.stringify({ error: 'storylineId is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const item = getLatestStorylinePackage(storylineId);
+      return new Response(JSON.stringify({ item }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (pathname === '/api/storylines/package' && method === 'POST') {
+      if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const body = await req.json();
+      const storylineId = String(body.storylineId || '');
+      const payload = body.payload;
+      const prompt = typeof body.prompt === 'string' ? body.prompt : '';
+      const status = typeof body.status === 'string' ? body.status : 'draft';
+
+      if (!storylineId || !payload || typeof payload !== 'object') {
+        return new Response(JSON.stringify({ error: 'storylineId and payload are required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      try {
+        const item = saveStorylinePackage(storylineId, payload, prompt, status);
+        return new Response(JSON.stringify({ success: true, item }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      } catch {
+        return new Response(JSON.stringify({ error: 'Failed to save storyline package' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
     }
 
