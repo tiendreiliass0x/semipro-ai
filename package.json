@@ -1,7 +1,7 @@
 {
-  "name": "seattle-afrobeats",
+  "name": "semipro-ai",
   "version": "1.0.0",
-  "description": "Seattle Afrobeats Documentary - Full Stack Application",
+  "description": "Semipro AI - Full Stack Application",
   "scripts": {
     "build": "cd app && npm run build",
     "start": "cd backend && npm start",
@@ -10,5 +10,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@fal-ai/client": "^1.9.1"
   }
 }
