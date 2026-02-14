@@ -1,8 +1,8 @@
-name: Deploy to Digital Ocean Droplet
+name: Deploy Semipro AI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '22'
+        node-version: '22.12.0'
     
     - name: Install frontend dependencies
       run: |
@@ -34,8 +34,7 @@ jobs:
         test -f backend/server.ts
         test -f backend/data/migrate.ts
         test -f backend/package.json
-        find app/dist -type f | head -n 20
-        find backend/data -type f | head -n 20
+        test -f backend/bun.lock
 
     - name: Setup SSH key
       run: |
@@ -44,19 +43,14 @@ jobs:
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.DROPLET_IP }} >> ~/.ssh/known_hosts
 
-    - name: Install backend dependencies
-      run: |
-        cd backend
-        npm ci
-    
     - name: Deploy to server
       uses: appleboy/scp-action@v0.1.7
       with:
         host: ${{ secrets.DROPLET_IP }}
         username: root
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        source: "app/dist/*,app/dist/assets/*,backend/server.ts,backend/package.json,backend/package-lock.json,backend/data,backend/uploads"
-        target: "/var/www/docu-maker/"
+        source: "app/dist/**,backend/**,!backend/node_modules/**,!backend/uploads/**,!backend/.env,!backend/data/anecdotes.db"
+        target: "/var/www/semipro-ai/"
         strip_components: 0
         overwrite: true
     
@@ -71,9 +65,10 @@ jobs:
           export BUN_INSTALL="$HOME/.bun"
           export PATH="$BUN_INSTALL/bin:$PATH"
 
-          cd /var/www/docu-maker/backend
+          cd /var/www/semipro-ai/backend
+          bun install --frozen-lockfile
           bun run migrate
-          pm2 restart afrobeats-api || pm2 start server.ts --interpreter bun --name afrobeats-api
+          pm2 restart semipro-ai-api || pm2 start server.ts --interpreter bun --name semipro-ai-api
           pm2 save
           echo "✅ Deployment complete!"
 

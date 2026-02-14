@@ -1,7 +1,7 @@
 {
-  "name": "afrobeats-timeline-backend",
+  "name": "semipro-ai-backend",
   "version": "1.0.0",
-  "description": "Backend for Afrobeats in Seattle documentary timeline",
+  "description": "Backend API for Semipro AI",
   "main": "server.ts",
   "scripts": {
     "start": "bun server.ts",
