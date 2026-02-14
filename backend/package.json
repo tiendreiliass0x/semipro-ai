@@ -10,6 +10,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@fal-ai/client": "^1.6.4",
     "openai": "^5.20.1"
   }
 }

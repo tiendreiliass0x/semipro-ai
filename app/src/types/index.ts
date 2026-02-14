@@ -152,6 +152,7 @@ export interface MovieProject {
   title: string;
   pseudoSynopsis: string;
   polishedSynopsis: string;
+  plotScript: string;
   style: 'cinematic' | 'mainstream' | 'festival';
   durationMinutes: number;
   status: 'draft' | 'active' | 'locked';
@@ -162,7 +163,7 @@ export interface MovieProject {
 export interface StoryNote {
   id: string;
   projectId: string;
-  source: 'typed' | 'audio';
+  source: 'typed' | 'audio' | 'ai_starter';
   rawText: string;
   transcript: string;
   minuteMark: number | null;
@@ -194,6 +195,7 @@ export interface RefinedSynopsis {
   title: string;
   logline: string;
   synopsis: string;
+  plotScript: string;
 }
 
 export interface ProjectStyleBible {
@@ -209,4 +211,21 @@ export interface ContinuityIssue {
   message: string;
   suggestion?: string;
   beatId?: string;
+}
+
+export interface SceneVideoJob {
+  id: string;
+  projectId: string;
+  packageId: string;
+  beatId: string;
+  provider: string;
+  prompt: string;
+  sourceImageUrl: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  jobId: string;
+  videoUrl: string;
+  durationSeconds: number;
+  error: string;
+  createdAt: number;
+  updatedAt: number;
 }

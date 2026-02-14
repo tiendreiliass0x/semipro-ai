@@ -7,6 +7,7 @@ import { createProjectsDb } from './db/projects';
 import { createStorylinesDb } from './db/storylines';
 import { createSubscribersDb } from './db/subscribers';
 import { generateProjectStoryboardWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
+import { buildDirectorSceneVideoPrompt, generateSceneVideoWithFal } from './lib/sceneVideo';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
 import { handleProjectsRoutes } from './routes/projects';
 import { handleStorylinesRoutes } from './routes/storylines';
@@ -101,8 +102,9 @@ db.exec(`
     title TEXT NOT NULL,
     pseudoSynopsis TEXT NOT NULL,
     polishedSynopsis TEXT DEFAULT '',
+    plotScript TEXT DEFAULT '',
     style TEXT DEFAULT 'cinematic',
-    durationMinutes INTEGER DEFAULT 10,
+    durationMinutes INTEGER DEFAULT 1,
     status TEXT DEFAULT 'draft',
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL
@@ -160,12 +162,40 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS scene_videos (
+    id TEXT PRIMARY KEY,
+    projectId TEXT NOT NULL,
+    packageId TEXT NOT NULL,
+    beatId TEXT NOT NULL,
+    provider TEXT DEFAULT 'local-ffmpeg',
+    prompt TEXT DEFAULT '',
+    sourceImageUrl TEXT DEFAULT '',
+    status TEXT DEFAULT 'queued',
+    jobId TEXT DEFAULT '',
+    videoUrl TEXT DEFAULT '',
+    durationSeconds INTEGER DEFAULT 5,
+    error TEXT DEFAULT '',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS project_style_bibles (
     projectId TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL,
     FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS app_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL
   )
 `);
 
@@ -177,6 +207,28 @@ const ensureTableColumn = (tableName: string, columnName: string, columnSql: str
 };
 
 ensureTableColumn('story_beats', 'locked', 'INTEGER DEFAULT 0');
+ensureTableColumn('projects', 'plotScript', "TEXT DEFAULT ''");
+
+const runOneTimeMigrations = () => {
+  const migrationKey = 'projects_duration_to_one_min_v1';
+  const alreadyRan = db.query('SELECT value FROM app_meta WHERE key = ?').get(migrationKey) as { value?: string } | null;
+  if (alreadyRan?.value === 'done') return;
+
+  const now = Date.now();
+  const result = db.query('UPDATE projects SET durationMinutes = 1 WHERE durationMinutes IS NULL OR durationMinutes != 1').run() as { changes?: number };
+  db.query(`
+    INSERT INTO app_meta (key, value, updatedAt)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt
+  `).run(migrationKey, 'done', now);
+
+  const changed = Number(result?.changes || 0);
+  if (changed > 0) {
+    console.log(`[migration] Updated ${changed} project(s) to 1-minute duration default`);
+  }
+};
+
+runOneTimeMigrations();
 
 const generateId = (): string => crypto.randomUUID();
 
@@ -228,9 +280,58 @@ const {
   saveProjectPackage,
   getLatestProjectPackage,
   setStoryboardSceneLocked,
+  createSceneVideoJob,
+  updateSceneVideoJob,
+  getLatestSceneVideo,
+  listLatestSceneVideos,
+  claimNextQueuedSceneVideo,
+  requeueStaleProcessingSceneVideos,
   getProjectStyleBible,
   updateProjectStyleBible,
 } = createProjectsDb({ db, generateId });
+
+let sceneVideoWorkerActive = false;
+const processSceneVideoQueue = async () => {
+  if (sceneVideoWorkerActive) return;
+  sceneVideoWorkerActive = true;
+
+  try {
+    while (true) {
+      const job = claimNextQueuedSceneVideo();
+      if (!job) break;
+
+      try {
+        console.log(`[queue] Processing scene video job ${job.id} (project: ${job.projectId}, beat: ${job.beatId})`);
+        const videoUrl = await generateSceneVideoWithFal({
+          uploadsDir,
+          sourceImageUrl: String(job.sourceImageUrl || ''),
+          prompt: String(job.prompt || ''),
+          durationSeconds: Number(job.durationSeconds || 5),
+        });
+
+        updateSceneVideoJob(job.id, { status: 'completed', videoUrl, error: '' });
+        console.log(`[queue] Completed scene video job ${job.id}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to generate scene video';
+        updateSceneVideoJob(job.id, { status: 'failed', error: message });
+        console.error(`[queue] Failed scene video job ${job.id}: ${message}`);
+      }
+    }
+  } finally {
+    sceneVideoWorkerActive = false;
+  }
+};
+
+setInterval(() => {
+  processSceneVideoQueue().catch(() => null);
+}, 2500);
+
+const requeuedCount = requeueStaleProcessingSceneVideos();
+if (requeuedCount > 0) {
+  console.log(`[queue] Re-queued ${requeuedCount} stale processing scene video job(s)`);
+}
+
+processSceneVideoQueue().catch(() => null);
 
 const buildStorylineContext = (storyline: any) => ({
   id: storyline.id,
@@ -445,14 +546,16 @@ serve({
       saveProjectPackage,
       getLatestProjectPackage,
       setStoryboardSceneLocked,
+      createSceneVideoJob,
+      getLatestSceneVideo,
+      listLatestSceneVideos,
       getProjectStyleBible,
       updateProjectStyleBible,
       refineSynopsisWithLlm,
       polishNotesIntoBeatsWithLlm,
       generateProjectStoryboardWithLlm,
       generateStoryboardFrameWithLlm,
-      uploadsDir,
-      generateId,
+      buildDirectorSceneVideoPrompt,
     });
     if (projectsResponse) return projectsResponse;
 

@@ -15,7 +15,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
 
   const listProjects = () => {
     return db.query(`
-      SELECT id, title, pseudoSynopsis, polishedSynopsis, style, durationMinutes, status, createdAt, updatedAt
+      SELECT id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, createdAt, updatedAt
       FROM projects
       ORDER BY updatedAt DESC
     `).all() as any[];
@@ -23,7 +23,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
 
   const getProjectById = (id: string) => {
     return db.query(`
-      SELECT id, title, pseudoSynopsis, polishedSynopsis, style, durationMinutes, status, createdAt, updatedAt
+      SELECT id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, createdAt, updatedAt
       FROM projects
       WHERE id = ?
     `).get(id) as any;
@@ -33,7 +33,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     const now = Date.now();
     const id = generateId();
     const style = (input.style || 'cinematic').toLowerCase();
-    const durationMinutes = Number(input.durationMinutes || 10);
+    const durationMinutes = Number(input.durationMinutes || 1);
     const synopsis = String(input.pseudoSynopsis || '').trim();
     const explicitTitle = String(input.title || '').trim();
     const fallbackTitle = synopsis
@@ -42,9 +42,9 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     const title = explicitTitle || fallbackTitle;
 
     db.query(`
-      INSERT INTO projects (id, title, pseudoSynopsis, polishedSynopsis, style, durationMinutes, status, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, title, synopsis, '', style, durationMinutes, 'draft', now, now);
+      INSERT INTO projects (id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, title, synopsis, '', '', style, durationMinutes, 'draft', now, now);
     db.query(`
       INSERT INTO project_style_bibles (projectId, payload, createdAt, updatedAt)
       VALUES (?, ?, ?, ?)
@@ -73,9 +73,9 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return getProjectStyleBible(projectId);
   };
 
-  const updateProjectSynopsis = (id: string, polishedSynopsis: string) => {
+  const updateProjectSynopsis = (id: string, polishedSynopsis: string, plotScript: string = '') => {
     const now = Date.now();
-    db.query('UPDATE projects SET polishedSynopsis = ?, updatedAt = ? WHERE id = ?').run(polishedSynopsis, now, id);
+    db.query('UPDATE projects SET polishedSynopsis = ?, plotScript = ?, updatedAt = ? WHERE id = ?').run(polishedSynopsis, plotScript || '', now, id);
     return getProjectById(id);
   };
 
@@ -236,6 +236,132 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return { ...latest, payload: updatedPayload, updatedAt: now };
   };
 
+  const createSceneVideoJob = (args: {
+    projectId: string;
+    packageId: string;
+    beatId: string;
+    provider: string;
+    prompt: string;
+    sourceImageUrl: string;
+    durationSeconds?: number;
+  }) => {
+    const id = generateId();
+    const now = Date.now();
+    const durationSeconds = Number(args.durationSeconds || 5);
+    db.query(`
+      INSERT INTO scene_videos (
+        id, projectId, packageId, beatId, provider, prompt, sourceImageUrl,
+        status, jobId, videoUrl, durationSeconds, error, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      args.projectId,
+      args.packageId,
+      args.beatId,
+      args.provider || 'local-ffmpeg',
+      args.prompt || '',
+      args.sourceImageUrl || '',
+      'queued',
+      '',
+      '',
+      durationSeconds,
+      '',
+      now,
+      now
+    );
+    return db.query('SELECT * FROM scene_videos WHERE id = ?').get(id) as any;
+  };
+
+  const updateSceneVideoJob = (id: string, patch: Partial<{
+    status: string;
+    jobId: string;
+    videoUrl: string;
+    error: string;
+    sourceImageUrl: string;
+  }>) => {
+    const now = Date.now();
+    const row = db.query('SELECT * FROM scene_videos WHERE id = ?').get(id) as any;
+    if (!row) return null;
+    db.query(`
+      UPDATE scene_videos SET
+        status = ?,
+        jobId = ?,
+        videoUrl = ?,
+        error = ?,
+        sourceImageUrl = ?,
+        updatedAt = ?
+      WHERE id = ?
+    `).run(
+      patch.status ?? row.status,
+      patch.jobId ?? row.jobId,
+      patch.videoUrl ?? row.videoUrl,
+      patch.error ?? row.error,
+      patch.sourceImageUrl ?? row.sourceImageUrl,
+      now,
+      id
+    );
+    return db.query('SELECT * FROM scene_videos WHERE id = ?').get(id) as any;
+  };
+
+  const getLatestSceneVideo = (projectId: string, beatId: string) => {
+    return db.query(`
+      SELECT * FROM scene_videos
+      WHERE projectId = ? AND beatId = ?
+      ORDER BY createdAt DESC
+      LIMIT 1
+    `).get(projectId, beatId) as any;
+  };
+
+  const listLatestSceneVideos = (projectId: string) => {
+    const rows = db.query(`
+      SELECT * FROM scene_videos
+      WHERE projectId = ?
+      ORDER BY createdAt DESC
+    `).all(projectId) as any[];
+    const seen = new Set<string>();
+    const items: any[] = [];
+    for (const row of rows) {
+      const beatId = String(row.beatId || '');
+      if (!beatId || seen.has(beatId)) continue;
+      seen.add(beatId);
+      items.push(row);
+    }
+    return items;
+  };
+
+  const claimNextQueuedSceneVideo = () => {
+    const candidate = db.query(`
+      SELECT id
+      FROM scene_videos
+      WHERE status = 'queued'
+      ORDER BY createdAt ASC
+      LIMIT 1
+    `).get() as { id?: string } | null;
+
+    if (!candidate?.id) return null;
+
+    const now = Date.now();
+    const result = db.query(`
+      UPDATE scene_videos
+      SET status = 'processing', updatedAt = ?
+      WHERE id = ? AND status = 'queued'
+    `).run(now, candidate.id) as { changes?: number };
+
+    if (!result?.changes) return null;
+    return db.query('SELECT * FROM scene_videos WHERE id = ?').get(candidate.id) as any;
+  };
+
+  const requeueStaleProcessingSceneVideos = (maxAgeMs: number = 10 * 60 * 1000) => {
+    const now = Date.now();
+    const staleBefore = now - Math.max(60_000, Number(maxAgeMs || 0));
+    const result = db.query(`
+      UPDATE scene_videos
+      SET status = 'queued', updatedAt = ?
+      WHERE status = 'processing' AND updatedAt < ?
+    `).run(now, staleBefore) as { changes?: number };
+    return Number(result?.changes || 0);
+  };
+
   return {
     listProjects,
     getProjectById,
@@ -249,6 +375,12 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     saveProjectPackage,
     getLatestProjectPackage,
     setStoryboardSceneLocked,
+    createSceneVideoJob,
+    updateSceneVideoJob,
+    getLatestSceneVideo,
+    listLatestSceneVideos,
+    claimNextQueuedSceneVideo,
+    requeueStaleProcessingSceneVideos,
     getProjectStyleBible,
     updateProjectStyleBible,
   };

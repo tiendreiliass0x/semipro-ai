@@ -1,73 +1,67 @@
-import { Instagram, Twitter, Youtube } from 'lucide-react';
-import { SubscribeForm } from '@/components/SubscribeForm';
+import { Disc3, Github, Globe2, Instagram, Twitter, Youtube } from 'lucide-react';
 
 export function Footer() {
   return (
-    <footer className="relative py-20 px-4 border-t border-gray-800">
-      <div className="max-w-4xl mx-auto">
-        {/* Logo */}
-        <div className="text-center mb-12">
-          <h2 className="font-display text-3xl md:text-4xl text-white mb-2">
-            AFROBEATS SEATTLE
-          </h2>
-          <p className="font-script text-2xl text-[#D0FF59]">
-            The Documentary
-          </p>
+    <footer className="relative mt-24 py-20 px-4 border-t border-cyan-500/20 bg-gradient-to-b from-[#05080f] to-black">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center text-sm text-gray-400 mb-16">
+          Craft your first polished short film with <span className="text-cyan-200">Semipro AI Director Studio</span>.
         </div>
 
-        {/* Newsletter */}
-        <div className="glass rounded-2xl p-8 mb-12">
-          <h3 className="text-xl font-semibold text-white text-center mb-2">
-            Stay Updated
-          </h3>
-          <p className="text-gray-400 text-center mb-6">
-            Get notified when the documentary premieres
-          </p>
+        <div className="grid md:grid-cols-[1.4fr_1fr_1fr_1fr] gap-12">
+          <div>
+            <h2 className="font-display text-4xl text-white mb-3">SEMIPRO AI</h2>
+            <p className="text-sm text-gray-400 max-w-sm">
+              AI-first filmmaking workspace for directors, creators, and ambitious amateurs.
+            </p>
 
-          <SubscribeForm />
+            <div className="flex gap-3 mt-6">
+              {[Twitter, Instagram, Disc3, Github, Globe2, Youtube].map((Icon, index) => (
+                <a
+                  key={index}
+                  href="#"
+                  className="w-10 h-10 rounded-full bg-gray-800/80 border border-gray-700 inline-flex items-center justify-center text-gray-300 hover:text-cyan-100 hover:border-cyan-400/40 hover:bg-cyan-500/10"
+                >
+                  <Icon className="w-4 h-4" />
+                </a>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-white font-semibold mb-4">Product</p>
+            <div className="space-y-3 text-gray-400 text-sm">
+              <a href="#" className="block hover:text-white">Director Studio</a>
+              <a href="#" className="block hover:text-white">Scenes Workspace</a>
+              <a href="#" className="block hover:text-white">Video Studio</a>
+              <a href="#" className="block hover:text-white">Pricing</a>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-white font-semibold mb-4">Features</p>
+            <div className="space-y-3 text-gray-400 text-sm">
+              <a href="#" className="block hover:text-white">Synopsis Polish</a>
+              <a href="#" className="block hover:text-white">Beat Story Capture</a>
+              <a href="#" className="block hover:text-white">Storyboard Frames</a>
+              <a href="#" className="block hover:text-white">Scene Video Queue</a>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-white font-semibold mb-4">Company</p>
+            <div className="space-y-3 text-gray-400 text-sm">
+              <a href="#" className="block hover:text-white">About</a>
+              <a href="#" className="block hover:text-white">Terms of Service</a>
+              <a href="#" className="block hover:text-white">Privacy Policy</a>
+              <a href="#" className="block hover:text-white">Contact</a>
+            </div>
+          </div>
         </div>
 
-        {/* Social Links */}
-        <div className="flex justify-center gap-6 mb-12">
-          <a 
-            href="#" 
-            className="p-3 bg-gray-800 rounded-full hover:bg-[#D0FF59] hover:text-black transition-all duration-300 group"
-          >
-            <Instagram className="w-5 h-5 text-gray-400 group-hover:text-black" />
-          </a>
-          <a 
-            href="#" 
-            className="p-3 bg-gray-800 rounded-full hover:bg-[#D0FF59] hover:text-black transition-all duration-300 group"
-          >
-            <Twitter className="w-5 h-5 text-gray-400 group-hover:text-black" />
-          </a>
-          <a 
-            href="#" 
-            className="p-3 bg-gray-800 rounded-full hover:bg-[#D0FF59] hover:text-black transition-all duration-300 group"
-          >
-            <Youtube className="w-5 h-5 text-gray-400 group-hover:text-black" />
-          </a>
-        </div>
-
-        {/* Links */}
-        <div className="flex flex-wrap justify-center gap-8 mb-8">
-          <a href="#" className="text-gray-400 hover:text-white transition-colors">
-            Privacy Policy
-          </a>
-          <a href="#" className="text-gray-400 hover:text-white transition-colors">
-            Terms of Use
-          </a>
-          <a href="#" className="text-gray-400 hover:text-white transition-colors">
-            Contact
-          </a>
-          <a href="#" className="text-gray-400 hover:text-white transition-colors">
-            Press Kit
-          </a>
-        </div>
-
-        {/* Copyright */}
-        <div className="text-center text-gray-600 text-sm">
-          <p>&copy; {new Date().getFullYear()} Afrobeats Seattle Documentary. All rights reserved.</p>
+        <div className="mt-14 pt-6 border-t border-gray-800 text-sm text-gray-500 flex flex-wrap items-center justify-between gap-3">
+          <p>&copy; {new Date().getFullYear()} Semipro AI. All rights reserved.</p>
+          <p>let&apos;s creativity ship fast.</p>
         </div>
       </div>
     </footer>

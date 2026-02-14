@@ -1,5 +1,3 @@
-import { join } from 'path';
-
 type ProjectsRouteArgs = {
   req: Request;
   pathname: string;
@@ -9,7 +7,7 @@ type ProjectsRouteArgs = {
   listProjects: () => any[];
   getProjectById: (id: string) => any;
   createProject: (input: { title?: string; pseudoSynopsis: string; style?: string; durationMinutes?: number }) => any;
-  updateProjectSynopsis: (id: string, polishedSynopsis: string) => any;
+  updateProjectSynopsis: (id: string, polishedSynopsis: string, plotScript?: string) => any;
   addStoryNote: (projectId: string, input: { rawText: string; minuteMark?: number; source?: string; transcript?: string }) => any;
   listStoryNotes: (projectId: string) => any[];
   replaceProjectBeats: (projectId: string, beats: any[]) => any[];
@@ -18,14 +16,24 @@ type ProjectsRouteArgs = {
   saveProjectPackage: (projectId: string, payload: any, prompt: string) => any;
   getLatestProjectPackage: (projectId: string) => any;
   setStoryboardSceneLocked: (projectId: string, beatId: string, locked: boolean) => any;
+  createSceneVideoJob: (args: {
+    projectId: string;
+    packageId: string;
+    beatId: string;
+    provider: string;
+    prompt: string;
+    sourceImageUrl: string;
+    durationSeconds?: number;
+  }) => any;
+  getLatestSceneVideo: (projectId: string, beatId: string) => any;
+  listLatestSceneVideos: (projectId: string) => any[];
   getProjectStyleBible: (projectId: string) => any;
   updateProjectStyleBible: (projectId: string, payload: any) => any;
   refineSynopsisWithLlm: (args: { pseudoSynopsis: string; style?: string; durationMinutes?: number; styleBible?: any }) => Promise<any>;
   polishNotesIntoBeatsWithLlm: (args: { synopsis: string; notes: any[]; durationMinutes?: number; style?: string; styleBible?: any }) => Promise<any>;
-  generateProjectStoryboardWithLlm: (args: { title: string; synopsis: string; beats: any[]; prompt?: string; style?: string; styleBible?: any }) => Promise<any>;
+  generateProjectStoryboardWithLlm: (args: { title: string; synopsis: string; beats: any[]; prompt?: string; style?: string; styleBible?: any; filmType?: string }) => Promise<any>;
   generateStoryboardFrameWithLlm: (prompt: string) => Promise<string>;
-  uploadsDir: string;
-  generateId: () => string;
+  buildDirectorSceneVideoPrompt: (args: { projectTitle: string; synopsis: string; styleBible: any; scene: any; directorPrompt?: string }) => string;
 };
 
 const jsonHeaders = (corsHeaders: Record<string, string>) => ({ ...corsHeaders, 'Content-Type': 'application/json' });
@@ -49,14 +57,16 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     saveProjectPackage,
     getLatestProjectPackage,
     setStoryboardSceneLocked,
+    createSceneVideoJob,
+    getLatestSceneVideo,
+    listLatestSceneVideos,
     getProjectStyleBible,
     updateProjectStyleBible,
     refineSynopsisWithLlm,
     polishNotesIntoBeatsWithLlm,
     generateProjectStoryboardWithLlm,
     generateStoryboardFrameWithLlm,
-    uploadsDir,
-    generateId,
+    buildDirectorSceneVideoPrompt,
   } = args;
 
   const buildContinuityIssues = (beats: any[]) => {
@@ -179,7 +189,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       title: body.title ? String(body.title) : '',
       pseudoSynopsis: String(body.pseudoSynopsis),
       style: body.style || 'cinematic',
-      durationMinutes: Number(body.durationMinutes || 10),
+      durationMinutes: Number(body.durationMinutes || 1),
     });
     return new Response(JSON.stringify(project), { status: 201, headers: jsonHeaders(corsHeaders) });
   }
@@ -214,11 +224,12 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       const refined = await refineSynopsisWithLlm({
         pseudoSynopsis: project.pseudoSynopsis,
         style: project.style || 'cinematic',
-        durationMinutes: project.durationMinutes || 10,
+        durationMinutes: project.durationMinutes || 1,
         styleBible: getProjectStyleBible(projectId),
       });
       const synopsis = String(refined?.synopsis || '').trim();
-      const updated = updateProjectSynopsis(projectId, synopsis);
+      const plotScript = String(refined?.plotScript || '').trim();
+      const updated = updateProjectSynopsis(projectId, synopsis, plotScript);
       return new Response(JSON.stringify({ success: true, refined, project: updated }), { headers: jsonHeaders(corsHeaders) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to refine synopsis';
@@ -281,7 +292,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
           text: note.transcript || note.rawText,
           minuteMark: note.minuteMark,
         })),
-        durationMinutes: project.durationMinutes || 10,
+        durationMinutes: project.durationMinutes || 1,
         style: project.style || 'cinematic',
         styleBible: getProjectStyleBible(projectId),
       });
@@ -303,6 +314,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const body = await req.json().catch(() => ({}));
 
     try {
+      const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
       const result = await generateProjectStoryboardWithLlm({
         title: project.title,
         synopsis: project.polishedSynopsis || project.pseudoSynopsis,
@@ -310,17 +322,17 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         prompt: typeof body?.prompt === 'string' ? body.prompt : '',
         style: project.style || 'cinematic',
         styleBible: getProjectStyleBible(projectId),
+        filmType,
       });
 
       if (Array.isArray(result?.storyboard)) {
         for (const scene of result.storyboard) {
           try {
-            const prompt = scene.imagePrompt || `${scene.slugline}. ${scene.visualDirection}`;
-            const imageBase64 = await generateStoryboardFrameWithLlm(prompt);
-            const filename = `${Date.now()}-${generateId()}.png`;
-            const filePath = join(uploadsDir, filename);
-            await Bun.write(filePath, Buffer.from(imageBase64, 'base64'));
-            scene.imageUrl = `/uploads/${filename}`;
+            const prompt = [filmType ? `Film type: ${filmType}` : '', scene.imagePrompt || `${scene.slugline}. ${scene.visualDirection}`]
+              .filter(Boolean)
+              .join('. ');
+            const imageUrl = await generateStoryboardFrameWithLlm(prompt);
+            scene.imageUrl = imageUrl;
           } catch {
             scene.imageUrl = '';
           }
@@ -339,6 +351,78 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const projectId = pathname.split('/')[3];
     const item = getLatestProjectPackage(projectId);
     return new Response(JSON.stringify({ item }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/videos$/) && method === 'GET') {
+    const projectId = pathname.split('/')[3];
+    return new Response(JSON.stringify({ items: listLatestSceneVideos(projectId) }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/video$/) && method === 'GET') {
+    const projectId = pathname.split('/')[3];
+    const beatId = pathname.split('/')[5];
+    const item = getLatestSceneVideo(projectId, beatId);
+    return new Response(JSON.stringify({ item }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/video$/) && method === 'POST') {
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const projectId = pathname.split('/')[3];
+    const beatId = pathname.split('/')[5];
+    const project = getProjectById(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    const latestPackage = getLatestProjectPackage(projectId);
+    if (!latestPackage?.payload?.storyboard || !Array.isArray(latestPackage.payload.storyboard)) {
+      return new Response(JSON.stringify({ error: 'No storyboard package found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    }
+
+    const scene = latestPackage.payload.storyboard.find((item: any) => String(item.beatId) === String(beatId));
+    if (!scene) return new Response(JSON.stringify({ error: 'Scene not found for beat' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+
+    const body = await req.json().catch(() => ({}));
+    const promptOverride = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
+    const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
+
+    if (!scene.imageUrl || promptOverride) {
+      try {
+        const imagePrompt = [
+          filmType ? `Film type: ${filmType}` : '',
+          scene.imagePrompt || `${scene.slugline}. ${scene.visualDirection}`,
+          promptOverride,
+        ].filter(Boolean).join('. ');
+        const imageUrl = await generateStoryboardFrameWithLlm(imagePrompt);
+        scene.imageUrl = imageUrl;
+        latestPackage.payload.storyboard = latestPackage.payload.storyboard.map((item: any) => (
+          String(item.beatId) === String(beatId) ? { ...item, imageUrl: scene.imageUrl } : item
+        ));
+        saveProjectPackage(projectId, latestPackage.payload, latestPackage.prompt || 'image-seed-for-video');
+      } catch {
+        return new Response(JSON.stringify({ error: 'Unable to generate source image for video' }), { status: 502, headers: jsonHeaders(corsHeaders) });
+      }
+    }
+
+    const styleBible = getProjectStyleBible(projectId);
+    const videoPrompt = buildDirectorSceneVideoPrompt({
+      projectTitle: project.title,
+      synopsis: project.polishedSynopsis || project.pseudoSynopsis,
+      styleBible,
+      scene,
+      directorPrompt: [filmType ? `Film type: ${filmType}` : '', promptOverride].filter(Boolean).join('\n'),
+    });
+
+    const job = createSceneVideoJob({
+      projectId,
+      packageId: latestPackage.id,
+      beatId,
+      provider: 'fal-seedance',
+      prompt: videoPrompt,
+      sourceImageUrl: scene.imageUrl,
+      durationSeconds: Number(scene.durationSeconds || 5),
+    });
+
+    console.log(`[queue] Enqueued scene video job ${job.id} for project ${projectId}, beat ${beatId}`);
+
+    return new Response(JSON.stringify({ success: true, item: job }), { status: 202, headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/scene-lock$/) && method === 'PATCH') {

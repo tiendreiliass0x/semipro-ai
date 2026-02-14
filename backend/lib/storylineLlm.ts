@@ -1,9 +1,15 @@
 import OpenAI from 'openai';
+import { fal } from '@fal-ai/client';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
-const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-4.1-mini';
+const FAL_KEY = process.env.FAL_KEY || process.env.FAL_API_KEY || '';
+const FAL_IMAGE_MODEL = process.env.FAL_IMAGE_MODEL || 'fal-ai/flux-pro/kontext/text-to-image';
 const SUPPORTS_TEMPERATURE = !OPENAI_MODEL.startsWith('gpt-5');
+
+if (FAL_KEY) {
+  fal.config({ credentials: FAL_KEY });
+}
 
 const STORY_PACKAGE_SCHEMA = {
   type: 'object',
@@ -76,11 +82,12 @@ const STORYBOARD_SCENE_SCHEMA = {
 const POLISHED_SYNOPSIS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['title', 'logline', 'synopsis'],
+  required: ['title', 'logline', 'synopsis', 'plotScript'],
   properties: {
     title: { type: 'string' },
     logline: { type: 'string' },
     synopsis: { type: 'string' },
+    plotScript: { type: 'string' },
   },
 } as const;
 
@@ -150,6 +157,7 @@ const extractOutputText = (response: any): string => {
 
 const callLlmForJson = async (
   args: {
+    taskName?: string;
     systemInstruction: string;
     payload: any;
     temperature: number;
@@ -161,74 +169,96 @@ const callLlmForJson = async (
     throw new Error('OPENAI_API_KEY is not configured');
   }
 
-  const response = await createResponse({
-    model: OPENAI_MODEL,
-    input: [
-      {
-        role: 'system',
-        content: [
-          {
-            type: 'input_text',
-            text: args.systemInstruction,
-          },
-        ],
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'input_text',
-            text: JSON.stringify(args.payload),
-          },
-        ],
-      },
-    ],
-    text: {
-      format: {
-        type: 'json_schema',
-        name: 'storyline_payload',
-        schema: args.responseSchema,
-        strict: true,
-      },
-    },
-    ...(SUPPORTS_TEMPERATURE ? { temperature: args.temperature } : {}),
-  });
+  const startedAt = Date.now();
+  const taskName = args.taskName || 'text-generation';
+  console.log(`[text] ${taskName} started (model: ${OPENAI_MODEL})`);
 
-  const parsed = parseJsonFromText(extractOutputText(response));
-  if (!parsed) throw new Error('OpenAI returned invalid JSON');
-  return parsed;
+  try {
+    const response = await createResponse({
+      model: OPENAI_MODEL,
+      input: [
+        {
+          role: 'system',
+          content: [
+            {
+              type: 'input_text',
+              text: args.systemInstruction,
+            },
+          ],
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: JSON.stringify(args.payload),
+            },
+          ],
+        },
+      ],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'storyline_payload',
+          schema: args.responseSchema,
+          strict: true,
+        },
+      },
+      ...(SUPPORTS_TEMPERATURE ? { temperature: args.temperature } : {}),
+    });
+
+    const parsed = parseJsonFromText(extractOutputText(response));
+    if (!parsed) throw new Error('OpenAI returned invalid JSON');
+    console.log(`[text] ${taskName} completed in ${Date.now() - startedAt}ms`);
+    return parsed;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[text] ${taskName} failed after ${Date.now() - startedAt}ms: ${message}`);
+    throw error;
+  }
 };
 
 const createOpenAIClient = () => new OpenAI({ apiKey: OPENAI_API_KEY });
 
 export const generateStoryboardFrameWithLlm = async (prompt: string) => {
-  if (!OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is not configured');
+  if (!FAL_KEY) {
+    throw new Error('FAL_KEY is not configured');
   }
-  const client = createOpenAIClient();
-  const response = await client.responses.create({
-    model: OPENAI_IMAGE_MODEL,
-    input: prompt,
-    tools: [{ type: 'image_generation' }],
+  const startedAt = Date.now();
+  console.log(`[image] frame generation started (model: ${FAL_IMAGE_MODEL})`);
+  const result = await fal.subscribe(FAL_IMAGE_MODEL, {
+    input: {
+      prompt,
+    },
+    logs: true,
+    onQueueUpdate: update => {
+      if (update.status === 'IN_PROGRESS') {
+        const messages = Array.isArray(update.logs) ? update.logs.map(log => log.message).filter(Boolean) : [];
+        if (messages.length > 0) {
+          console.log(`[image] ${messages.join(' | ')}`);
+        }
+      }
+    },
   });
 
-  const imageData = Array.isArray((response as any)?.output)
-    ? (response as any).output
-      .filter((output: any) => output?.type === 'image_generation_call')
-      .map((output: any) => output?.result)
-      .find((result: any) => typeof result === 'string' && result.length > 0)
-    : null;
+  const imageUrl =
+    (result as any)?.data?.images?.[0]?.url
+    || (result as any)?.data?.image?.url
+    || '';
 
-  if (!imageData) {
-    throw new Error('OpenAI image generation returned no image data');
+  if (!imageUrl) {
+    console.error(`[image] frame generation failed after ${Date.now() - startedAt}ms: no image URL`);
+    throw new Error('FAL image generation returned no image URL');
   }
 
-  return imageData as string;
+  console.log(`[image] frame generation completed in ${Date.now() - startedAt}ms`);
+  return imageUrl as string;
 };
 
 export const generateStoryPackageWithLlm = async (storylineContext: any, prompt: string) => {
   const client = createOpenAIClient();
   return callLlmForJson({
+    taskName: 'generate-story-package',
     systemInstruction: 'You are a documentary writer and storyboard artist. Use only facts from context. Do not invent missing facts; use UNKNOWN. Keep chronology aligned with beat order. Return only JSON with shape: { writeup: { headline, deck, narrative }, storyboard: Scene[], extras: { logline, socialCaption, pullQuotes[] } }. Each storyboard scene must include: sceneNumber, beatId, slugline, imagePrompt, visualDirection, camera, audio, voiceover, onScreenText, transition, durationSeconds. imagePrompt should be a concise cinematic concept-art prompt for one frame of the scene.',
     payload: {
       prompt: prompt || 'Create a compelling documentary write-up and production-ready storyboard.',
@@ -242,6 +272,7 @@ export const generateStoryPackageWithLlm = async (storylineContext: any, prompt:
 export const regenerateStoryboardSceneWithLlm = async (storylineContext: any, scene: any, prompt: string) => {
   const client = createOpenAIClient();
   return callLlmForJson({
+    taskName: 'regenerate-storyboard-scene',
     systemInstruction: 'You are a documentary storyboard editor. Rewrite one scene only. Keep facts grounded in the supplied storyline/anecdote context. Keep sceneNumber and beatId aligned with the provided scene. Return only JSON with fields: sceneNumber, beatId, slugline, imagePrompt, visualDirection, camera, audio, voiceover, onScreenText, transition, durationSeconds.',
     payload: {
       prompt: prompt || 'Regenerate this scene with stronger cinematic detail while staying factual.',
@@ -256,10 +287,11 @@ export const regenerateStoryboardSceneWithLlm = async (storylineContext: any, sc
 export const refineSynopsisWithLlm = async (args: { pseudoSynopsis: string; style?: string; durationMinutes?: number; styleBible?: any }) => {
   const client = createOpenAIClient();
   return callLlmForJson({
-    systemInstruction: 'You are an award-winning film development editor. Rewrite rough synopsis text into polished cinematic synopsis. Keep intent and core plot. Return only JSON with keys: title, logline, synopsis.',
+    taskName: 'refine-synopsis',
+    systemInstruction: 'You are an award-winning film development editor. Rewrite rough synopsis text into polished cinematic synopsis. Keep intent and core plot. Also generate a concise plot script treatment (4-6 short paragraphs) focused on story progression and cinematic beats. Return only JSON with keys: title, logline, synopsis, plotScript.',
     payload: {
       style: args.style || 'cinematic',
-      durationMinutes: Number(args.durationMinutes || 10),
+      durationMinutes: Number(args.durationMinutes || 1),
       styleBible: args.styleBible || null,
       pseudoSynopsis: args.pseudoSynopsis,
     },
@@ -271,11 +303,12 @@ export const refineSynopsisWithLlm = async (args: { pseudoSynopsis: string; styl
 export const polishNotesIntoBeatsWithLlm = async (args: { synopsis: string; notes: any[]; durationMinutes?: number; style?: string; styleBible?: any }) => {
   const client = createOpenAIClient();
   return callLlmForJson({
+    taskName: 'polish-notes-into-beats',
     systemInstruction: 'You are a film story editor. Convert rough story notes into coherent minute-by-minute beats. Keep chronology logical and escalating. Return only JSON with shape: { beats: [{ minuteStart, minuteEnd, pseudoBeat, polishedBeat, objective, conflict, turn, intensity, tags[] }] }.',
     payload: {
       style: args.style || 'cinematic',
       styleBible: args.styleBible || null,
-      durationMinutes: Number(args.durationMinutes || 10),
+      durationMinutes: Number(args.durationMinutes || 1),
       synopsis: args.synopsis,
       notes: args.notes,
     },
@@ -284,13 +317,15 @@ export const polishNotesIntoBeatsWithLlm = async (args: { synopsis: string; note
   }, client.responses.create.bind(client.responses));
 };
 
-export const generateProjectStoryboardWithLlm = async (args: { title: string; synopsis: string; beats: any[]; prompt?: string; style?: string; styleBible?: any }) => {
+export const generateProjectStoryboardWithLlm = async (args: { title: string; synopsis: string; beats: any[]; prompt?: string; style?: string; styleBible?: any; filmType?: string }) => {
   const client = createOpenAIClient();
   return callLlmForJson({
-    systemInstruction: 'You are a film director and storyboard artist. Generate a coherent cinematic storyboard from polished beats. Respect beat order and pacing. Return only JSON with shape { writeup, storyboard, extras } and each storyboard item must include beatId and imagePrompt. imagePrompt should be a concise visual generation prompt for a single storyboard frame.',
+    taskName: 'generate-project-storyboard',
+    systemInstruction: 'You are a film director and storyboard artist. Generate a coherent cinematic storyboard from polished beats. Respect beat order and pacing. If a filmType is provided, lean strongly into that visual language and storytelling grammar. Return only JSON with shape { writeup, storyboard, extras } and each storyboard item must include beatId and imagePrompt. imagePrompt should be a concise visual generation prompt for a single storyboard frame.',
     payload: {
       title: args.title,
       style: args.style || 'cinematic',
+      filmType: args.filmType || '',
       styleBible: args.styleBible || null,
       prompt: args.prompt || 'Generate a cinematic storyboard package.',
       synopsis: args.synopsis,

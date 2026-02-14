@@ -75,8 +75,9 @@ db.exec(`
     title TEXT NOT NULL,
     pseudoSynopsis TEXT NOT NULL,
     polishedSynopsis TEXT DEFAULT '',
+    plotScript TEXT DEFAULT '',
     style TEXT DEFAULT 'cinematic',
-    durationMinutes INTEGER DEFAULT 10,
+    durationMinutes INTEGER DEFAULT 1,
     status TEXT DEFAULT 'draft',
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL
@@ -135,6 +136,26 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS scene_videos (
+    id TEXT PRIMARY KEY,
+    projectId TEXT NOT NULL,
+    packageId TEXT NOT NULL,
+    beatId TEXT NOT NULL,
+    provider TEXT DEFAULT 'local-ffmpeg',
+    prompt TEXT DEFAULT '',
+    sourceImageUrl TEXT DEFAULT '',
+    status TEXT DEFAULT 'queued',
+    jobId TEXT DEFAULT '',
+    videoUrl TEXT DEFAULT '',
+    durationSeconds INTEGER DEFAULT 5,
+    error TEXT DEFAULT '',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS project_style_bibles (
     projectId TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
@@ -143,6 +164,30 @@ db.exec(`
     FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
   )
 `);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS app_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL
+  )
+`);
+
+const migrationKey = 'projects_duration_to_one_min_v1';
+const alreadyRan = db.query('SELECT value FROM app_meta WHERE key = ?').get(migrationKey) as { value?: string } | null;
+if (alreadyRan?.value !== 'done') {
+  const now = Date.now();
+  const result = db.query('UPDATE projects SET durationMinutes = 1 WHERE durationMinutes IS NULL OR durationMinutes != 1').run() as { changes?: number };
+  db.query(`
+    INSERT INTO app_meta (key, value, updatedAt)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt
+  `).run(migrationKey, 'done', now);
+  const changed = Number(result?.changes || 0);
+  if (changed > 0) {
+    console.log(`Migrated ${changed} project(s) to 1-minute duration`);
+  }
+}
 
 const anecdoteCount = db.query('SELECT COUNT(*) as count FROM anecdotes').get() as { count: number };
 const subscriberCount = db.query('SELECT COUNT(*) as count FROM subscribers').get() as { count: number };

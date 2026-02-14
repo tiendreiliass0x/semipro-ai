@@ -1,4 +1,4 @@
-import type { Anecdote, ContinuityIssue, MovieProject, ProjectBeat, ProjectStyleBible, RefinedSynopsis, StoryNote, Storyline, StoryboardScene, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
+import type { Anecdote, ContinuityIssue, MovieProject, ProjectBeat, ProjectStyleBible, RefinedSynopsis, SceneVideoJob, StoryNote, Storyline, StoryboardScene, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
 
 // Get the base URL without /api suffix for uploads
 const getBaseUrl = () => {
@@ -214,7 +214,7 @@ export const api = {
   getProjectNotes: (projectId: string) =>
     fetchApi<{ items: StoryNote[] }>(`/projects/${projectId}/notes`),
 
-  addProjectNote: (projectId: string, payload: { rawText: string; source?: 'typed' | 'audio'; transcript?: string; minuteMark?: number }) =>
+  addProjectNote: (projectId: string, payload: { rawText: string; source?: 'typed' | 'audio' | 'ai_starter'; transcript?: string; minuteMark?: number }) =>
     fetchApi<{ success: boolean; item: StoryNote }>(`/projects/${projectId}/notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -258,11 +258,11 @@ export const api = {
       body: JSON.stringify({ mode, dryRun }),
     }),
 
-  generateProjectStoryboard: (projectId: string, prompt?: string) =>
+  generateProjectStoryboard: (projectId: string, prompt?: string, filmType?: string) =>
     fetchApi<{ success: boolean; result: StorylineGenerationResult; package: StorylinePackageRecord }>(`/projects/${projectId}/storyboard/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: prompt || '' }),
+      body: JSON.stringify({ prompt: prompt || '', filmType: filmType || '' }),
     }),
 
   getLatestProjectStoryboard: (projectId: string) =>
@@ -274,6 +274,19 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ beatId, locked }),
     }),
+
+  generateSceneVideo: (projectId: string, beatId: string, prompt?: string, filmType?: string) =>
+    fetchApi<{ success: boolean; item: SceneVideoJob }>(`/projects/${projectId}/storyboard/${beatId}/video`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: prompt || '', filmType: filmType || '' }),
+    }),
+
+  getSceneVideo: (projectId: string, beatId: string) =>
+    fetchApi<{ item: SceneVideoJob | null }>(`/projects/${projectId}/storyboard/${beatId}/video`),
+
+  listSceneVideos: (projectId: string) =>
+    fetchApi<{ items: SceneVideoJob[] }>(`/projects/${projectId}/storyboard/videos`),
 
   // Verify access key
   verifyKey: async (key: string): Promise<{ valid: boolean; error?: string }> => {

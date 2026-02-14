@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Clapperboard, Lock, Mic, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, Loader2, Video, RefreshCcw, PlayCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
-import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectStyleBible, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
+import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectStyleBible, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
 
 export function ProjectStudio() {
   const { isAuthenticated } = useAuth();
@@ -22,15 +22,63 @@ export function ProjectStudio() {
   const [previewMode, setPreviewMode] = useState<'timeline' | 'intensity' | 'all' | null>(null);
   const [previewBeats, setPreviewBeats] = useState<ProjectBeat[]>([]);
   const [previewIssues, setPreviewIssues] = useState<ContinuityIssue[]>([]);
+  const [sceneVideosByBeatId, setSceneVideosByBeatId] = useState<Record<string, SceneVideoJob>>({});
 
-  const [newTitle, setNewTitle] = useState('Untitled Project');
-  const [newPseudoSynopsis, setNewPseudoSynopsis] = useState('A struggling young artist gets one chance to stage a comeback performance while family pressure and self-doubt threaten to break his momentum.');
+  const [newTitle, setNewTitle] = useState('');
+  const [newPseudoSynopsis, setNewPseudoSynopsis] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [directorPrompt, setDirectorPrompt] = useState('Cinematic, emotionally grounded, practical for low-budget production.');
+  const [filmType, setFilmType] = useState('cinematic live-action');
+  const [sceneFilmTypeByBeatId, setSceneFilmTypeByBeatId] = useState<Record<string, string>>({});
+  const [synopsisTab, setSynopsisTab] = useState<'pseudo' | 'polished' | 'plotScript'>('pseudo');
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
-  const [isRecordingIdea, setIsRecordingIdea] = useState(false);
   const [isRecordCreating, setIsRecordCreating] = useState(false);
+  const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isRefiningSynopsis, setIsRefiningSynopsis] = useState(false);
+  const [isSavingStyleBible, setIsSavingStyleBible] = useState(false);
+  const [isAddingNote, setIsAddingNote] = useState(false);
+  const [isPolishingBeats, setIsPolishingBeats] = useState(false);
+  const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
+  const [isCheckingContinuity, setIsCheckingContinuity] = useState(false);
+  const [isPreviewingFix, setIsPreviewingFix] = useState<'timeline' | 'intensity' | 'all' | null>(null);
+  const [isApplyingFix, setIsApplyingFix] = useState(false);
+  const [isGeneratingVideoBeatId, setIsGeneratingVideoBeatId] = useState<string | null>(null);
+  const [notesFilter, setNotesFilter] = useState<'all' | 'mine' | 'ai_starter'>('all');
+  const [isGeneratingAllVideos, setIsGeneratingAllVideos] = useState(false);
+  const [isRefreshingVideos, setIsRefreshingVideos] = useState(false);
+  const [videoPromptByBeatId, setVideoPromptByBeatId] = useState<Record<string, string>>({});
+  const beatsScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const filmTypeOptions = [
+    'cinematic live-action',
+    'manga anime style',
+    'lego movie style',
+    'pixar-inspired stylized 3d',
+    'hand-painted watercolor animation',
+    'neo-noir graphic novel',
+    'retro 80s cyberpunk',
+    'documentary realism',
+  ];
+
+  const cameraMoves = [
+    'Truck left',
+    'Truck right',
+    'Pan left',
+    'Pan right',
+    'Push in',
+    'Pull out',
+    'Pedestal up',
+    'Pedestal down',
+    'Tilt up',
+    'Tilt down',
+    'Zoom in',
+    'Zoom out',
+    'Shake',
+    'Tracking shot',
+    'Static shot',
+  ] as const;
 
   useEffect(() => {
     const load = async () => {
@@ -49,15 +97,47 @@ export function ProjectStudio() {
     return projects.find(project => project.id === selectedProjectId) || null;
   }, [projects, selectedProjectId]);
 
+  const filteredNotes = useMemo(() => {
+    if (notesFilter === 'all') return notes;
+    if (notesFilter === 'ai_starter') return notes.filter(note => note.source === 'ai_starter');
+    return notes.filter(note => note.source !== 'ai_starter');
+  }, [notes, notesFilter]);
+
+  const createStarterBeatStories = (synopsis: string): string[] => {
+    const intro = (synopsis || '').trim().split(/\n+/)[0] || '';
+    if (!intro) return [];
+
+    const sentences = intro
+      .split(/(?<=[.!?])\s+/)
+      .map(item => item.trim())
+      .filter(Boolean);
+
+    const seeds = sentences.length > 0 ? sentences : [intro];
+    const maxCount = 5;
+    const targetCount = Math.max(4, Math.min(maxCount, seeds.length));
+    const drafts: string[] = [];
+
+    for (let index = 0; index < targetCount; index++) {
+      const source = seeds[index % seeds.length];
+      const cleaned = source.replace(/["“”]/g, '').trim();
+      if (!cleaned) continue;
+      const prefix = index === 0 ? 'Opening setup:' : index === targetCount - 1 ? 'Tension rise:' : 'Beat story:';
+      drafts.push(`${prefix} ${cleaned}`);
+    }
+
+    return Array.from(new Set(drafts)).slice(0, maxCount);
+  };
+
   useEffect(() => {
     if (!selectedProject) return;
     const loadDetails = async () => {
-      const [notesResponse, beatsResponse, storyboardResponse, styleBibleResponse, continuityResponse] = await Promise.all([
+      const [notesResponse, beatsResponse, storyboardResponse, styleBibleResponse, continuityResponse, videosResponse] = await Promise.all([
         api.getProjectNotes(selectedProject.id).catch(() => ({ items: [] })),
         api.getProjectBeats(selectedProject.id).catch(() => ({ items: [] })),
         api.getLatestProjectStoryboard(selectedProject.id).catch(() => ({ item: null })),
         api.getProjectStyleBible(selectedProject.id).catch(() => ({ item: { visualStyle: '', cameraGrammar: '', doList: [], dontList: [] } })),
         api.checkProjectContinuity(selectedProject.id).catch(() => ({ success: true, issues: [] })),
+        api.listSceneVideos(selectedProject.id).catch(() => ({ items: [] })),
       ]);
       setNotes(notesResponse.items || []);
       setBeats(beatsResponse.items || []);
@@ -65,12 +145,35 @@ export function ProjectStudio() {
       setGeneratedPackage(storyboardResponse.item?.payload || null);
       setStyleBible(styleBibleResponse.item);
       setContinuityIssues(continuityResponse.issues || []);
+      const byBeat: Record<string, SceneVideoJob> = {};
+      (videosResponse.items || []).forEach(item => {
+        if (item?.beatId) byBeat[item.beatId] = item;
+      });
+      setSceneVideosByBeatId(byBeat);
     };
     loadDetails();
   }, [selectedProject?.id]);
 
+  useEffect(() => {
+    if (!selectedProject?.id) return;
+    const hasRunning = Object.values(sceneVideosByBeatId).some(item => item.status === 'queued' || item.status === 'processing');
+    if (!hasRunning) return;
+
+    const timer = setInterval(async () => {
+      const response = await api.listSceneVideos(selectedProject.id).catch(() => ({ items: [] }));
+      const byBeat: Record<string, SceneVideoJob> = {};
+      (response.items || []).forEach(item => {
+        if (item?.beatId) byBeat[item.beatId] = item;
+      });
+      setSceneVideosByBeatId(byBeat);
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [selectedProject?.id, sceneVideosByBeatId]);
+
   const saveStyleBible = async () => {
     if (!selectedProject || !isAuthenticated) return;
+    setIsSavingStyleBible(true);
     setBusyMessage('Saving style bible...');
     try {
       const response = await api.updateProjectStyleBible(selectedProject.id, styleBible);
@@ -78,24 +181,32 @@ export function ProjectStudio() {
       setBusyMessage('Style bible saved.');
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to save style bible');
+    } finally {
+      setIsSavingStyleBible(false);
     }
   };
 
   const createProjectFromInput = async (input: { pseudoSynopsis: string; title?: string }) => {
     if (!isAuthenticated || !input.pseudoSynopsis.trim()) return;
+    setIsCreatingProject(true);
     setBusyMessage('Creating project...');
     try {
       const created = await api.createProject({
         title: (input.title || '').trim() || undefined,
         pseudoSynopsis: input.pseudoSynopsis.trim(),
         style: 'cinematic',
-        durationMinutes: 10,
+        durationMinutes: 1,
       });
       setProjects(prev => [created, ...prev]);
       setSelectedProjectId(created.id);
+      setShowCreateProjectModal(false);
+      setNewTitle('');
+      setNewPseudoSynopsis('');
       setBusyMessage('Project created.');
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to create project');
+    } finally {
+      setIsCreatingProject(false);
     }
   };
 
@@ -104,6 +215,51 @@ export function ProjectStudio() {
       title: newTitle,
       pseudoSynopsis: newPseudoSynopsis,
     });
+  };
+
+  const startNoteRecording = () => {
+    if (!selectedProject?.id || !isAuthenticated) return;
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setBusyMessage('Speech recognition is not supported in this browser.');
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    let finalText = '';
+    recognition.onstart = () => {
+      setIsListening(true);
+      setBusyMessage('Listening... speak your beat story.');
+    };
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalText += transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+      if (interim) setBusyMessage(`Listening... ${interim}`);
+    };
+    recognition.onerror = () => {
+      setBusyMessage('Could not capture audio note. Try again.');
+      setIsListening(false);
+    };
+    recognition.onend = async () => {
+      setIsListening(false);
+      const text = finalText.trim();
+      if (!text) return;
+      setNoteInput(prev => `${prev ? `${prev}\n` : ''}${text}`.trim());
+      setBusyMessage('Audio captured. Review then click Add.');
+    };
+
+    recognition.start();
   };
 
   const recordProjectIdea = () => {
@@ -119,55 +275,8 @@ export function ProjectStudio() {
 
     let finalText = '';
     recognition.onstart = () => {
-      setIsRecordingIdea(true);
-      setBusyMessage('Listening... dump your idea naturally.');
-    };
-    recognition.onresult = (event: any) => {
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalText += `${transcript} `;
-        } else {
-          interim += transcript;
-        }
-      }
-      if (interim) setBusyMessage(`Listening... ${interim}`);
-    };
-    recognition.onerror = () => {
-      setBusyMessage('Could not capture project idea audio. Try again.');
-      setIsRecordingIdea(false);
-    };
-    recognition.onend = () => {
-      setIsRecordingIdea(false);
-      const text = finalText.trim();
-      if (!text) return;
-      setNewPseudoSynopsis(prev => `${prev ? `${prev}\n\n` : ''}${text}`.trim());
-      if (!newTitle.trim()) {
-        const draftTitle = text.split(/\s+/).slice(0, 6).join(' ').replace(/[.,!?;:]+$/g, '');
-        setNewTitle(draftTitle);
-      }
-      setBusyMessage('Audio idea captured. Tap New Project to continue.');
-    };
-
-    recognition.start();
-  };
-
-  const recordAndCreateProject = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setBusyMessage('Speech recognition is not supported in this browser.');
-      return;
-    }
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.interimResults = true;
-    recognition.continuous = false;
-
-    let finalText = '';
-    recognition.onstart = () => {
       setIsRecordCreating(true);
-      setBusyMessage('Listening... your project will be created automatically.');
+      setBusyMessage('Listening... capture your project idea.');
     };
     recognition.onresult = (event: any) => {
       let interim = '';
@@ -199,10 +308,11 @@ export function ProjectStudio() {
         .join(' ')
         .replace(/[.,!?;:]+$/g, '');
 
-      await createProjectFromInput({
-        title: newTitle.trim() || generatedTitle,
-        pseudoSynopsis: transcript,
-      });
+      setNewPseudoSynopsis(prev => `${prev ? `${prev}\n\n` : ''}${transcript}`.trim());
+      if (!newTitle.trim()) {
+        setNewTitle(generatedTitle);
+      }
+      setBusyMessage('Audio idea captured. Click Create Project when ready.');
     };
 
     recognition.start();
@@ -210,18 +320,36 @@ export function ProjectStudio() {
 
   const refineSynopsis = async () => {
     if (!selectedProject || !isAuthenticated) return;
+    setIsRefiningSynopsis(true);
     setBusyMessage('Refining synopsis...');
     try {
       const response = await api.refineProjectSynopsis(selectedProject.id);
       setProjects(prev => prev.map(project => project.id === selectedProject.id ? response.project : project));
+
+      if (notes.length === 0) {
+        const starterBeatStories = createStarterBeatStories(response.refined?.synopsis || response.project?.polishedSynopsis || '');
+        if (starterBeatStories.length > 0) {
+          setBusyMessage('Seeding starter beat stories...');
+          const seededItems: StoryNote[] = [];
+          for (const rawText of starterBeatStories) {
+            const seeded = await api.addProjectNote(selectedProject.id, { rawText, source: 'ai_starter' });
+            seededItems.push(seeded.item);
+          }
+          setNotes(seededItems);
+        }
+      }
+
       setBusyMessage('Synopsis polished.');
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to refine synopsis');
+    } finally {
+      setIsRefiningSynopsis(false);
     }
   };
 
   const addNote = async () => {
     if (!selectedProject || !isAuthenticated || !noteInput.trim()) return;
+    setIsAddingNote(true);
     setBusyMessage('Adding note...');
     try {
       const response = await api.addProjectNote(selectedProject.id, { rawText: noteInput.trim(), source: 'typed' });
@@ -230,59 +358,16 @@ export function ProjectStudio() {
       setBusyMessage('Note added.');
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to add note');
+    } finally {
+      setIsAddingNote(false);
     }
   };
 
-  const recordNote = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setBusyMessage('Speech recognition is not supported in this browser.');
-      return;
-    }
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.interimResults = true;
-    recognition.continuous = false;
-
-    let finalText = '';
-    recognition.onstart = () => {
-      setIsListening(true);
-      setBusyMessage('Listening... speak your pseudo-beat.');
-    };
-    recognition.onresult = (event: any) => {
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalText += transcript;
-        } else {
-          interim += transcript;
-        }
-      }
-      if (interim) setBusyMessage(`Listening... ${interim}`);
-    };
-    recognition.onerror = () => {
-      setBusyMessage('Could not capture audio note. Try again.');
-      setIsListening(false);
-    };
-    recognition.onend = async () => {
-      setIsListening(false);
-      const text = finalText.trim();
-      if (!text || !selectedProject || !isAuthenticated) return;
-      try {
-        const response = await api.addProjectNote(selectedProject.id, { rawText: text, transcript: text, source: 'audio' });
-        setNotes(prev => [...prev, response.item]);
-        setBusyMessage('Audio note added.');
-      } catch (error) {
-        setBusyMessage(error instanceof Error ? error.message : 'Failed to save audio note');
-      }
-    };
-
-    recognition.start();
-  };
+  const recordNote = () => startNoteRecording();
 
   const polishBeats = async () => {
     if (!selectedProject || !isAuthenticated) return;
+    setIsPolishingBeats(true);
     setBusyMessage('Polishing beats from notes...');
     try {
       const response = await api.polishProjectBeats(selectedProject.id);
@@ -290,6 +375,8 @@ export function ProjectStudio() {
       setBusyMessage(`Generated ${response.items.length} polished beats.`);
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to polish beats');
+    } finally {
+      setIsPolishingBeats(false);
     }
   };
 
@@ -319,6 +406,7 @@ export function ProjectStudio() {
 
   const runContinuityCheck = async () => {
     if (!selectedProject) return;
+    setIsCheckingContinuity(true);
     setBusyMessage('Running continuity check...');
     try {
       const response = await api.checkProjectContinuity(selectedProject.id);
@@ -326,11 +414,14 @@ export function ProjectStudio() {
       setBusyMessage(`Continuity check complete: ${response.issues.length} issue(s).`);
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed continuity check');
+    } finally {
+      setIsCheckingContinuity(false);
     }
   };
 
   const previewContinuityFix = async (mode: 'timeline' | 'intensity' | 'all') => {
     if (!selectedProject || !isAuthenticated) return;
+    setIsPreviewingFix(mode);
     setBusyMessage(`Previewing ${mode} continuity fix...`);
     try {
       const response = await api.fixProjectContinuity(selectedProject.id, mode, true);
@@ -340,11 +431,14 @@ export function ProjectStudio() {
       setBusyMessage(`Preview ready (${mode}).`);
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to preview continuity fix');
+    } finally {
+      setIsPreviewingFix(null);
     }
   };
 
   const applyPreviewFix = async () => {
     if (!selectedProject || !previewMode || !isAuthenticated) return;
+    setIsApplyingFix(true);
     setBusyMessage(`Applying ${previewMode} continuity fix...`);
     try {
       const response = await api.fixProjectContinuity(selectedProject.id, previewMode, false);
@@ -356,6 +450,8 @@ export function ProjectStudio() {
       setBusyMessage(`Auto-fix (${response.mode}) applied. ${response.issues.length} issue(s) remain.`);
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed continuity auto-fix');
+    } finally {
+      setIsApplyingFix(false);
     }
   };
 
@@ -385,8 +481,13 @@ export function ProjectStudio() {
   }, [beats, previewBeats, previewMode]);
 
   const getSceneFrameUrl = (scene: any) => {
-    if (scene.imageUrl && typeof scene.imageUrl === 'string' && scene.imageUrl.startsWith('/uploads/')) {
-      return api.getUploadsUrl(scene.imageUrl);
+    if (scene.imageUrl && typeof scene.imageUrl === 'string') {
+      if (scene.imageUrl.startsWith('/uploads/')) {
+        return api.getUploadsUrl(scene.imageUrl);
+      }
+      if (scene.imageUrl.startsWith('http://') || scene.imageUrl.startsWith('https://')) {
+        return scene.imageUrl;
+      }
     }
 
     const basePrompt = scene.imagePrompt || `${scene.slugline}. ${scene.visualDirection}`;
@@ -396,36 +497,140 @@ export function ProjectStudio() {
     return `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1024&height=576&seed=${seed}&nologo=true`;
   };
 
+  const getSceneVideoUrl = (videoUrl: string) => {
+    if (!videoUrl) return '';
+    if (videoUrl.startsWith('http://') || videoUrl.startsWith('https://')) return videoUrl;
+    return api.getUploadsUrl(videoUrl);
+  };
+
   const generateStoryboard = async () => {
     if (!selectedProject || !isAuthenticated) return;
+    setIsGeneratingStoryboard(true);
     setBusyMessage('Generating storyboard package...');
     try {
-      const response = await api.generateProjectStoryboard(selectedProject.id, directorPrompt);
+      const response = await api.generateProjectStoryboard(selectedProject.id, directorPrompt, filmType);
       setGeneratedPackage(response.result);
       setLatestPackage(response.package);
       setBusyMessage(`Storyboard generated (v${response.package.version}).`);
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to generate storyboard');
+    } finally {
+      setIsGeneratingStoryboard(false);
     }
   };
 
+  const generateSceneVideo = async (beatId: string, promptOverride?: string) => {
+    if (!selectedProject?.id || !isAuthenticated) return;
+    setIsGeneratingVideoBeatId(beatId);
+    setBusyMessage('Queueing scene video render...');
+    try {
+      const prompt = [directorPrompt, (promptOverride || '').trim()].filter(Boolean).join('\n');
+      const response = await api.generateSceneVideo(selectedProject.id, beatId, prompt, sceneFilmTypeByBeatId[beatId] || filmType);
+      setSceneVideosByBeatId(prev => ({ ...prev, [beatId]: response.item }));
+      setBusyMessage('Scene video job queued. Rendering in background...');
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to generate scene video');
+    } finally {
+      setIsGeneratingVideoBeatId(null);
+    }
+  };
+
+  const refreshSceneVideoStatuses = async () => {
+    if (!selectedProject?.id) return;
+    setIsRefreshingVideos(true);
+    try {
+      const response = await api.listSceneVideos(selectedProject.id);
+      const byBeat: Record<string, SceneVideoJob> = {};
+      (response.items || []).forEach(item => {
+        if (item?.beatId) byBeat[item.beatId] = item;
+      });
+      setSceneVideosByBeatId(byBeat);
+    } finally {
+      setIsRefreshingVideos(false);
+    }
+  };
+
+  const generateAllSceneVideos = async () => {
+    if (!selectedProject?.id || !generatedPackage?.storyboard?.length || !isAuthenticated) return;
+    setIsGeneratingAllVideos(true);
+    setBusyMessage('Queueing all scene videos...');
+    try {
+      for (const scene of generatedPackage.storyboard) {
+        const existing = sceneVideosByBeatId[scene.beatId];
+        if (existing?.status === 'queued' || existing?.status === 'processing') continue;
+        const prompt = [directorPrompt, (videoPromptByBeatId[scene.beatId] || '').trim()].filter(Boolean).join('\n');
+        const response = await api.generateSceneVideo(selectedProject.id, scene.beatId, prompt, sceneFilmTypeByBeatId[scene.beatId] || filmType).catch(() => null);
+        if (response?.item) {
+          setSceneVideosByBeatId(prev => ({ ...prev, [scene.beatId]: response.item }));
+        }
+      }
+      setBusyMessage('All scene video jobs queued. Rendering in background...');
+    } finally {
+      setIsGeneratingAllVideos(false);
+    }
+  };
+
+  const videoStats = useMemo(() => {
+    if (!generatedPackage?.storyboard?.length) {
+      return { total: 0, completed: 0, processing: 0, failed: 0, queued: 0, progress: 0 };
+    }
+
+    const total = generatedPackage.storyboard.length;
+    let completed = 0;
+    let processing = 0;
+    let failed = 0;
+    let queued = 0;
+
+    generatedPackage.storyboard.forEach(scene => {
+      const status = sceneVideosByBeatId[scene.beatId]?.status;
+      if (status === 'completed') completed += 1;
+      else if (status === 'processing') processing += 1;
+      else if (status === 'failed') failed += 1;
+      else if (status === 'queued') queued += 1;
+    });
+
+    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, processing, failed, queued, progress };
+  }, [generatedPackage, sceneVideosByBeatId]);
+
+  const appendCameraMoveToPrompt = (beatId: string, move: string) => {
+    setVideoPromptByBeatId(prev => {
+      const current = (prev[beatId] || '').trim();
+      if (!current) return { ...prev, [beatId]: move };
+      return { ...prev, [beatId]: `${current}, ${move}` };
+    });
+  };
+
+  const scrollBeats = (direction: 'left' | 'right') => {
+    if (!beatsScrollRef.current) return;
+    beatsScrollRef.current.scrollBy({
+      left: direction === 'left' ? -360 : 360,
+      behavior: 'smooth',
+    });
+  };
+
   return (
-    <section id="project-studio" className="relative min-h-screen py-20 px-4">
+    <section id="project-studio" className="relative min-h-screen py-20 px-4 overflow-hidden">
+      <div className="pointer-events-none absolute -top-24 -left-20 w-80 h-80 bg-cyan-500/15 blur-3xl rounded-full" />
+      <div className="pointer-events-none absolute top-1/3 -right-24 w-96 h-96 bg-amber-500/10 blur-3xl rounded-full" />
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-10">
-          <h2 className="font-display text-4xl md:text-5xl text-white mb-3">DIRECTOR STUDIO</h2>
-          <p className="text-gray-400">From rough idea to minute-by-minute cinematic blueprint.</p>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 text-xs uppercase tracking-widest mb-4">
+            <Compass className="w-3.5 h-3.5" /> Semipro Workflow
+          </div>
+          <h2 className="font-display text-4xl md:text-5xl text-white mb-3 bg-gradient-to-r from-cyan-200 via-white to-amber-200 bg-clip-text text-transparent">SEMIPRO AI</h2>
+          <p className="text-gray-400">From rough idea to scene-by-scene cinematic production workflow.</p>
         </div>
 
-        <div className="grid lg:grid-cols-[320px_1fr] gap-6">
-          <aside className="rounded-2xl border border-gray-800 bg-black/35 p-4 h-fit">
+        <div className="grid lg:grid-cols-[320px_minmax(0,1fr)] gap-6">
+          <aside className="rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-[#07131f]/80 to-black/70 p-4 h-fit shadow-xl shadow-cyan-950/20">
             <p className="text-xs uppercase tracking-widest text-gray-500 mb-3">Projects</p>
             <div className="space-y-2 mb-4">
               {projects.map(project => (
                 <button
                   key={project.id}
                   onClick={() => setSelectedProjectId(project.id)}
-                  className={`w-full text-left rounded-lg border px-3 py-2 text-sm ${selectedProjectId === project.id ? 'border-[#D0FF59] text-[#D0FF59] bg-[#D0FF59]/10' : 'border-gray-800 text-gray-300'}`}
+                    className={`w-full text-left rounded-lg border px-3 py-2 text-sm ${selectedProjectId === project.id ? 'border-cyan-300/70 text-cyan-100 bg-cyan-400/10' : 'border-gray-800 text-gray-300 bg-black/30'}`}
                 >
                   <p className="font-medium truncate">{project.title}</p>
                   <p className="text-xs text-gray-500 mt-1">{project.durationMinutes} min · {project.style}</p>
@@ -435,129 +640,215 @@ export function ProjectStudio() {
 
             {isAuthenticated && (
               <div className="space-y-2 border-t border-gray-800 pt-4">
-                <input value={newTitle} onChange={event => setNewTitle(event.target.value)} className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm" placeholder="Project title (optional)" />
-                <textarea value={newPseudoSynopsis} onChange={event => setNewPseudoSynopsis(event.target.value)} className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-24" placeholder="Dump your rough movie idea here (typed or audio)" />
-                <button onClick={recordProjectIdea} disabled={!isAuthenticated || isRecordingIdea} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 disabled:opacity-50">
-                  <Mic className="w-4 h-4" /> {isRecordingIdea ? 'Listening...' : 'Record Idea'}
-                </button>
-                <button onClick={recordAndCreateProject} disabled={!isAuthenticated || isRecordCreating} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-white text-black text-sm font-semibold disabled:opacity-50">
-                  <Mic className="w-4 h-4" /> {isRecordCreating ? 'Listening...' : 'Record & Create'}
-                </button>
-                <button onClick={createProject} disabled={!newPseudoSynopsis.trim() || !isAuthenticated} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
+                <button
+                  onClick={() => setShowCreateProjectModal(true)}
+                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold"
+                >
                   <Plus className="w-4 h-4" /> New Project
                 </button>
               </div>
             )}
           </aside>
 
-          <div className="space-y-6">
-            {!selectedProject && <div className="rounded-2xl border border-gray-800 bg-black/30 p-6 text-gray-400">Create your first project to start.</div>}
+          <div className="space-y-6 min-w-0">
+            {!selectedProject && <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-black/70 to-[#111827]/60 p-6 text-gray-300">Create your first project to start.</div>}
 
             {selectedProject && (
               <>
-                <div className="rounded-2xl border border-gray-800 bg-black/35 p-5">
+                <div className="rounded-2xl border border-amber-400/20 bg-gradient-to-br from-[#1b1307]/70 via-black/60 to-[#07131f]/70 p-5">
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <h3 className="text-2xl text-white font-semibold">{selectedProject.title}</h3>
-                    <span className="text-xs uppercase tracking-widest text-gray-500">10-min cinematic</span>
+                    <span className="text-xs uppercase tracking-widest text-gray-500">{selectedProject.durationMinutes}-min cinematic</span>
                   </div>
-                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Pseudo Synopsis</p>
-                  <p className="text-sm text-gray-300 whitespace-pre-line">{selectedProject.pseudoSynopsis}</p>
-                  <p className="text-xs uppercase tracking-widest text-gray-500 mt-4 mb-1">Polished Synopsis</p>
-                  <p className="text-sm text-gray-200 whitespace-pre-line">{selectedProject.polishedSynopsis || 'Not polished yet.'}</p>
-                  <button onClick={refineSynopsis} disabled={!isAuthenticated} className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 hover:text-[#D0FF59] disabled:opacity-50">
-                    <Wand2 className="w-4 h-4" /> Polish Synopsis
+
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {([
+                      { id: 'pseudo', label: 'Pseudo Synopsis' },
+                      { id: 'polished', label: 'Polished Synopsis' },
+                      { id: 'plotScript', label: 'Plot Script' },
+                    ] as const).map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setSynopsisTab(tab.id)}
+                        className={`text-xs uppercase tracking-widest px-2 py-1 rounded border ${synopsisTab === tab.id ? 'border-amber-300/70 text-amber-100 bg-amber-400/10' : 'border-gray-700 text-gray-400'}`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {synopsisTab === 'pseudo' && (
+                    <p className="text-sm text-gray-300 whitespace-pre-line">{selectedProject.pseudoSynopsis}</p>
+                  )}
+                  {synopsisTab === 'polished' && (
+                    <p className="text-sm text-gray-200 whitespace-pre-line">{selectedProject.polishedSynopsis || 'Not polished yet.'}</p>
+                  )}
+                  {synopsisTab === 'plotScript' && (
+                    <p className="text-sm text-gray-200 whitespace-pre-line">{selectedProject.plotScript || 'Generate polished synopsis to produce plot script.'}</p>
+                  )}
+
+                  <button onClick={refineSynopsis} disabled={!isAuthenticated || isRefiningSynopsis} className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 hover:text-cyan-200 disabled:opacity-50">
+                    {isRefiningSynopsis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} {isRefiningSynopsis ? 'Polishing...' : 'Polish Synopsis'}
                   </button>
                 </div>
 
-                <div className="rounded-2xl border border-gray-800 bg-black/35 p-5">
-                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-3">Style Bible</p>
-                  <div className="grid md:grid-cols-2 gap-3">
-                    <textarea
-                      value={styleBible.visualStyle}
-                      onChange={event => setStyleBible(prev => ({ ...prev, visualStyle: event.target.value }))}
-                      className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
-                      placeholder="Visual style"
-                    />
-                    <textarea
-                      value={styleBible.cameraGrammar}
-                      onChange={event => setStyleBible(prev => ({ ...prev, cameraGrammar: event.target.value }))}
-                      className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
-                      placeholder="Camera grammar"
-                    />
-                    <textarea
-                      value={(styleBible.doList || []).join('\n')}
-                      onChange={event => setStyleBible(prev => ({ ...prev, doList: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) }))}
-                      className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
-                      placeholder="Do list (one per line)"
-                    />
-                    <textarea
-                      value={(styleBible.dontList || []).join('\n')}
-                      onChange={event => setStyleBible(prev => ({ ...prev, dontList: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) }))}
-                      className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
-                      placeholder="Don't list (one per line)"
-                    />
-                  </div>
-                  <button onClick={saveStyleBible} disabled={!isAuthenticated} className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 hover:text-[#D0FF59] disabled:opacity-50">
-                    <Sparkles className="w-4 h-4" /> Save Style Bible
-                  </button>
+                <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-[#08121f]/70 to-black/60 p-5">
+                  <details>
+                    <summary className="cursor-pointer list-none flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-2 text-xs uppercase tracking-widest text-cyan-200"><Palette className="w-4 h-4" /> Style Bible</span>
+                      <span className="text-[11px] text-gray-500">Tap to expand</span>
+                    </summary>
+                    <div className="grid md:grid-cols-2 gap-3 mt-4">
+                      <textarea
+                        value={styleBible.visualStyle}
+                        onChange={event => setStyleBible(prev => ({ ...prev, visualStyle: event.target.value }))}
+                        className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
+                        placeholder="Visual style"
+                      />
+                      <textarea
+                        value={styleBible.cameraGrammar}
+                        onChange={event => setStyleBible(prev => ({ ...prev, cameraGrammar: event.target.value }))}
+                        className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
+                        placeholder="Camera grammar"
+                      />
+                      <textarea
+                        value={(styleBible.doList || []).join('\n')}
+                        onChange={event => setStyleBible(prev => ({ ...prev, doList: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) }))}
+                        className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
+                        placeholder="Do list (one per line)"
+                      />
+                      <textarea
+                        value={(styleBible.dontList || []).join('\n')}
+                        onChange={event => setStyleBible(prev => ({ ...prev, dontList: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) }))}
+                        className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
+                        placeholder="Don't list (one per line)"
+                      />
+                    </div>
+                    <button onClick={saveStyleBible} disabled={!isAuthenticated || isSavingStyleBible} className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 hover:text-cyan-200 disabled:opacity-50">
+                      {isSavingStyleBible ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} {isSavingStyleBible ? 'Saving...' : 'Save Style Bible'}
+                    </button>
+                  </details>
                 </div>
 
-                <div className="rounded-2xl border border-gray-800 bg-black/35 p-5">
-                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-3">Pseudo-Beat Capture</p>
+                <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-[#071712]/70 to-black/60 p-5">
+                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-3">Beat Story Capture</p>
                   <div className="flex gap-2">
-                    <textarea value={noteInput} onChange={event => setNoteInput(event.target.value)} className="flex-1 bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-16" placeholder="Type a rough beat note..." />
-                    <button onClick={addNote} disabled={!isAuthenticated} className="h-fit inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
-                      <Plus className="w-4 h-4" /> Add
+                    <textarea value={noteInput} onChange={event => setNoteInput(event.target.value)} className="flex-1 bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-16" placeholder="Type a beat story note..." />
+                    <button onClick={addNote} disabled={!isAuthenticated || isAddingNote} className="h-fit inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
+                      {isAddingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} {isAddingNote ? 'Adding...' : 'Add'}
                     </button>
                     <button onClick={recordNote} disabled={!isAuthenticated || isListening} className="h-fit inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-300 disabled:opacity-50">
                       <Mic className="w-4 h-4" /> {isListening ? 'Listening...' : 'Record'}
                     </button>
                   </div>
                   <div className="mt-3 space-y-2">
-                    {notes.map(note => (
-                      <div key={note.id} className="rounded-lg border border-gray-800 bg-black/30 px-3 py-2 text-sm text-gray-300">
-                        {note.rawText}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {([
+                        { key: 'all', label: 'All' },
+                        { key: 'mine', label: 'Mine' },
+                        { key: 'ai_starter', label: 'AI Starters' },
+                      ] as const).map(filter => (
+                        <button
+                          key={filter.key}
+                          onClick={() => setNotesFilter(filter.key)}
+                          className={`text-[11px] px-2 py-1 rounded border ${notesFilter === filter.key ? 'border-cyan-400/60 text-cyan-100 bg-cyan-500/10' : 'border-gray-700 text-gray-400'}`}
+                        >
+                          {filter.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                      <div className="flex gap-2 min-w-max pr-2">
+                        {filteredNotes.map(note => (
+                          <div key={note.id} className="w-[300px] md:w-[360px] shrink-0 rounded-lg border border-gray-800 bg-black/30 px-3 py-2 text-sm text-gray-300">
+                            {note.source === 'ai_starter' && (
+                              <p className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest text-cyan-200 mb-1">
+                                <Sparkles className="w-3 h-3" /> AI Starter
+                              </p>
+                            )}
+                            {(note.source === 'typed' || note.source === 'audio') && (
+                              <p className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest text-emerald-200 mb-1">
+                                <Mic className="w-3 h-3" /> Your Beat Story
+                              </p>
+                            )}
+                            {note.rawText}
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    </div>
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-gray-800 bg-black/35 p-5">
+                <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-[#120b1f]/70 to-black/60 p-5">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                    <p className="text-xs uppercase tracking-widest text-gray-500">Minute-by-Minute Timeline</p>
-                    <button onClick={polishBeats} disabled={!isAuthenticated} className="inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 hover:text-[#D0FF59] disabled:opacity-50">
-                      <Sparkles className="w-4 h-4" /> Polish Beats
-                    </button>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-2">
-                    {beats.map(beat => (
-                      <div key={beat.id} className="rounded-lg border border-gray-800 bg-black/30 p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs text-[#D0FF59]">{beat.minuteStart}m - {beat.minuteEnd}m</p>
-                          <button onClick={() => toggleBeatLock(beat)} disabled={!isAuthenticated} className="text-[11px] px-2 py-1 rounded border border-gray-700 text-gray-300 disabled:opacity-50">
-                            {beat.locked ? <span className="inline-flex items-center gap-1"><Lock className="w-3 h-3" />Locked</span> : <span className="inline-flex items-center gap-1"><Unlock className="w-3 h-3" />Unlocked</span>}
-                          </button>
-                        </div>
-                        <p className="text-sm text-gray-200 mt-1">{beat.polishedBeat}</p>
-                        <p className="text-xs text-gray-500 mt-2">Objective: {beat.objective || 'n/a'}</p>
+                    <p className="inline-flex items-center gap-1.5 text-xs uppercase tracking-widest text-violet-200">
+                      <Film className="w-4 h-4" /> Beat Scenes
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] text-violet-200/80">Swipe timeline</span>
+                      <div className="inline-flex items-center gap-1">
+                        <button onClick={() => scrollBeats('left')} className="p-1.5 rounded border border-gray-700 text-gray-300 hover:text-white">
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => scrollBeats('right')} className="p-1.5 rounded border border-gray-700 text-gray-300 hover:text-white">
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
                       </div>
-                    ))}
+                      <button onClick={polishBeats} disabled={!isAuthenticated || isPolishingBeats} className="inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 hover:text-[#D0FF59] disabled:opacity-50">
+                        {isPolishingBeats ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} {isPolishingBeats ? 'Polishing...' : 'Polish Beats'}
+                      </button>
+                    </div>
+                  </div>
+                  {isPolishingBeats && (
+                    <div className="mb-3 rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs text-violet-100 inline-flex items-center gap-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Building coherent beat timeline in background...
+                    </div>
+                  )}
+                  <div className="relative min-w-0">
+                    <div className="pointer-events-none absolute left-0 top-0 h-full w-8 bg-gradient-to-r from-[#120b1f] to-transparent z-10" />
+                    <div className="pointer-events-none absolute right-0 top-0 h-full w-8 bg-gradient-to-l from-[#120b1f] to-transparent z-10" />
+                    <div
+                      ref={beatsScrollRef}
+                      className="overflow-x-auto max-w-full pb-2"
+                      style={{ WebkitOverflowScrolling: 'touch' }}
+                      onWheel={event => {
+                        if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+                          event.currentTarget.scrollLeft += event.deltaY;
+                        }
+                      }}
+                    >
+                      <div className="flex gap-3 min-w-max pr-4">
+                      {beats.map(beat => (
+                        <div key={beat.id} className="w-[280px] md:w-[320px] shrink-0 rounded-lg border border-gray-800 bg-black/35 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs text-[#D0FF59]">{beat.minuteStart}m - {beat.minuteEnd}m</p>
+                            <button onClick={() => toggleBeatLock(beat)} disabled={!isAuthenticated} className="text-[11px] px-2 py-1 rounded border border-gray-700 text-gray-300 disabled:opacity-50">
+                              {beat.locked ? <span className="inline-flex items-center gap-1"><Lock className="w-3 h-3" />Locked</span> : <span className="inline-flex items-center gap-1"><Unlock className="w-3 h-3" />Unlocked</span>}
+                            </button>
+                          </div>
+                          <p className="text-sm text-gray-200 mt-1">{beat.polishedBeat}</p>
+                          <p className="text-xs text-gray-500 mt-2">Objective: {beat.objective || 'n/a'}</p>
+                        </div>
+                      ))}
+                      </div>
+                    </div>
                   </div>
                   <div className="mt-4 rounded-lg border border-gray-800 bg-black/25 p-3">
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <p className="text-xs uppercase tracking-widest text-gray-500">Continuity Checker</p>
                       <div className="flex flex-wrap items-center gap-2">
-                        <button onClick={runContinuityCheck} className="inline-flex items-center gap-1 text-xs px-2 py-1 border border-gray-700 rounded text-gray-300">
-                          <ShieldAlert className="w-3 h-3" /> Run Check
+                        <button onClick={runContinuityCheck} disabled={isCheckingContinuity} className="inline-flex items-center gap-1 text-xs px-2 py-1 border border-gray-700 rounded text-gray-300 disabled:opacity-50">
+                          {isCheckingContinuity ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldAlert className="w-3 h-3" />} {isCheckingContinuity ? 'Checking...' : 'Run Check'}
                         </button>
-                        <button onClick={() => previewContinuityFix('timeline')} disabled={!isAuthenticated} className="text-xs px-2 py-1 border border-gray-700 rounded text-gray-300 disabled:opacity-50">
-                          Preview Timeline
+                        <button onClick={() => previewContinuityFix('timeline')} disabled={!isAuthenticated || isPreviewingFix !== null} className="text-xs px-2 py-1 border border-gray-700 rounded text-gray-300 disabled:opacity-50">
+                          {isPreviewingFix === 'timeline' ? 'Previewing...' : 'Preview Timeline'}
                         </button>
-                        <button onClick={() => previewContinuityFix('intensity')} disabled={!isAuthenticated} className="text-xs px-2 py-1 border border-gray-700 rounded text-gray-300 disabled:opacity-50">
-                          Preview Intensity
+                        <button onClick={() => previewContinuityFix('intensity')} disabled={!isAuthenticated || isPreviewingFix !== null} className="text-xs px-2 py-1 border border-gray-700 rounded text-gray-300 disabled:opacity-50">
+                          {isPreviewingFix === 'intensity' ? 'Previewing...' : 'Preview Intensity'}
                         </button>
-                        <button onClick={() => previewContinuityFix('all')} disabled={!isAuthenticated} className="text-xs px-2 py-1 border border-gray-700 rounded text-[#D0FF59] disabled:opacity-50">
-                          Preview All
+                        <button onClick={() => previewContinuityFix('all')} disabled={!isAuthenticated || isPreviewingFix !== null} className="text-xs px-2 py-1 border border-gray-700 rounded text-[#D0FF59] disabled:opacity-50">
+                          {isPreviewingFix === 'all' ? 'Previewing...' : 'Preview All'}
                         </button>
                       </div>
                     </div>
@@ -576,25 +867,86 @@ export function ProjectStudio() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-gray-800 bg-black/35 p-5">
+                <div className="rounded-2xl border border-orange-500/20 bg-gradient-to-br from-[#1d1206]/70 to-black/60 p-5">
                   <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">Director Prompt</p>
                   <textarea value={directorPrompt} onChange={event => setDirectorPrompt(event.target.value)} className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-16" />
-                  <button onClick={generateStoryboard} disabled={!isAuthenticated} className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
-                    <Clapperboard className="w-4 h-4" /> Generate Storyboard
+                  <div className="mt-3">
+                    <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Film Type</p>
+                    <select
+                      value={filmType}
+                      onChange={event => setFilmType(event.target.value)}
+                      className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm text-gray-200"
+                    >
+                      {filmTypeOptions.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button onClick={generateStoryboard} disabled={!isAuthenticated || isGeneratingStoryboard} className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
+                    {isGeneratingStoryboard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clapperboard className="w-4 h-4" />} {isGeneratingStoryboard ? 'Generating...' : 'Generate Storyboard'}
                   </button>
                 </div>
 
+                {isGeneratingStoryboard && (
+                  <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4 text-sm text-cyan-100 inline-flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Creating scenes and rendering frame images in the background...
+                  </div>
+                )}
+
                 {generatedPackage && (
-                  <div className="rounded-2xl border border-gray-800 bg-black/40 p-5">
+                  <div className="rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-[#07131f]/70 via-black/60 to-[#1a1208]/70 p-5">
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                      <p className="text-xs uppercase tracking-widest text-gray-500">Story Package Workspace</p>
+                      <p className="text-xs uppercase tracking-widest text-gray-500"><Film className="w-4 h-4" /> Scenes Workspace</p>
                       {latestPackage && <p className="text-xs text-gray-500">v{latestPackage.version}</p>}
                     </div>
+
+                    <div className="mb-4 rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="inline-flex items-center gap-2 text-sm text-cyan-100">
+                          <Video className="w-4 h-4" /> Scene Video Studio
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={refreshSceneVideoStatuses}
+                            disabled={isRefreshingVideos}
+                            className="text-xs px-2 py-1 rounded border border-gray-700 text-gray-300 disabled:opacity-50 inline-flex items-center gap-1"
+                          >
+                            {isRefreshingVideos ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
+                          </button>
+                          <button
+                            onClick={generateAllSceneVideos}
+                            disabled={!isAuthenticated || isGeneratingAllVideos || videoStats.total === 0}
+                            className="text-xs px-2 py-1 rounded bg-[#D0FF59] text-black font-semibold disabled:opacity-50 inline-flex items-center gap-1"
+                          >
+                            {isGeneratingAllVideos ? <Loader2 className="w-3 h-3 animate-spin" /> : <PlayCircle className="w-3 h-3" />} Generate All Videos
+                          </button>
+                        </div>
+                      </div>
+                      <div className="w-full h-2 rounded bg-gray-900 overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-cyan-400 to-[#D0FF59]" style={{ width: `${videoStats.progress}%` }} />
+                      </div>
+                      <p className="text-xs text-cyan-100/80">
+                        {videoStats.completed}/{videoStats.total} completed · {videoStats.processing} processing · {videoStats.queued} queued · {videoStats.failed} failed
+                      </p>
+                    </div>
+
                     <h4 className="text-xl text-white font-semibold">{generatedPackage.writeup.headline}</h4>
                     <p className="text-sm text-gray-400 mt-1">{generatedPackage.writeup.deck}</p>
-                    <div className="mt-4 grid md:grid-cols-2 gap-3">
+                    <div className="mt-4 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                      <div className="flex gap-3 min-w-max pr-2">
                       {generatedPackage.storyboard.map(scene => (
-                        <div key={`${scene.sceneNumber}-${scene.beatId}`} className="rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
+                        <div key={`${scene.sceneNumber}-${scene.beatId}`} className="w-[320px] md:w-[360px] shrink-0 rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
+                          {sceneVideosByBeatId[scene.beatId]?.status === 'completed' && sceneVideosByBeatId[scene.beatId]?.videoUrl ? (
+                            <div className="rounded-md overflow-hidden border border-gray-800 bg-black/40 aspect-video">
+                              <video
+                                src={getSceneVideoUrl(sceneVideosByBeatId[scene.beatId].videoUrl)}
+                                className="w-full h-full object-cover"
+                                controls
+                                preload="auto"
+                                playsInline
+                              />
+                            </div>
+                          ) : null}
                           <div className="rounded-md overflow-hidden border border-gray-800 bg-black/40 aspect-video">
                             <img
                               src={getSceneFrameUrl(scene)}
@@ -605,14 +957,67 @@ export function ProjectStudio() {
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-sm text-gray-100">Scene {scene.sceneNumber} · Beat {scene.beatId}</p>
-                            <button onClick={() => toggleSceneLock(scene.beatId, !!scene.locked)} disabled={!isAuthenticated} className="text-[11px] px-2 py-1 rounded border border-gray-700 text-gray-300 disabled:opacity-50">
-                              {scene.locked ? <span className="inline-flex items-center gap-1"><Lock className="w-3 h-3" />Locked</span> : <span className="inline-flex items-center gap-1"><Unlock className="w-3 h-3" />Unlocked</span>}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => generateSceneVideo(scene.beatId, videoPromptByBeatId[scene.beatId] || '')}
+                                disabled={!isAuthenticated || isGeneratingVideoBeatId === scene.beatId || sceneVideosByBeatId[scene.beatId]?.status === 'processing'}
+                                className="text-[11px] px-2 py-1 rounded border border-gray-700 text-gray-300 disabled:opacity-50"
+                              >
+                                {isGeneratingVideoBeatId === scene.beatId || sceneVideosByBeatId[scene.beatId]?.status === 'queued' || sceneVideosByBeatId[scene.beatId]?.status === 'processing'
+                                  ? <span className="inline-flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />Rendering</span>
+                                  : sceneVideosByBeatId[scene.beatId]?.status === 'completed'
+                                    ? <span className="inline-flex items-center gap-1"><RefreshCcw className="w-3 h-3" />Regenerate video</span>
+                                    : <span className="inline-flex items-center gap-1"><Video className="w-3 h-3" />Generate video</span>}
+                              </button>
+                              <button onClick={() => toggleSceneLock(scene.beatId, !!scene.locked)} disabled={!isAuthenticated} className="text-[11px] px-2 py-1 rounded border border-gray-700 text-gray-300 disabled:opacity-50">
+                                {scene.locked ? <span className="inline-flex items-center gap-1"><Lock className="w-3 h-3" />Locked</span> : <span className="inline-flex items-center gap-1"><Unlock className="w-3 h-3" />Unlocked</span>}
+                              </button>
+                            </div>
                           </div>
                           <p className="text-xs text-gray-400 mt-1">{scene.slugline}</p>
+                          <details className="rounded-md border border-gray-800 bg-black/20 p-2">
+                            <summary className="cursor-pointer text-[11px] uppercase tracking-widest text-gray-400">Video Prompt Controls</summary>
+                            <div className="mt-2 space-y-2">
+                              <div>
+                                <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Scene Film Type</p>
+                                <select
+                                  value={sceneFilmTypeByBeatId[scene.beatId] || filmType}
+                                  onChange={event => setSceneFilmTypeByBeatId(prev => ({ ...prev, [scene.beatId]: event.target.value }))}
+                                  className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200"
+                                >
+                                  {filmTypeOptions.map(option => (
+                                    <option key={`${scene.beatId}-${option}`} value={option}>{option}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <textarea
+                                value={videoPromptByBeatId[scene.beatId] || ''}
+                                onChange={event => setVideoPromptByBeatId(prev => ({ ...prev, [scene.beatId]: event.target.value }))}
+                                className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200 min-h-16"
+                                placeholder="Add director-level motion/acting/environment notes for this scene video."
+                              />
+                              <div className="flex flex-wrap gap-1">
+                                {cameraMoves.map(move => (
+                                  <button
+                                    key={`${scene.beatId}-${move}`}
+                                    onClick={() => appendCameraMoveToPrompt(scene.beatId, move)}
+                                    className="text-[10px] px-2 py-1 rounded border border-gray-700 text-gray-300 hover:text-cyan-200"
+                                  >
+                                    {move}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </details>
+                          {sceneVideosByBeatId[scene.beatId] && (
+                            <p className="text-[11px] text-cyan-200/80">
+                              Video status: {sceneVideosByBeatId[scene.beatId].status}{sceneVideosByBeatId[scene.beatId].error ? ` · ${sceneVideosByBeatId[scene.beatId].error}` : ''}
+                            </p>
+                          )}
                           <p className="text-[11px] text-gray-500 line-clamp-2">{scene.imagePrompt || scene.visualDirection}</p>
                         </div>
                       ))}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -621,7 +1026,14 @@ export function ProjectStudio() {
           </div>
         </div>
 
-        {busyMessage && <p className="text-sm text-gray-400 mt-6 text-center">{busyMessage}</p>}
+        {busyMessage && (
+          <p className="text-sm text-gray-400 mt-6 flex items-center justify-center gap-2 text-center">
+            {(isCreatingProject || isRefiningSynopsis || isSavingStyleBible || isAddingNote || isPolishingBeats || isGeneratingStoryboard || isCheckingContinuity || isPreviewingFix !== null || isApplyingFix || isGeneratingAllVideos || isRefreshingVideos)
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : null}
+            {busyMessage}
+          </p>
+        )}
       </div>
 
       {previewMode && (
@@ -666,8 +1078,46 @@ export function ProjectStudio() {
               <button onClick={() => { setPreviewMode(null); setPreviewBeats([]); setPreviewIssues([]); }} className="px-3 py-2 rounded border border-gray-700 text-sm text-gray-300">
                 Cancel
               </button>
-              <button onClick={() => applyPreviewFix()} disabled={!isAuthenticated} className="px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
-                Apply Fix
+              <button onClick={() => applyPreviewFix()} disabled={!isAuthenticated || isApplyingFix} className="px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50 inline-flex items-center gap-2">
+                {isApplyingFix && <Loader2 className="w-4 h-4 animate-spin" />} {isApplyingFix ? 'Applying...' : 'Apply Fix'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreateProjectModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-cyan-500/30 bg-[#060a12] p-5">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h4 className="text-lg text-white font-semibold">Create New Project</h4>
+              <button onClick={() => setShowCreateProjectModal(false)} className="p-1 rounded border border-gray-700 text-gray-300">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <input
+                value={newTitle}
+                onChange={event => setNewTitle(event.target.value)}
+                className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm"
+                placeholder="Project title (optional)"
+              />
+              <textarea
+                value={newPseudoSynopsis}
+                onChange={event => setNewPseudoSynopsis(event.target.value)}
+                className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-28"
+                placeholder="Dump your rough movie idea here"
+              />
+              <p className="text-[11px] text-gray-500">If title is empty, we auto-generate one from your idea text.</p>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button onClick={recordProjectIdea} disabled={!isAuthenticated || isRecordCreating || isCreatingProject} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-white text-black text-sm font-semibold disabled:opacity-50">
+                {isRecordCreating || isCreatingProject ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />} {isRecordCreating ? 'Listening...' : isCreatingProject ? 'Creating...' : 'Record Idea'}
+              </button>
+              <button onClick={createProject} disabled={!newPseudoSynopsis.trim() || !isAuthenticated || isCreatingProject} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
+                {isCreatingProject ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} {isCreatingProject ? 'Creating...' : 'Create Project'}
               </button>
             </div>
           </div>
