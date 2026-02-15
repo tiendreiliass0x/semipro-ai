@@ -106,6 +106,7 @@ db.exec(`
     style TEXT DEFAULT 'cinematic',
     durationMinutes INTEGER DEFAULT 1,
     status TEXT DEFAULT 'draft',
+    deletedAt INTEGER,
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL
   )
@@ -208,6 +209,7 @@ const ensureTableColumn = (tableName: string, columnName: string, columnSql: str
 
 ensureTableColumn('story_beats', 'locked', 'INTEGER DEFAULT 0');
 ensureTableColumn('projects', 'plotScript', "TEXT DEFAULT ''");
+ensureTableColumn('projects', 'deletedAt', 'INTEGER');
 
 const runOneTimeMigrations = () => {
   const migrationKey = 'projects_duration_to_one_min_v1';
@@ -270,6 +272,7 @@ const {
 const {
   listProjects,
   getProjectById,
+  softDeleteProject,
   createProject,
   updateProjectSynopsis,
   addStoryNote,
@@ -536,6 +539,7 @@ serve({
       verifyAccessKey,
       listProjects,
       getProjectById,
+      softDeleteProject,
       createProject,
       updateProjectSynopsis,
       addStoryNote,

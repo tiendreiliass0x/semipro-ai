@@ -156,6 +156,7 @@ export interface MovieProject {
   style: 'cinematic' | 'mainstream' | 'festival';
   durationMinutes: number;
   status: 'draft' | 'active' | 'locked';
+  deletedAt: number | null;
   createdAt: number;
   updatedAt: number;
 }

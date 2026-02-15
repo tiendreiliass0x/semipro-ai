@@ -79,6 +79,7 @@ db.exec(`
     style TEXT DEFAULT 'cinematic',
     durationMinutes INTEGER DEFAULT 1,
     status TEXT DEFAULT 'draft',
+    deletedAt INTEGER,
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL
   )

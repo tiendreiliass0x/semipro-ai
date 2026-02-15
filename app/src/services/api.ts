@@ -204,6 +204,11 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  softDeleteProject: (projectId: string) =>
+    fetchApi<{ success: boolean }>(`/projects/${projectId}`, {
+      method: 'DELETE',
+    }),
+
   refineProjectSynopsis: (projectId: string) =>
     fetchApi<{ success: boolean; refined: RefinedSynopsis; project: MovieProject }>(`/projects/${projectId}/synopsis/refine`, {
       method: 'POST',

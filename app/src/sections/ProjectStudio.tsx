@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, Loader2, Video, RefreshCcw, PlayCircle } from 'lucide-react';
+import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, Loader2, Video, RefreshCcw, PlayCircle, Trash2, Settings } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
 import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectStyleBible, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
@@ -36,7 +36,10 @@ export function ProjectStudio() {
   const [isListening, setIsListening] = useState(false);
   const [isRecordCreating, setIsRecordCreating] = useState(false);
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
+  const [showProjectSettingsModal, setShowProjectSettingsModal] = useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [isRefiningSynopsis, setIsRefiningSynopsis] = useState(false);
   const [isSavingStyleBible, setIsSavingStyleBible] = useState(false);
   const [isAddingNote, setIsAddingNote] = useState(false);
@@ -620,6 +623,35 @@ export function ProjectStudio() {
     }
   };
 
+  const softDeleteCurrentProject = async () => {
+    if (!selectedProject || !isAuthenticated || isDeletingProject) return;
+
+    setIsDeletingProject(true);
+    setBusyMessage('Soft-deleting project...');
+    try {
+      await api.softDeleteProject(selectedProject.id);
+      const deletedId = selectedProject.id;
+      const remainingProjects = projects.filter(project => project.id !== deletedId);
+      setProjects(remainingProjects);
+      setSelectedProjectId(remainingProjects[0]?.id || null);
+      setGeneratedPackage(null);
+      setLatestPackage(null);
+      setNotes([]);
+      setBeats([]);
+      setContinuityIssues([]);
+      setPreviewBeats([]);
+      setPreviewIssues([]);
+      setSceneVideosByBeatId({});
+      setShowDeleteConfirmModal(false);
+      setShowProjectSettingsModal(false);
+      setBusyMessage('Project soft-deleted.');
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to soft-delete project');
+    } finally {
+      setIsDeletingProject(false);
+    }
+  };
+
   return (
     <section id="project-studio" className="relative min-h-screen py-20 px-4 overflow-hidden">
       <div className="pointer-events-none absolute -top-24 -left-20 w-80 h-80 bg-cyan-500/15 blur-3xl rounded-full" />
@@ -655,6 +687,13 @@ export function ProjectStudio() {
                 className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold"
               >
                 <Plus className="w-4 h-4" /> Create Film
+              </button>
+              <button
+                onClick={() => setShowProjectSettingsModal(true)}
+                disabled={!selectedProject}
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded border border-gray-700 text-gray-200 text-sm disabled:opacity-40"
+              >
+                <Settings className="w-4 h-4" /> Project Settings
               </button>
             </div>
           </aside>
@@ -710,6 +749,7 @@ export function ProjectStudio() {
                   <button onClick={refineSynopsis} disabled={!isAuthenticated || isRefiningSynopsis} className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 hover:text-cyan-200 disabled:opacity-50">
                     {isRefiningSynopsis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} {isRefiningSynopsis ? 'Polishing...' : 'Polish Synopsis'}
                   </button>
+
                 </div>
 
                 <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-[#08121f]/70 to-black/60 p-5">
@@ -1163,6 +1203,61 @@ export function ProjectStudio() {
               </button>
               <button onClick={createProject} disabled={!newPseudoSynopsis.trim() || !isAuthenticated || isCreatingProject} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
                 {isCreatingProject ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} {isCreatingProject ? 'Creating...' : 'Create Project'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showProjectSettingsModal && selectedProject && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-gray-800 bg-[#060a12] p-5">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h4 className="text-lg text-white font-semibold">Project Settings</h4>
+              <button onClick={() => setShowProjectSettingsModal(false)} className="p-1 rounded border border-gray-700 text-gray-300">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-gray-800 bg-black/25 p-3 mb-4">
+              <p className="text-[11px] uppercase tracking-widest text-gray-500">Current Project</p>
+              <p className="text-sm text-gray-200 mt-1">{selectedProject.title}</p>
+            </div>
+
+            <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-3">
+              <p className="text-xs uppercase tracking-widest text-rose-200">Danger Zone</p>
+              <p className="text-[11px] text-rose-100/80 mt-1">Soft delete removes this project from active views while preserving its data in the database.</p>
+              <button
+                onClick={() => setShowDeleteConfirmModal(true)}
+                disabled={!isAuthenticated || isDeletingProject}
+                className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded border border-rose-400/40 text-rose-100 text-sm font-semibold disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" /> DELETE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirmModal && selectedProject && (
+        <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl border border-rose-500/40 bg-[#12080a] p-5">
+            <h4 className="text-lg text-rose-100 font-semibold mb-2">Confirm Deletion</h4>
+            <p className="text-sm text-rose-100/85">You are about to soft-delete <span className="font-semibold">{selectedProject.title}</span>. This removes it from the active project list.</p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteConfirmModal(false)}
+                className="px-3 py-2 rounded border border-gray-700 text-sm text-gray-300"
+                disabled={isDeletingProject}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={softDeleteCurrentProject}
+                disabled={!isAuthenticated || isDeletingProject}
+                className="px-4 py-2 rounded bg-rose-600 text-white text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"
+              >
+                {isDeletingProject ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} {isDeletingProject ? 'Deleting...' : 'DELETE'}
               </button>
             </div>
           </div>

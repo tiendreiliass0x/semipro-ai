@@ -15,18 +15,25 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
 
   const listProjects = () => {
     return db.query(`
-      SELECT id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, createdAt, updatedAt
+      SELECT id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
       FROM projects
+      WHERE deletedAt IS NULL
       ORDER BY updatedAt DESC
     `).all() as any[];
   };
 
   const getProjectById = (id: string) => {
     return db.query(`
-      SELECT id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, createdAt, updatedAt
+      SELECT id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
       FROM projects
-      WHERE id = ?
+      WHERE id = ? AND deletedAt IS NULL
     `).get(id) as any;
+  };
+
+  const softDeleteProject = (id: string) => {
+    const now = Date.now();
+    const result = db.query('UPDATE projects SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL').run(now, now, id) as { changes?: number };
+    return Number(result?.changes || 0) > 0;
   };
 
   const createProject = (input: { title?: string; pseudoSynopsis: string; style?: string; durationMinutes?: number }) => {
@@ -42,9 +49,9 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     const title = explicitTitle || fallbackTitle;
 
     db.query(`
-      INSERT INTO projects (id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, title, synopsis, '', '', style, durationMinutes, 'draft', now, now);
+      INSERT INTO projects (id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, title, synopsis, '', '', style, durationMinutes, 'draft', null, now, now);
     db.query(`
       INSERT INTO project_style_bibles (projectId, payload, createdAt, updatedAt)
       VALUES (?, ?, ?, ?)
@@ -365,6 +372,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
   return {
     listProjects,
     getProjectById,
+    softDeleteProject,
     createProject,
     updateProjectSynopsis,
     addStoryNote,

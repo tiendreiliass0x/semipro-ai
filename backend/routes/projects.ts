@@ -6,6 +6,7 @@ type ProjectsRouteArgs = {
   verifyAccessKey: (req: Request) => boolean;
   listProjects: () => any[];
   getProjectById: (id: string) => any;
+  softDeleteProject: (id: string) => boolean;
   createProject: (input: { title?: string; pseudoSynopsis: string; style?: string; durationMinutes?: number }) => any;
   updateProjectSynopsis: (id: string, polishedSynopsis: string, plotScript?: string) => any;
   addStoryNote: (projectId: string, input: { rawText: string; minuteMark?: number; source?: string; transcript?: string }) => any;
@@ -47,6 +48,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     verifyAccessKey,
     listProjects,
     getProjectById,
+    softDeleteProject,
     createProject,
     updateProjectSynopsis,
     addStoryNote,
@@ -199,6 +201,15 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const item = getProjectById(projectId);
     if (!item) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify(item), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+$/) && method === 'DELETE') {
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const projectId = pathname.split('/')[3];
+    const item = getProjectById(projectId);
+    if (!item) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    const success = softDeleteProject(projectId);
+    return new Response(JSON.stringify({ success }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/style-bible$/) && method === 'GET') {
