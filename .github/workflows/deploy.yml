@@ -47,7 +47,7 @@ jobs:
       uses: appleboy/scp-action@v0.1.7
       with:
         host: ${{ secrets.DROPLET_IP }}
-        username: root
+        username: deploy
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         source: "app/dist/**,backend/**,!backend/node_modules/**,!backend/uploads/**,!backend/.env,!backend/data/anecdotes.db"
         target: "/var/www/semipro-ai/"
@@ -58,7 +58,7 @@ jobs:
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.DROPLET_IP }}
-        username: root
+        username: deploy
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
           command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash
