@@ -15,7 +15,7 @@ import { handleSubscribersRoutes } from './routes/subscribers';
 import { handleUploadsRoutes } from './routes/uploads';
 
 const PORT = parseInt(process.env.PORT || '3001');
-const ACCESS_KEY = process.env.ACCESS_KEY || 'AFRO12';
+const ACCESS_KEY = process.env.ACCESS_KEY || 'PRO12';
 const ADMIN_ACCESS_KEY = process.env.ADMIN_ACCESS_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-4.1-mini';

@@ -5,7 +5,7 @@ import { api } from '@/services/api';
 import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectStyleBible, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
 
 export function ProjectStudio() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, verifyKey, isVerifying, error: authError } = useAuth();
   const [projects, setProjects] = useState<MovieProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [notes, setNotes] = useState<StoryNote[]>([]);
@@ -26,6 +26,7 @@ export function ProjectStudio() {
 
   const [newTitle, setNewTitle] = useState('');
   const [newPseudoSynopsis, setNewPseudoSynopsis] = useState('');
+  const [accessKeyInput, setAccessKeyInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [directorPrompt, setDirectorPrompt] = useState('Cinematic, emotionally grounded, practical for low-budget production.');
   const [filmType, setFilmType] = useState('cinematic live-action');
@@ -609,6 +610,16 @@ export function ProjectStudio() {
     });
   };
 
+  const unlockProjectCreation = async () => {
+    const key = accessKeyInput.trim();
+    if (!key) return;
+    const ok = await verifyKey(key);
+    if (ok) {
+      setBusyMessage('Access granted. You can now create your film.');
+      setAccessKeyInput('');
+    }
+  };
+
   return (
     <section id="project-studio" className="relative min-h-screen py-20 px-4 overflow-hidden">
       <div className="pointer-events-none absolute -top-24 -left-20 w-80 h-80 bg-cyan-500/15 blur-3xl rounded-full" />
@@ -638,20 +649,29 @@ export function ProjectStudio() {
               ))}
             </div>
 
-            {isAuthenticated && (
-              <div className="space-y-2 border-t border-gray-800 pt-4">
-                <button
-                  onClick={() => setShowCreateProjectModal(true)}
-                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold"
-                >
-                  <Plus className="w-4 h-4" /> New Project
-                </button>
-              </div>
-            )}
+            <div className="space-y-2 border-t border-gray-800 pt-4">
+              <button
+                onClick={() => setShowCreateProjectModal(true)}
+                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold"
+              >
+                <Plus className="w-4 h-4" /> Create Film
+              </button>
+            </div>
           </aside>
 
           <div className="space-y-6 min-w-0">
-            {!selectedProject && <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-black/70 to-[#111827]/60 p-6 text-gray-300">Create your first project to start.</div>}
+            {!selectedProject && (
+              <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-black/70 to-[#111827]/60 p-6 text-gray-300 space-y-4">
+                <p>Create your first project to start.</p>
+                {!isAuthenticated && <p className="text-xs text-amber-200/80">You need an access key before creating a film.</p>}
+                <button
+                  onClick={() => setShowCreateProjectModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold"
+                >
+                  <Plus className="w-4 h-4" /> Create Film
+                </button>
+              </div>
+            )}
 
             {selectedProject && (
               <>
@@ -1097,6 +1117,31 @@ export function ProjectStudio() {
             </div>
 
             <div className="space-y-3">
+              {!isAuthenticated && (
+                <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 space-y-2">
+                  <p className="text-xs uppercase tracking-widest text-amber-200">Unlock Creation</p>
+                  <p className="text-[11px] text-amber-100/80">Enter your access key to enable project creation in production.</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={accessKeyInput}
+                      onChange={event => setAccessKeyInput(event.target.value)}
+                      className="flex-1 bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm"
+                      placeholder="Access key"
+                    />
+                    <button
+                      onClick={unlockProjectCreation}
+                      disabled={!accessKeyInput.trim() || isVerifying}
+                      className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded border border-amber-300/60 text-amber-100 text-sm font-semibold disabled:opacity-50"
+                    >
+                      {isVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      {isVerifying ? 'Verifying...' : 'Unlock'}
+                    </button>
+                  </div>
+                  {authError && <p className="text-[11px] text-rose-300">{authError}</p>}
+                </div>
+              )}
+
               <input
                 value={newTitle}
                 onChange={event => setNewTitle(event.target.value)}
