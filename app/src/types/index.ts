@@ -230,3 +230,14 @@ export interface SceneVideoJob {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface ProjectFinalFilm {
+  id: string;
+  projectId: string;
+  status: 'processing' | 'completed' | 'failed';
+  sourceCount: number;
+  videoUrl: string;
+  error: string;
+  createdAt: number;
+  updatedAt: number;
+}

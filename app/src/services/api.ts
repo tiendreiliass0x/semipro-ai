@@ -1,4 +1,4 @@
-import type { Anecdote, ContinuityIssue, MovieProject, ProjectBeat, ProjectStyleBible, RefinedSynopsis, SceneVideoJob, StoryNote, Storyline, StoryboardScene, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
+import type { Anecdote, ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectStyleBible, RefinedSynopsis, SceneVideoJob, StoryNote, Storyline, StoryboardScene, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
 
 // Get the base URL without /api suffix for uploads
 const getBaseUrl = () => {
@@ -292,6 +292,16 @@ export const api = {
 
   listSceneVideos: (projectId: string) =>
     fetchApi<{ items: SceneVideoJob[] }>(`/projects/${projectId}/storyboard/videos`),
+
+  getLatestProjectFinalFilm: (projectId: string) =>
+    fetchApi<{ item: ProjectFinalFilm | null }>(`/projects/${projectId}/final-film`),
+
+  generateProjectFinalFilm: (projectId: string) =>
+    fetchApi<{ success: boolean; item: ProjectFinalFilm }>(`/projects/${projectId}/final-film/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }),
 
   // Verify access key
   verifyKey: async (key: string): Promise<{ valid: boolean; error?: string }> => {

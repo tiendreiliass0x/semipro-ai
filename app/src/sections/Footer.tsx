@@ -61,7 +61,7 @@ export function Footer() {
 
         <div className="mt-14 pt-6 border-t border-gray-800 text-sm text-gray-500 flex flex-wrap items-center justify-between gap-3">
           <p>&copy; {new Date().getFullYear()} Semipro AI. All rights reserved.</p>
-          <p>let&apos;s creativity ship fast.</p>
+          <p>Built for creative minds to ship fast</p>
         </div>
       </div>
     </footer>

@@ -28,6 +28,9 @@ type ProjectsRouteArgs = {
   }) => any;
   getLatestSceneVideo: (projectId: string, beatId: string) => any;
   listLatestSceneVideos: (projectId: string) => any[];
+  createProjectFinalFilm: (args: { projectId: string; sourceCount: number }) => any;
+  updateProjectFinalFilm: (id: string, patch: { status?: string; sourceCount?: number; videoUrl?: string; error?: string }) => any;
+  getLatestProjectFinalFilm: (projectId: string) => any;
   getProjectStyleBible: (projectId: string) => any;
   updateProjectStyleBible: (projectId: string, payload: any) => any;
   refineSynopsisWithLlm: (args: { pseudoSynopsis: string; style?: string; durationMinutes?: number; styleBible?: any }) => Promise<any>;
@@ -35,6 +38,8 @@ type ProjectsRouteArgs = {
   generateProjectStoryboardWithLlm: (args: { title: string; synopsis: string; beats: any[]; prompt?: string; style?: string; styleBible?: any; filmType?: string }) => Promise<any>;
   generateStoryboardFrameWithLlm: (prompt: string) => Promise<string>;
   buildDirectorSceneVideoPrompt: (args: { projectTitle: string; synopsis: string; styleBible: any; scene: any; directorPrompt?: string }) => string;
+  createFinalFilmFromClips: (args: { uploadsDir: string; clipUrls: string[]; outputFilename: string }) => Promise<string>;
+  uploadsDir: string;
 };
 
 const jsonHeaders = (corsHeaders: Record<string, string>) => ({ ...corsHeaders, 'Content-Type': 'application/json' });
@@ -62,6 +67,9 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     createSceneVideoJob,
     getLatestSceneVideo,
     listLatestSceneVideos,
+    createProjectFinalFilm,
+    updateProjectFinalFilm,
+    getLatestProjectFinalFilm,
     getProjectStyleBible,
     updateProjectStyleBible,
     refineSynopsisWithLlm,
@@ -69,6 +77,8 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     generateProjectStoryboardWithLlm,
     generateStoryboardFrameWithLlm,
     buildDirectorSceneVideoPrompt,
+    createFinalFilmFromClips,
+    uploadsDir,
   } = args;
 
   const buildContinuityIssues = (beats: any[]) => {
@@ -367,6 +377,62 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/videos$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
     return new Response(JSON.stringify({ items: listLatestSceneVideos(projectId) }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/final-film$/) && method === 'GET') {
+    const projectId = pathname.split('/')[3];
+    return new Response(JSON.stringify({ item: getLatestProjectFinalFilm(projectId) }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/final-film\/generate$/) && method === 'POST') {
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const projectId = pathname.split('/')[3];
+    const project = getProjectById(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+
+    const latestPackage = getLatestProjectPackage(projectId);
+    const storyboard = Array.isArray(latestPackage?.payload?.storyboard) ? latestPackage.payload.storyboard : [];
+    if (!storyboard.length) {
+      return new Response(JSON.stringify({ error: 'No storyboard found. Generate scenes first.' }), { status: 400, headers: jsonHeaders(corsHeaders) });
+    }
+
+    const sceneVideos = listLatestSceneVideos(projectId);
+    const completedByBeatId = new Map<string, any>();
+    sceneVideos.forEach(item => {
+      if (String(item?.status) === 'completed' && String(item?.videoUrl || '').trim()) {
+        completedByBeatId.set(String(item.beatId), item);
+      }
+    });
+
+    const clipUrls = storyboard
+      .map((scene: any) => completedByBeatId.get(String(scene.beatId))?.videoUrl)
+      .filter((url: any) => typeof url === 'string' && url.trim().length > 0);
+
+    if (!clipUrls.length) {
+      return new Response(JSON.stringify({ error: 'No completed scene videos found to compile.' }), { status: 400, headers: jsonHeaders(corsHeaders) });
+    }
+
+    const film = createProjectFinalFilm({ projectId, sourceCount: clipUrls.length });
+    try {
+      const outputFilename = `final-film-${projectId}-${Date.now()}.mp4`;
+      const videoUrl = await createFinalFilmFromClips({
+        uploadsDir,
+        clipUrls,
+        outputFilename,
+      });
+
+      const item = updateProjectFinalFilm(film.id, {
+        status: 'completed',
+        sourceCount: clipUrls.length,
+        videoUrl,
+        error: '',
+      });
+      return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to build final film';
+      const item = updateProjectFinalFilm(film.id, { status: 'failed', error: message });
+      return new Response(JSON.stringify({ error: message, item }), { status: 502, headers: jsonHeaders(corsHeaders) });
+    }
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/video$/) && method === 'GET') {

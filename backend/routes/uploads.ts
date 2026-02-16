@@ -20,6 +20,8 @@ const getContentType = (ext: string): string => {
     '.png': 'image/png',
     '.gif': 'image/gif',
     '.webp': 'image/webp',
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
   };
   return types[ext] || 'application/octet-stream';
 };

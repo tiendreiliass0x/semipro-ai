@@ -157,6 +157,20 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS project_final_films (
+    id TEXT PRIMARY KEY,
+    projectId TEXT NOT NULL,
+    status TEXT DEFAULT 'processing',
+    sourceCount INTEGER DEFAULT 0,
+    videoUrl TEXT DEFAULT '',
+    error TEXT DEFAULT '',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS project_style_bibles (
     projectId TEXT PRIMARY KEY,
     payload TEXT NOT NULL,

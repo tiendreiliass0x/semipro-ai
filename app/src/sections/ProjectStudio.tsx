@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, Loader2, Video, RefreshCcw, PlayCircle, Trash2, Settings } from 'lucide-react';
+import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
-import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectStyleBible, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
+import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectStyleBible, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
+import { CreateProjectModal } from './project-studio/CreateProjectModal';
+import { DeleteProjectModal } from './project-studio/DeleteProjectModal';
+import { ProjectSidebar } from './project-studio/ProjectSidebar';
+import { ScenesWorkspace } from './project-studio/ScenesWorkspace';
 
 export function ProjectStudio() {
   const { isAuthenticated, verifyKey, isVerifying, error: authError } = useAuth();
@@ -23,6 +27,7 @@ export function ProjectStudio() {
   const [previewBeats, setPreviewBeats] = useState<ProjectBeat[]>([]);
   const [previewIssues, setPreviewIssues] = useState<ContinuityIssue[]>([]);
   const [sceneVideosByBeatId, setSceneVideosByBeatId] = useState<Record<string, SceneVideoJob>>({});
+  const [finalFilm, setFinalFilm] = useState<ProjectFinalFilm | null>(null);
 
   const [newTitle, setNewTitle] = useState('');
   const [newPseudoSynopsis, setNewPseudoSynopsis] = useState('');
@@ -36,7 +41,7 @@ export function ProjectStudio() {
   const [isListening, setIsListening] = useState(false);
   const [isRecordCreating, setIsRecordCreating] = useState(false);
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
-  const [showProjectSettingsModal, setShowProjectSettingsModal] = useState(false);
+  const [showProjectSettingsPane, setShowProjectSettingsPane] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -52,6 +57,7 @@ export function ProjectStudio() {
   const [notesFilter, setNotesFilter] = useState<'all' | 'mine' | 'ai_starter'>('all');
   const [isGeneratingAllVideos, setIsGeneratingAllVideos] = useState(false);
   const [isRefreshingVideos, setIsRefreshingVideos] = useState(false);
+  const [isGeneratingFinalFilm, setIsGeneratingFinalFilm] = useState(false);
   const [videoPromptByBeatId, setVideoPromptByBeatId] = useState<Record<string, string>>({});
   const beatsScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -135,13 +141,14 @@ export function ProjectStudio() {
   useEffect(() => {
     if (!selectedProject) return;
     const loadDetails = async () => {
-      const [notesResponse, beatsResponse, storyboardResponse, styleBibleResponse, continuityResponse, videosResponse] = await Promise.all([
+      const [notesResponse, beatsResponse, storyboardResponse, styleBibleResponse, continuityResponse, videosResponse, finalFilmResponse] = await Promise.all([
         api.getProjectNotes(selectedProject.id).catch(() => ({ items: [] })),
         api.getProjectBeats(selectedProject.id).catch(() => ({ items: [] })),
         api.getLatestProjectStoryboard(selectedProject.id).catch(() => ({ item: null })),
         api.getProjectStyleBible(selectedProject.id).catch(() => ({ item: { visualStyle: '', cameraGrammar: '', doList: [], dontList: [] } })),
         api.checkProjectContinuity(selectedProject.id).catch(() => ({ success: true, issues: [] })),
         api.listSceneVideos(selectedProject.id).catch(() => ({ items: [] })),
+        api.getLatestProjectFinalFilm(selectedProject.id).catch(() => ({ item: null })),
       ]);
       setNotes(notesResponse.items || []);
       setBeats(beatsResponse.items || []);
@@ -154,6 +161,7 @@ export function ProjectStudio() {
         if (item?.beatId) byBeat[item.beatId] = item;
       });
       setSceneVideosByBeatId(byBeat);
+      setFinalFilm(finalFilmResponse.item || null);
     };
     loadDetails();
   }, [selectedProject?.id]);
@@ -642,13 +650,29 @@ export function ProjectStudio() {
       setPreviewBeats([]);
       setPreviewIssues([]);
       setSceneVideosByBeatId({});
+      setFinalFilm(null);
       setShowDeleteConfirmModal(false);
-      setShowProjectSettingsModal(false);
+      setShowProjectSettingsPane(false);
       setBusyMessage('Project soft-deleted.');
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to soft-delete project');
     } finally {
       setIsDeletingProject(false);
+    }
+  };
+
+  const generateFinalFilm = async () => {
+    if (!selectedProject || !isAuthenticated || isGeneratingFinalFilm) return;
+    setIsGeneratingFinalFilm(true);
+    setBusyMessage('Compiling final film from scene clips...');
+    try {
+      const response = await api.generateProjectFinalFilm(selectedProject.id);
+      setFinalFilm(response.item || null);
+      setBusyMessage('Final film compiled successfully.');
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to compile final film');
+    } finally {
+      setIsGeneratingFinalFilm(false);
     }
   };
 
@@ -666,37 +690,18 @@ export function ProjectStudio() {
         </div>
 
         <div className="grid lg:grid-cols-[320px_minmax(0,1fr)] gap-6">
-          <aside className="rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-[#07131f]/80 to-black/70 p-4 h-fit shadow-xl shadow-cyan-950/20">
-            <p className="text-xs uppercase tracking-widest text-gray-500 mb-3">Projects</p>
-            <div className="space-y-2 mb-4">
-              {projects.map(project => (
-                <button
-                  key={project.id}
-                  onClick={() => setSelectedProjectId(project.id)}
-                    className={`w-full text-left rounded-lg border px-3 py-2 text-sm ${selectedProjectId === project.id ? 'border-cyan-300/70 text-cyan-100 bg-cyan-400/10' : 'border-gray-800 text-gray-300 bg-black/30'}`}
-                >
-                  <p className="font-medium truncate">{project.title}</p>
-                  <p className="text-xs text-gray-500 mt-1">{project.durationMinutes} min · {project.style}</p>
-                </button>
-              ))}
-            </div>
-
-            <div className="space-y-2 border-t border-gray-800 pt-4">
-              <button
-                onClick={() => setShowCreateProjectModal(true)}
-                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold"
-              >
-                <Plus className="w-4 h-4" /> Create Film
-              </button>
-              <button
-                onClick={() => setShowProjectSettingsModal(true)}
-                disabled={!selectedProject}
-                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded border border-gray-700 text-gray-200 text-sm disabled:opacity-40"
-              >
-                <Settings className="w-4 h-4" /> Project Settings
-              </button>
-            </div>
-          </aside>
+          <ProjectSidebar
+            projects={projects}
+            selectedProjectId={selectedProjectId}
+            selectedProject={selectedProject}
+            showProjectSettingsPane={showProjectSettingsPane}
+            isAuthenticated={isAuthenticated}
+            isDeletingProject={isDeletingProject}
+            onSelectProject={setSelectedProjectId}
+            onOpenCreateProject={() => setShowCreateProjectModal(true)}
+            onToggleSettingsPane={() => setShowProjectSettingsPane(prev => !prev)}
+            onRequestDelete={() => setShowDeleteConfirmModal(true)}
+          />
 
           <div className="space-y-6 min-w-0">
             {!selectedProject && (
@@ -954,132 +959,33 @@ export function ProjectStudio() {
                 )}
 
                 {generatedPackage && (
-                  <div className="rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-[#07131f]/70 via-black/60 to-[#1a1208]/70 p-5">
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                      <p className="text-xs uppercase tracking-widest text-gray-500"><Film className="w-4 h-4" /> Scenes Workspace</p>
-                      {latestPackage && <p className="text-xs text-gray-500">v{latestPackage.version}</p>}
-                    </div>
-
-                    <div className="mb-4 rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 space-y-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="inline-flex items-center gap-2 text-sm text-cyan-100">
-                          <Video className="w-4 h-4" /> Scene Video Studio
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={refreshSceneVideoStatuses}
-                            disabled={isRefreshingVideos}
-                            className="text-xs px-2 py-1 rounded border border-gray-700 text-gray-300 disabled:opacity-50 inline-flex items-center gap-1"
-                          >
-                            {isRefreshingVideos ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
-                          </button>
-                          <button
-                            onClick={generateAllSceneVideos}
-                            disabled={!isAuthenticated || isGeneratingAllVideos || videoStats.total === 0}
-                            className="text-xs px-2 py-1 rounded bg-[#D0FF59] text-black font-semibold disabled:opacity-50 inline-flex items-center gap-1"
-                          >
-                            {isGeneratingAllVideos ? <Loader2 className="w-3 h-3 animate-spin" /> : <PlayCircle className="w-3 h-3" />} Generate All Videos
-                          </button>
-                        </div>
-                      </div>
-                      <div className="w-full h-2 rounded bg-gray-900 overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-cyan-400 to-[#D0FF59]" style={{ width: `${videoStats.progress}%` }} />
-                      </div>
-                      <p className="text-xs text-cyan-100/80">
-                        {videoStats.completed}/{videoStats.total} completed · {videoStats.processing} processing · {videoStats.queued} queued · {videoStats.failed} failed
-                      </p>
-                    </div>
-
-                    <h4 className="text-xl text-white font-semibold">{generatedPackage.writeup.headline}</h4>
-                    <p className="text-sm text-gray-400 mt-1">{generatedPackage.writeup.deck}</p>
-                    <div className="mt-4 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-                      <div className="flex gap-3 min-w-max pr-2">
-                      {generatedPackage.storyboard.map(scene => (
-                        <div key={`${scene.sceneNumber}-${scene.beatId}`} className="w-[320px] md:w-[360px] shrink-0 rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
-                          {sceneVideosByBeatId[scene.beatId]?.status === 'completed' && sceneVideosByBeatId[scene.beatId]?.videoUrl ? (
-                            <div className="rounded-md overflow-hidden border border-gray-800 bg-black/40 aspect-video">
-                              <video
-                                src={getSceneVideoUrl(sceneVideosByBeatId[scene.beatId].videoUrl)}
-                                className="w-full h-full object-cover"
-                                controls
-                                preload="auto"
-                                playsInline
-                              />
-                            </div>
-                          ) : null}
-                          <div className="rounded-md overflow-hidden border border-gray-800 bg-black/40 aspect-video">
-                            <img
-                              src={getSceneFrameUrl(scene)}
-                              alt={`Scene ${scene.sceneNumber} concept frame`}
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                            />
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm text-gray-100">Scene {scene.sceneNumber} · Beat {scene.beatId}</p>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => generateSceneVideo(scene.beatId, videoPromptByBeatId[scene.beatId] || '')}
-                                disabled={!isAuthenticated || isGeneratingVideoBeatId === scene.beatId || sceneVideosByBeatId[scene.beatId]?.status === 'processing'}
-                                className="text-[11px] px-2 py-1 rounded border border-gray-700 text-gray-300 disabled:opacity-50"
-                              >
-                                {isGeneratingVideoBeatId === scene.beatId || sceneVideosByBeatId[scene.beatId]?.status === 'queued' || sceneVideosByBeatId[scene.beatId]?.status === 'processing'
-                                  ? <span className="inline-flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />Rendering</span>
-                                  : sceneVideosByBeatId[scene.beatId]?.status === 'completed'
-                                    ? <span className="inline-flex items-center gap-1"><RefreshCcw className="w-3 h-3" />Regenerate video</span>
-                                    : <span className="inline-flex items-center gap-1"><Video className="w-3 h-3" />Generate video</span>}
-                              </button>
-                              <button onClick={() => toggleSceneLock(scene.beatId, !!scene.locked)} disabled={!isAuthenticated} className="text-[11px] px-2 py-1 rounded border border-gray-700 text-gray-300 disabled:opacity-50">
-                                {scene.locked ? <span className="inline-flex items-center gap-1"><Lock className="w-3 h-3" />Locked</span> : <span className="inline-flex items-center gap-1"><Unlock className="w-3 h-3" />Unlocked</span>}
-                              </button>
-                            </div>
-                          </div>
-                          <p className="text-xs text-gray-400 mt-1">{scene.slugline}</p>
-                          <details className="rounded-md border border-gray-800 bg-black/20 p-2">
-                            <summary className="cursor-pointer text-[11px] uppercase tracking-widest text-gray-400">Video Prompt Controls</summary>
-                            <div className="mt-2 space-y-2">
-                              <div>
-                                <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Scene Film Type</p>
-                                <select
-                                  value={sceneFilmTypeByBeatId[scene.beatId] || filmType}
-                                  onChange={event => setSceneFilmTypeByBeatId(prev => ({ ...prev, [scene.beatId]: event.target.value }))}
-                                  className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200"
-                                >
-                                  {filmTypeOptions.map(option => (
-                                    <option key={`${scene.beatId}-${option}`} value={option}>{option}</option>
-                                  ))}
-                                </select>
-                              </div>
-                              <textarea
-                                value={videoPromptByBeatId[scene.beatId] || ''}
-                                onChange={event => setVideoPromptByBeatId(prev => ({ ...prev, [scene.beatId]: event.target.value }))}
-                                className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200 min-h-16"
-                                placeholder="Add director-level motion/acting/environment notes for this scene video."
-                              />
-                              <div className="flex flex-wrap gap-1">
-                                {cameraMoves.map(move => (
-                                  <button
-                                    key={`${scene.beatId}-${move}`}
-                                    onClick={() => appendCameraMoveToPrompt(scene.beatId, move)}
-                                    className="text-[10px] px-2 py-1 rounded border border-gray-700 text-gray-300 hover:text-cyan-200"
-                                  >
-                                    {move}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </details>
-                          {sceneVideosByBeatId[scene.beatId] && (
-                            <p className="text-[11px] text-cyan-200/80">
-                              Video status: {sceneVideosByBeatId[scene.beatId].status}{sceneVideosByBeatId[scene.beatId].error ? ` · ${sceneVideosByBeatId[scene.beatId].error}` : ''}
-                            </p>
-                          )}
-                          <p className="text-[11px] text-gray-500 line-clamp-2">{scene.imagePrompt || scene.visualDirection}</p>
-                        </div>
-                      ))}
-                      </div>
-                    </div>
-                  </div>
+                  <ScenesWorkspace
+                    generatedPackage={generatedPackage}
+                    latestPackage={latestPackage}
+                    sceneVideosByBeatId={sceneVideosByBeatId}
+                    videoStats={videoStats}
+                    finalFilm={finalFilm}
+                    isAuthenticated={isAuthenticated}
+                    isRefreshingVideos={isRefreshingVideos}
+                    isGeneratingAllVideos={isGeneratingAllVideos}
+                    isGeneratingFinalFilm={isGeneratingFinalFilm}
+                    isGeneratingVideoBeatId={isGeneratingVideoBeatId}
+                    videoPromptByBeatId={videoPromptByBeatId}
+                    sceneFilmTypeByBeatId={sceneFilmTypeByBeatId}
+                    filmType={filmType}
+                    filmTypeOptions={filmTypeOptions}
+                    cameraMoves={cameraMoves}
+                    onRefreshSceneVideos={refreshSceneVideoStatuses}
+                    onGenerateAllSceneVideos={generateAllSceneVideos}
+                    onGenerateFinalFilm={generateFinalFilm}
+                    onGenerateSceneVideo={generateSceneVideo}
+                    onToggleSceneLock={toggleSceneLock}
+                    onChangeSceneFilmType={(beatId, value) => setSceneFilmTypeByBeatId(prev => ({ ...prev, [beatId]: value }))}
+                    onChangeVideoPrompt={(beatId, prompt) => setVideoPromptByBeatId(prev => ({ ...prev, [beatId]: prompt }))}
+                    onAppendCameraMove={appendCameraMoveToPrompt}
+                    getSceneFrameUrl={getSceneFrameUrl}
+                    getSceneVideoUrl={getSceneVideoUrl}
+                  />
                 )}
               </>
             )}
@@ -1088,7 +994,7 @@ export function ProjectStudio() {
 
         {busyMessage && (
           <p className="text-sm text-gray-400 mt-6 flex items-center justify-center gap-2 text-center">
-            {(isCreatingProject || isRefiningSynopsis || isSavingStyleBible || isAddingNote || isPolishingBeats || isGeneratingStoryboard || isCheckingContinuity || isPreviewingFix !== null || isApplyingFix || isGeneratingAllVideos || isRefreshingVideos)
+            {(isCreatingProject || isRefiningSynopsis || isSavingStyleBible || isAddingNote || isPolishingBeats || isGeneratingStoryboard || isCheckingContinuity || isPreviewingFix !== null || isApplyingFix || isGeneratingAllVideos || isRefreshingVideos || isGeneratingFinalFilm)
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : null}
             {busyMessage}
@@ -1146,123 +1052,33 @@ export function ProjectStudio() {
         </div>
       )}
 
-      {showCreateProjectModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-cyan-500/30 bg-[#060a12] p-5">
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <h4 className="text-lg text-white font-semibold">Create New Project</h4>
-              <button onClick={() => setShowCreateProjectModal(false)} className="p-1 rounded border border-gray-700 text-gray-300">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      <CreateProjectModal
+        open={showCreateProjectModal}
+        isAuthenticated={isAuthenticated}
+        isVerifying={isVerifying}
+        authError={authError}
+        accessKeyInput={accessKeyInput}
+        newTitle={newTitle}
+        newPseudoSynopsis={newPseudoSynopsis}
+        isRecordCreating={isRecordCreating}
+        isCreatingProject={isCreatingProject}
+        onClose={() => setShowCreateProjectModal(false)}
+        onChangeAccessKey={setAccessKeyInput}
+        onUnlock={unlockProjectCreation}
+        onChangeTitle={setNewTitle}
+        onChangePseudoSynopsis={setNewPseudoSynopsis}
+        onRecordIdea={recordProjectIdea}
+        onCreateProject={createProject}
+      />
 
-            <div className="space-y-3">
-              {!isAuthenticated && (
-                <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 space-y-2">
-                  <p className="text-xs uppercase tracking-widest text-amber-200">Unlock Creation</p>
-                  <p className="text-[11px] text-amber-100/80">Enter your access key to enable project creation in production.</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={accessKeyInput}
-                      onChange={event => setAccessKeyInput(event.target.value)}
-                      className="flex-1 bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm"
-                      placeholder="Access key"
-                    />
-                    <button
-                      onClick={unlockProjectCreation}
-                      disabled={!accessKeyInput.trim() || isVerifying}
-                      className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded border border-amber-300/60 text-amber-100 text-sm font-semibold disabled:opacity-50"
-                    >
-                      {isVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                      {isVerifying ? 'Verifying...' : 'Unlock'}
-                    </button>
-                  </div>
-                  {authError && <p className="text-[11px] text-rose-300">{authError}</p>}
-                </div>
-              )}
-
-              <input
-                value={newTitle}
-                onChange={event => setNewTitle(event.target.value)}
-                className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm"
-                placeholder="Project title (optional)"
-              />
-              <textarea
-                value={newPseudoSynopsis}
-                onChange={event => setNewPseudoSynopsis(event.target.value)}
-                className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-28"
-                placeholder="Dump your rough movie idea here"
-              />
-              <p className="text-[11px] text-gray-500">If title is empty, we auto-generate one from your idea text.</p>
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button onClick={recordProjectIdea} disabled={!isAuthenticated || isRecordCreating || isCreatingProject} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-white text-black text-sm font-semibold disabled:opacity-50">
-                {isRecordCreating || isCreatingProject ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />} {isRecordCreating ? 'Listening...' : isCreatingProject ? 'Creating...' : 'Record Idea'}
-              </button>
-              <button onClick={createProject} disabled={!newPseudoSynopsis.trim() || !isAuthenticated || isCreatingProject} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
-                {isCreatingProject ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} {isCreatingProject ? 'Creating...' : 'Create Project'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showProjectSettingsModal && selectedProject && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-gray-800 bg-[#060a12] p-5">
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <h4 className="text-lg text-white font-semibold">Project Settings</h4>
-              <button onClick={() => setShowProjectSettingsModal(false)} className="p-1 rounded border border-gray-700 text-gray-300">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="rounded-lg border border-gray-800 bg-black/25 p-3 mb-4">
-              <p className="text-[11px] uppercase tracking-widest text-gray-500">Current Project</p>
-              <p className="text-sm text-gray-200 mt-1">{selectedProject.title}</p>
-            </div>
-
-            <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-3">
-              <p className="text-xs uppercase tracking-widest text-rose-200">Danger Zone</p>
-              <p className="text-[11px] text-rose-100/80 mt-1">Soft delete removes this project from active views while preserving its data in the database.</p>
-              <button
-                onClick={() => setShowDeleteConfirmModal(true)}
-                disabled={!isAuthenticated || isDeletingProject}
-                className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded border border-rose-400/40 text-rose-100 text-sm font-semibold disabled:opacity-50"
-              >
-                <Trash2 className="w-4 h-4" /> DELETE
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showDeleteConfirmModal && selectedProject && (
-        <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-rose-500/40 bg-[#12080a] p-5">
-            <h4 className="text-lg text-rose-100 font-semibold mb-2">Confirm Deletion</h4>
-            <p className="text-sm text-rose-100/85">You are about to soft-delete <span className="font-semibold">{selectedProject.title}</span>. This removes it from the active project list.</p>
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setShowDeleteConfirmModal(false)}
-                className="px-3 py-2 rounded border border-gray-700 text-sm text-gray-300"
-                disabled={isDeletingProject}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={softDeleteCurrentProject}
-                disabled={!isAuthenticated || isDeletingProject}
-                className="px-4 py-2 rounded bg-rose-600 text-white text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"
-              >
-                {isDeletingProject ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} {isDeletingProject ? 'Deleting...' : 'DELETE'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteProjectModal
+        open={showDeleteConfirmModal && !!selectedProject}
+        projectTitle={selectedProject?.title || ''}
+        isAuthenticated={isAuthenticated}
+        isDeletingProject={isDeletingProject}
+        onCancel={() => setShowDeleteConfirmModal(false)}
+        onConfirmDelete={softDeleteCurrentProject}
+      />
     </section>
   );
 }

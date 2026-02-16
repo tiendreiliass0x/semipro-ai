@@ -7,7 +7,7 @@ import { createProjectsDb } from './db/projects';
 import { createStorylinesDb } from './db/storylines';
 import { createSubscribersDb } from './db/subscribers';
 import { generateProjectStoryboardWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
-import { buildDirectorSceneVideoPrompt, generateSceneVideoWithFal } from './lib/sceneVideo';
+import { buildDirectorSceneVideoPrompt, createFinalFilmFromClips, generateSceneVideoWithFal } from './lib/sceneVideo';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
 import { handleProjectsRoutes } from './routes/projects';
 import { handleStorylinesRoutes } from './routes/storylines';
@@ -183,6 +183,20 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS project_final_films (
+    id TEXT PRIMARY KEY,
+    projectId TEXT NOT NULL,
+    status TEXT DEFAULT 'processing',
+    sourceCount INTEGER DEFAULT 0,
+    videoUrl TEXT DEFAULT '',
+    error TEXT DEFAULT '',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS project_style_bibles (
     projectId TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
@@ -287,6 +301,9 @@ const {
   updateSceneVideoJob,
   getLatestSceneVideo,
   listLatestSceneVideos,
+  createProjectFinalFilm,
+  updateProjectFinalFilm,
+  getLatestProjectFinalFilm,
   claimNextQueuedSceneVideo,
   requeueStaleProcessingSceneVideos,
   getProjectStyleBible,
@@ -553,6 +570,9 @@ serve({
       createSceneVideoJob,
       getLatestSceneVideo,
       listLatestSceneVideos,
+      createProjectFinalFilm,
+      updateProjectFinalFilm,
+      getLatestProjectFinalFilm,
       getProjectStyleBible,
       updateProjectStyleBible,
       refineSynopsisWithLlm,
@@ -560,6 +580,8 @@ serve({
       generateProjectStoryboardWithLlm,
       generateStoryboardFrameWithLlm,
       buildDirectorSceneVideoPrompt,
+      createFinalFilmFromClips,
+      uploadsDir,
     });
     if (projectsResponse) return projectsResponse;
 

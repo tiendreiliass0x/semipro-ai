@@ -1,6 +1,6 @@
 import { fal } from '@fal-ai/client';
 import { basename, join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync, rmSync } from 'fs';
 
 const FAL_KEY = process.env.FAL_KEY || process.env.FAL_API_KEY || '';
 const FAL_VIDEO_MODEL = process.env.FAL_VIDEO_MODEL || 'fal-ai/bytedance/seedance/v1/lite/image-to-video';
@@ -158,4 +158,112 @@ export const cacheRemoteVideoToLocal = async (args: {
   await tempFile.delete();
 
   return `/uploads/${args.outputFilename}`;
+};
+
+const normalizeClipToLocalMp4 = async (args: {
+  uploadsDir: string;
+  tempDir: string;
+  clipUrl: string;
+  index: number;
+}) => {
+  const clipName = `clip-${String(args.index + 1).padStart(3, '0')}`;
+  const sourcePath = join(args.tempDir, `${clipName}-source.mp4`);
+  const normalizedPath = join(args.tempDir, `${clipName}.mp4`);
+
+  if (args.clipUrl.startsWith('/uploads/')) {
+    const localPath = join(args.uploadsDir, basename(args.clipUrl.split('?')[0]));
+    if (!existsSync(localPath)) {
+      throw new Error(`clip not found: ${localPath}`);
+    }
+    const file = Bun.file(localPath);
+    await Bun.write(sourcePath, await file.arrayBuffer());
+  } else if (args.clipUrl.startsWith('http://') || args.clipUrl.startsWith('https://')) {
+    const response = await fetch(args.clipUrl);
+    if (!response.ok) {
+      throw new Error(`failed to fetch clip ${args.index + 1}: ${response.status}`);
+    }
+    await Bun.write(sourcePath, await response.arrayBuffer());
+  } else {
+    throw new Error(`unsupported clip URL: ${args.clipUrl}`);
+  }
+
+  const normalize = Bun.spawn([
+    'ffmpeg',
+    '-y',
+    '-loglevel', 'error',
+    '-i', sourcePath,
+    '-an',
+    '-vf', 'fps=30,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p',
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-crf', '22',
+    '-movflags', '+faststart',
+    normalizedPath,
+  ], { stderr: 'pipe' });
+
+  const stderrText = normalize.stderr ? await new Response(normalize.stderr).text() : '';
+  const exitCode = await normalize.exited;
+  if (exitCode !== 0) {
+    throw new Error(`failed to normalize clip ${args.index + 1}: ${stderrText.trim()}`);
+  }
+
+  return normalizedPath;
+};
+
+export const createFinalFilmFromClips = async (args: {
+  uploadsDir: string;
+  clipUrls: string[];
+  outputFilename: string;
+}) => {
+  const clipUrls = Array.isArray(args.clipUrls) ? args.clipUrls.filter(Boolean) : [];
+  if (clipUrls.length === 0) {
+    throw new Error('no clips available to build final film');
+  }
+
+  const tempDir = join(args.uploadsDir, `.tmp-final-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  mkdirSync(tempDir, { recursive: true });
+
+  try {
+    const normalizedPaths: string[] = [];
+    for (let index = 0; index < clipUrls.length; index++) {
+      const normalizedPath = await normalizeClipToLocalMp4({
+        uploadsDir: args.uploadsDir,
+        tempDir,
+        clipUrl: clipUrls[index],
+        index,
+      });
+      normalizedPaths.push(normalizedPath);
+    }
+
+    const concatListPath = join(tempDir, 'concat-list.txt');
+    const concatListContent = normalizedPaths
+      .map(filePath => `file '${filePath.replace(/'/g, "'\\''")}'`)
+      .join('\n');
+    await Bun.write(concatListPath, concatListContent);
+
+    const outputPath = join(args.uploadsDir, args.outputFilename);
+    const concat = Bun.spawn([
+      'ffmpeg',
+      '-y',
+      '-loglevel', 'error',
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', concatListPath,
+      '-c', 'copy',
+      '-movflags', '+faststart',
+      outputPath,
+    ], { stderr: 'pipe' });
+
+    const stderrText = concat.stderr ? await new Response(concat.stderr).text() : '';
+    const exitCode = await concat.exited;
+    if (exitCode !== 0) {
+      throw new Error(`failed to concatenate clips: ${stderrText.trim()}`);
+    }
+
+    return `/uploads/${args.outputFilename}`;
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
 };

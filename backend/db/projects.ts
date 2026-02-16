@@ -336,6 +336,56 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return items;
   };
 
+  const createProjectFinalFilm = (args: {
+    projectId: string;
+    sourceCount: number;
+  }) => {
+    const id = generateId();
+    const now = Date.now();
+    db.query(`
+      INSERT INTO project_final_films (id, projectId, status, sourceCount, videoUrl, error, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, args.projectId, 'processing', Number(args.sourceCount || 0), '', '', now, now);
+    return db.query('SELECT * FROM project_final_films WHERE id = ?').get(id) as any;
+  };
+
+  const updateProjectFinalFilm = (id: string, patch: Partial<{
+    status: string;
+    sourceCount: number;
+    videoUrl: string;
+    error: string;
+  }>) => {
+    const now = Date.now();
+    const row = db.query('SELECT * FROM project_final_films WHERE id = ?').get(id) as any;
+    if (!row) return null;
+    db.query(`
+      UPDATE project_final_films SET
+        status = ?,
+        sourceCount = ?,
+        videoUrl = ?,
+        error = ?,
+        updatedAt = ?
+      WHERE id = ?
+    `).run(
+      patch.status ?? row.status,
+      typeof patch.sourceCount === 'number' ? patch.sourceCount : row.sourceCount,
+      patch.videoUrl ?? row.videoUrl,
+      patch.error ?? row.error,
+      now,
+      id
+    );
+    return db.query('SELECT * FROM project_final_films WHERE id = ?').get(id) as any;
+  };
+
+  const getLatestProjectFinalFilm = (projectId: string) => {
+    return db.query(`
+      SELECT * FROM project_final_films
+      WHERE projectId = ?
+      ORDER BY createdAt DESC
+      LIMIT 1
+    `).get(projectId) as any;
+  };
+
   const claimNextQueuedSceneVideo = () => {
     const candidate = db.query(`
       SELECT id
@@ -387,6 +437,9 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     updateSceneVideoJob,
     getLatestSceneVideo,
     listLatestSceneVideos,
+    createProjectFinalFilm,
+    updateProjectFinalFilm,
+    getLatestProjectFinalFilm,
     claimNextQueuedSceneVideo,
     requeueStaleProcessingSceneVideos,
     getProjectStyleBible,
