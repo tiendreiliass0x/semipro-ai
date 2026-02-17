@@ -8,6 +8,7 @@ type ProjectsRouteArgs = {
   getProjectById: (id: string) => any;
   softDeleteProject: (id: string) => boolean;
   createProject: (input: { title?: string; pseudoSynopsis: string; style?: string; durationMinutes?: number }) => any;
+  updateProjectBasics: (id: string, input: { title?: string; pseudoSynopsis?: string }) => any;
   updateProjectSynopsis: (id: string, polishedSynopsis: string, plotScript?: string) => any;
   addStoryNote: (projectId: string, input: { rawText: string; minuteMark?: number; source?: string; transcript?: string }) => any;
   listStoryNotes: (projectId: string) => any[];
@@ -55,6 +56,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     getProjectById,
     softDeleteProject,
     createProject,
+    updateProjectBasics,
     updateProjectSynopsis,
     addStoryNote,
     listStoryNotes,
@@ -220,6 +222,18 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     if (!item) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const success = softDeleteProject(projectId);
     return new Response(JSON.stringify({ success }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+$/) && method === 'PATCH') {
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const projectId = pathname.split('/')[3];
+    const body = await req.json().catch(() => ({}));
+    const item = updateProjectBasics(projectId, {
+      title: typeof body?.title === 'string' ? body.title : undefined,
+      pseudoSynopsis: typeof body?.pseudoSynopsis === 'string' ? body.pseudoSynopsis : undefined,
+    });
+    if (!item) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/style-bible$/) && method === 'GET') {

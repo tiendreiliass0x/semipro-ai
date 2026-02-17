@@ -31,6 +31,9 @@ export function ProjectStudio() {
 
   const [newTitle, setNewTitle] = useState('');
   const [newPseudoSynopsis, setNewPseudoSynopsis] = useState('');
+  const [editingProjectTitle, setEditingProjectTitle] = useState('');
+  const [editingProjectPseudoSynopsis, setEditingProjectPseudoSynopsis] = useState('');
+  const [isEditingProjectDetails, setIsEditingProjectDetails] = useState(false);
   const [accessKeyInput, setAccessKeyInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [directorPrompt, setDirectorPrompt] = useState('Cinematic, emotionally grounded, practical for low-budget production.');
@@ -44,6 +47,7 @@ export function ProjectStudio() {
   const [showProjectSettingsPane, setShowProjectSettingsPane] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isSavingProjectDetails, setIsSavingProjectDetails] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [isRefiningSynopsis, setIsRefiningSynopsis] = useState(false);
   const [isSavingStyleBible, setIsSavingStyleBible] = useState(false);
@@ -164,6 +168,13 @@ export function ProjectStudio() {
       setFinalFilm(finalFilmResponse.item || null);
     };
     loadDetails();
+  }, [selectedProject?.id]);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+    setEditingProjectTitle(selectedProject.title || '');
+    setEditingProjectPseudoSynopsis(selectedProject.pseudoSynopsis || '');
+    setIsEditingProjectDetails(false);
   }, [selectedProject?.id]);
 
   useEffect(() => {
@@ -492,6 +503,13 @@ export function ProjectStudio() {
       .filter(Boolean) as Array<{ orderIndex: number; beatId: string; locked: boolean; fieldsChanged: string[]; text: string }>;
   }, [beats, previewBeats, previewMode]);
 
+  const hasProjectDetailChanges = useMemo(() => {
+    if (!selectedProject) return false;
+    const currentTitle = String(selectedProject.title || '').trim();
+    const currentPseudoSynopsis = String(selectedProject.pseudoSynopsis || '').trim();
+    return editingProjectTitle.trim() !== currentTitle || editingProjectPseudoSynopsis.trim() !== currentPseudoSynopsis;
+  }, [selectedProject, editingProjectTitle, editingProjectPseudoSynopsis]);
+
   const getSceneFrameUrl = (scene: any) => {
     if (scene.imageUrl && typeof scene.imageUrl === 'string') {
       if (scene.imageUrl.startsWith('/uploads/')) {
@@ -661,6 +679,30 @@ export function ProjectStudio() {
     }
   };
 
+  const saveProjectDetails = async () => {
+    if (!selectedProject || !isAuthenticated || isSavingProjectDetails) return;
+    if (!editingProjectTitle.trim() || !editingProjectPseudoSynopsis.trim()) {
+      setBusyMessage('Project title and pseudo synopsis are required.');
+      return;
+    }
+
+    setIsSavingProjectDetails(true);
+    setBusyMessage('Saving project details...');
+    try {
+      const response = await api.updateProject(selectedProject.id, {
+        title: editingProjectTitle.trim(),
+        pseudoSynopsis: editingProjectPseudoSynopsis.trim(),
+      });
+      setProjects(prev => prev.map(project => project.id === selectedProject.id ? response.item : project));
+      setIsEditingProjectDetails(false);
+      setBusyMessage('Project details updated.');
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to update project details');
+    } finally {
+      setIsSavingProjectDetails(false);
+    }
+  };
+
   const generateFinalFilm = async () => {
     if (!selectedProject || !isAuthenticated || isGeneratingFinalFilm) return;
     setIsGeneratingFinalFilm(true);
@@ -721,7 +763,26 @@ export function ProjectStudio() {
               <>
                 <div className="rounded-2xl border border-amber-400/20 bg-gradient-to-br from-[#1b1307]/70 via-black/60 to-[#07131f]/70 p-5">
                   <div className="flex items-center justify-between gap-3 mb-3">
-                    <h3 className="text-2xl text-white font-semibold">{selectedProject.title}</h3>
+                    {isEditingProjectDetails ? (
+                      <input
+                        value={editingProjectTitle}
+                        onChange={event => setEditingProjectTitle(event.target.value)}
+                        onBlur={() => {
+                          if (!hasProjectDetailChanges) setIsEditingProjectDetails(false);
+                        }}
+                        className="flex-1 bg-black/40 border border-gray-700 rounded px-3 py-2 text-lg text-white"
+                        placeholder="Project title"
+                        autoFocus
+                      />
+                    ) : (
+                      <button
+                        onClick={() => setIsEditingProjectDetails(true)}
+                        className="text-2xl text-white font-semibold text-left hover:text-cyan-100"
+                        title="Click to edit title"
+                      >
+                        {selectedProject.title}
+                      </button>
+                    )}
                     <span className="text-xs uppercase tracking-widest text-gray-500">{selectedProject.durationMinutes}-min cinematic</span>
                   </div>
 
@@ -742,7 +803,13 @@ export function ProjectStudio() {
                   </div>
 
                   {synopsisTab === 'pseudo' && (
-                    <p className="text-sm text-gray-300 whitespace-pre-line">{selectedProject.pseudoSynopsis}</p>
+                    <textarea
+                      value={editingProjectPseudoSynopsis}
+                      onChange={event => setEditingProjectPseudoSynopsis(event.target.value)}
+                      className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-28"
+                      placeholder="Pseudo synopsis"
+                      disabled={!isAuthenticated}
+                    />
                   )}
                   {synopsisTab === 'polished' && (
                     <p className="text-sm text-gray-200 whitespace-pre-line">{selectedProject.polishedSynopsis || 'Not polished yet.'}</p>
@@ -751,9 +818,37 @@ export function ProjectStudio() {
                     <p className="text-sm text-gray-200 whitespace-pre-line">{selectedProject.plotScript || 'Generate polished synopsis to produce plot script.'}</p>
                   )}
 
-                  <button onClick={refineSynopsis} disabled={!isAuthenticated || isRefiningSynopsis} className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 hover:text-cyan-200 disabled:opacity-50">
-                    {isRefiningSynopsis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} {isRefiningSynopsis ? 'Polishing...' : 'Polish Synopsis'}
-                  </button>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={refineSynopsis}
+                      disabled={!isAuthenticated || isRefiningSynopsis || isSavingProjectDetails}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 hover:text-cyan-200 disabled:opacity-50"
+                    >
+                      {isRefiningSynopsis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} {isRefiningSynopsis ? 'Polishing...' : 'Polish Synopsis'}
+                    </button>
+                    {(isEditingProjectDetails || hasProjectDetailChanges) && (
+                      <>
+                        <button
+                          onClick={saveProjectDetails}
+                          disabled={!isAuthenticated || isSavingProjectDetails || !hasProjectDetailChanges}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50"
+                        >
+                          {isSavingProjectDetails ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                          {isSavingProjectDetails ? 'Saving...' : 'Save Changes'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsEditingProjectDetails(false);
+                            setEditingProjectTitle(selectedProject.title || '');
+                            setEditingProjectPseudoSynopsis(selectedProject.pseudoSynopsis || '');
+                          }}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-300"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    )}
+                  </div>
 
                 </div>
 
@@ -994,7 +1089,7 @@ export function ProjectStudio() {
 
         {busyMessage && (
           <p className="text-sm text-gray-400 mt-6 flex items-center justify-center gap-2 text-center">
-            {(isCreatingProject || isRefiningSynopsis || isSavingStyleBible || isAddingNote || isPolishingBeats || isGeneratingStoryboard || isCheckingContinuity || isPreviewingFix !== null || isApplyingFix || isGeneratingAllVideos || isRefreshingVideos || isGeneratingFinalFilm)
+            {(isCreatingProject || isSavingProjectDetails || isRefiningSynopsis || isSavingStyleBible || isAddingNote || isPolishingBeats || isGeneratingStoryboard || isCheckingContinuity || isPreviewingFix !== null || isApplyingFix || isGeneratingAllVideos || isRefreshingVideos || isGeneratingFinalFilm)
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : null}
             {busyMessage}

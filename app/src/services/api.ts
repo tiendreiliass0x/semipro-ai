@@ -204,6 +204,13 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  updateProject: (projectId: string, payload: { title?: string; pseudoSynopsis?: string }) =>
+    fetchApi<{ success: boolean; item: MovieProject }>(`/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+
   softDeleteProject: (projectId: string) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}`, {
       method: 'DELETE',

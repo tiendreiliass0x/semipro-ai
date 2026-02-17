@@ -86,6 +86,22 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return getProjectById(id);
   };
 
+  const updateProjectBasics = (id: string, input: { title?: string; pseudoSynopsis?: string }) => {
+    const now = Date.now();
+    const existing = getProjectById(id);
+    if (!existing) return null;
+
+    const nextTitle = typeof input.title === 'string' && input.title.trim()
+      ? input.title.trim()
+      : String(existing.title || '').trim();
+    const nextPseudoSynopsis = typeof input.pseudoSynopsis === 'string' && input.pseudoSynopsis.trim()
+      ? input.pseudoSynopsis.trim()
+      : String(existing.pseudoSynopsis || '').trim();
+
+    db.query('UPDATE projects SET title = ?, pseudoSynopsis = ?, updatedAt = ? WHERE id = ?').run(nextTitle, nextPseudoSynopsis, now, id);
+    return getProjectById(id);
+  };
+
   const addStoryNote = (projectId: string, input: { rawText: string; minuteMark?: number; source?: string; transcript?: string }) => {
     const now = Date.now();
     const id = generateId();
@@ -424,6 +440,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     getProjectById,
     softDeleteProject,
     createProject,
+    updateProjectBasics,
     updateProjectSynopsis,
     addStoryNote,
     listStoryNotes,

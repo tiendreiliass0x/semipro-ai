@@ -111,7 +111,16 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
         </p>
         {finalFilm?.status === 'completed' && finalFilm.videoUrl && (
           <div className="mt-2 rounded border border-cyan-400/30 bg-cyan-500/10 p-2">
-            <p className="text-[11px] uppercase tracking-widest text-cyan-200 mb-1">Final Film</p>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <p className="text-[11px] uppercase tracking-widest text-cyan-200">Final Film</p>
+              <a
+                href={getSceneVideoUrl(finalFilm.videoUrl)}
+                download
+                className="text-[11px] px-2 py-1 rounded border border-cyan-300/40 text-cyan-100 hover:text-white"
+              >
+                Download Video
+              </a>
+            </div>
             <div className="rounded overflow-hidden border border-gray-800 bg-black/50 aspect-video">
               <video src={getSceneVideoUrl(finalFilm.videoUrl)} className="w-full h-full object-cover" controls preload="auto" playsInline />
             </div>
