@@ -9,7 +9,7 @@ An interactive timeline webapp documenting the rise of Afrobeats in Seattle from
 - **Media Support**: Upload and display images, YouTube videos
 - **Story Web**: Network visualization showing connections between stories
 - **Email Subscriptions**: Collect subscriber emails for documentary updates
-- **Access Control**: Protected create/edit with 6-character access key
+- **Access Control**: Protected create/edit with account-based authentication
 
 ## Quick Start
 
@@ -43,14 +43,9 @@ npm install
 npm run dev
 ```
 
-## Access Key
+## Authentication
 
-To add or edit stories, append the access key to the URL:
-```
-http://localhost:5173/?key=AFRO12
-```
-
-The key is stored in localStorage after first use, so you only need to add it once per browser.
+To add or edit stories/projects, sign in with an account session (email/password or Google login).
 
 ## API Endpoints
 
@@ -119,7 +114,7 @@ pm2 start backend/server.js --name afrobeats-api
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | 3001 | Backend server port |
-| `ACCESS_KEY` | AFRO12 | Key for write operations |
+| `GOOGLE_CLIENT_ID` | (empty) | Google OAuth client id for Google sign-in |
 
 ## Project Structure
 

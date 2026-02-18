@@ -149,6 +149,7 @@ export interface StorylinePackageRecord {
 
 export interface MovieProject {
   id: string;
+  accountId?: string | null;
   title: string;
   pseudoSynopsis: string;
   polishedSynopsis: string;

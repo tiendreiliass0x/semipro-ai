@@ -51,7 +51,7 @@ export const handleAnecdotesRoutes = async (args: AnecdotesRouteArgs): Promise<R
   }
 
   if (pathname === '/api/anecdotes' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     const { date, year, title, story, storyteller, location, notes, media, tags } = body;
     if (!date || !year || !title || !story || !storyteller) {
@@ -62,7 +62,7 @@ export const handleAnecdotesRoutes = async (args: AnecdotesRouteArgs): Promise<R
   }
 
   if (pathname.match(/^\/api\/anecdotes\/[^/]+$/) && method === 'PUT' && !pathname.includes('/year/')) {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const id = pathname.split('/').pop()!;
     const body = await req.json();
     const updated = updateAnecdote(id, body);
@@ -73,7 +73,7 @@ export const handleAnecdotesRoutes = async (args: AnecdotesRouteArgs): Promise<R
   }
 
   if (pathname.match(/^\/api\/anecdotes\/[^/]+$/) && method === 'DELETE' && !pathname.includes('/year/')) {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const id = pathname.split('/').pop()!;
     const existing = getAnecdoteById(id);
     if (!existing) {

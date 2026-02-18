@@ -46,7 +46,7 @@ export const handleUploadsRoutes = async (args: UploadsRouteArgs): Promise<Respo
   }
 
   if (pathname === '/api/upload' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
 
     const { files } = await parseMultipart(req);
     const imageFile = files.find(file => IMAGE_EXTENSIONS.includes(extname(file.filename).toLowerCase()));

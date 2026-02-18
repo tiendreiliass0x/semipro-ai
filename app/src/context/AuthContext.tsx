@@ -3,104 +3,138 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { api } from '@/services/api';
 
 interface AuthContextType {
-  accessKey: string | null;
   isAuthenticated: boolean;
   isVerifying: boolean;
   error: string | null;
-  setAccessKey: (key: string | null) => void;
-  verifyKey: (key: string) => Promise<boolean>;
-  logout: () => void;
+  user: { id: string; email: string; name: string } | null;
+  account: { id: string; name: string; slug: string } | null;
+  login: (payload: { email: string; password: string; accountSlug?: string }) => Promise<boolean>;
+  register: (payload: { email: string; password: string; name?: string; accountName: string; accountSlug?: string }) => Promise<boolean>;
+  loginWithGoogle: (payload: { idToken: string; accountName?: string; accountSlug?: string }) => Promise<boolean>;
+  refreshAuth: () => Promise<void>;
+  logout: () => Promise<void>;
 }
-
-const ACCESS_KEY_STORAGE = 'afrobeats_access_key';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [accessKey, setAccessKeyState] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [account, setAccount] = useState<{ id: string; name: string; slug: string } | null>(null);
 
-  const verifyKey = useCallback(async (key: string): Promise<boolean> => {
+  const refreshAuth = useCallback(async () => {
     setIsVerifying(true);
     setError(null);
-    
+
     try {
-      const data = await api.verifyKey(key);
-      if (data.valid) {
-        setAccessKeyState(key);
-        setIsAuthenticated(true);
-        localStorage.setItem(ACCESS_KEY_STORAGE, key);
-        return true;
-      } else {
-        setError(data.error || 'Invalid access key');
-        return false;
-      }
-    } catch {
-      setError('Failed to verify key');
+      const me = await api.getCurrentUser();
+      setIsAuthenticated(true);
+      setUser(me.user);
+      setAccount(me.account);
+    } catch (err) {
+      setIsAuthenticated(false);
+      setUser(null);
+      setAccount(null);
+      setError(err instanceof Error ? err.message : null);
+    } finally {
+      setIsVerifying(false);
+    }
+  }, []);
+
+  const login = useCallback(async (payload: { email: string; password: string; accountSlug?: string }): Promise<boolean> => {
+    setIsVerifying(true);
+    setError(null);
+    try {
+      const response = await api.login(payload);
+      api.setAuthToken(response.token);
+      setIsAuthenticated(true);
+      setUser(response.user);
+      setAccount({ id: response.account.id, name: response.account.name, slug: response.account.slug });
+      return true;
+    } catch (err) {
+      setIsAuthenticated(false);
+      setUser(null);
+      setAccount(null);
+      setError(err instanceof Error ? err.message : 'Login failed');
       return false;
     } finally {
       setIsVerifying(false);
     }
   }, []);
 
-  const logout = useCallback(() => {
-    setAccessKeyState(null);
+  const register = useCallback(async (payload: { email: string; password: string; name?: string; accountName: string; accountSlug?: string }): Promise<boolean> => {
+    setIsVerifying(true);
+    setError(null);
+    try {
+      const response = await api.register(payload);
+      api.setAuthToken(response.token);
+      setIsAuthenticated(true);
+      setUser(response.user);
+      setAccount({ id: response.account.id, name: response.account.name, slug: response.account.slug });
+      return true;
+    } catch (err) {
+      setIsAuthenticated(false);
+      setUser(null);
+      setAccount(null);
+      setError(err instanceof Error ? err.message : 'Registration failed');
+      return false;
+    } finally {
+      setIsVerifying(false);
+    }
+  }, []);
+
+  const loginWithGoogle = useCallback(async (payload: { idToken: string; accountName?: string; accountSlug?: string }): Promise<boolean> => {
+    setIsVerifying(true);
+    setError(null);
+    try {
+      const response = await api.loginWithGoogle(payload);
+      api.setAuthToken(response.token);
+      setIsAuthenticated(true);
+      setUser(response.user);
+      setAccount({ id: response.account.id, name: response.account.name, slug: response.account.slug });
+      return true;
+    } catch (err) {
+      setIsAuthenticated(false);
+      setUser(null);
+      setAccount(null);
+      setError(err instanceof Error ? err.message : 'Google sign-in failed');
+      return false;
+    } finally {
+      setIsVerifying(false);
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await api.logout();
+    } catch {
+      // ignore logout transport failures
+    }
+    api.setAuthToken(null);
     setIsAuthenticated(false);
-    localStorage.removeItem(ACCESS_KEY_STORAGE);
+    setUser(null);
+    setAccount(null);
     setError(null);
   }, []);
 
-  const setAccessKey = useCallback((key: string | null) => {
-    if (key) {
-      verifyKey(key);
-    } else {
-      logout();
-    }
-  }, [verifyKey, logout]);
-
-  // Initialize from URL param or localStorage on mount
   useEffect(() => {
-    const initAuth = async () => {
-      // Check URL query param first
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlKey = urlParams.get('key');
-
-      if (urlKey) {
-        // Verify and store the key from URL
-        const isValid = await verifyKey(urlKey);
-        if (isValid) {
-          // Clean up URL but keep the key in storage
-          const newUrl = window.location.pathname + window.location.hash;
-          window.history.replaceState({}, '', newUrl);
-        }
-        return;
-      }
-
-      // Check localStorage
-      const storedKey = localStorage.getItem(ACCESS_KEY_STORAGE);
-      if (storedKey) {
-        const isValid = await verifyKey(storedKey);
-        if (!isValid) {
-          // Invalid stored key, clear it
-          localStorage.removeItem(ACCESS_KEY_STORAGE);
-        }
-      }
-    };
-
-    initAuth();
-  }, [verifyKey]);
+    refreshAuth();
+  }, [refreshAuth]);
 
   return (
     <AuthContext.Provider
       value={{
-        accessKey,
         isAuthenticated,
         isVerifying,
         error,
-        setAccessKey,
-        verifyKey,
+        user,
+        account,
+        login,
+        register,
+        loginWithGoogle,
+        refreshAuth,
         logout,
       }}
     >

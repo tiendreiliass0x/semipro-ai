@@ -1,0 +1,189 @@
+# Semipro AI - Project Lifetime Reference
+
+Purpose: keep a durable, 360-degree view of the product and technical system as the codebase grows.
+
+## Product Intent
+
+- Product: Semipro AI, an AI filmmaking studio from rough idea -> beats -> storyboard -> scene videos -> final film.
+- Core promise: move from concept to usable cinematic package quickly, with structure and continuity checks.
+- Current priority UX: mobile-friendly creation flow, visible progress for async AI operations, and simple project lifecycle controls.
+
+## Canonical User Workflow
+
+1. Create project (typed idea or recorded idea).
+2. Refine pseudo synopsis -> polished synopsis + plot script.
+3. Capture beat stories (typed/audio + AI starter notes).
+4. Polish notes into timeline beats.
+5. Generate storyboard scenes (with frame images).
+6. Generate per-scene videos asynchronously.
+7. Compile final film from completed clips.
+8. Soft-delete project when no longer active (hidden from active list, data retained).
+
+## Critical Backend Modules (and why they matter)
+
+- `backend/server.ts`
+  - App composition root: DB setup, route registration, worker bootstrapping.
+  - Critical because it defines runtime wiring and startup behavior.
+
+- `backend/routes/projects.ts`
+  - Main API for project studio lifecycle (projects, notes, beats, storyboard, videos, final film, continuity).
+  - Critical because this is the feature center for Semipro AI.
+
+- `backend/db/projects.ts`
+  - Project-domain persistence logic.
+  - Critical because it encodes domain invariants (ordering, locks, soft-delete filtering).
+
+- `backend/lib/storylineLlm.ts`
+  - Text/storyboard generation adapters (OpenAI + image generation integration).
+  - Critical because prompt and schema quality directly affect output quality.
+
+- `backend/lib/sceneVideo.ts`
+  - Scene video generation + final film clip collation.
+  - Critical because asynchronous media generation and ffmpeg composition live here.
+
+- `backend/data/migrate.ts`
+  - Schema bootstrap + migrations.
+  - Critical because every deploy and environment restoration depends on schema compatibility.
+
+## Critical Frontend Components (and why they matter)
+
+- `app/src/sections/ProjectStudio.tsx`
+  - State orchestration container for project workflow.
+  - Critical because it coordinates feature state and API calls.
+
+- `app/src/sections/project-studio/ProjectSidebar.tsx`
+  - Project switching and settings entry.
+
+- `app/src/sections/project-studio/CreateProjectModal.tsx`
+  - Creation and access-key unlock UX.
+
+- `app/src/sections/project-studio/ScenesWorkspace.tsx`
+  - Scene video controls, progress, and final film playback/download.
+
+- `app/src/sections/project-studio/DeleteProjectModal.tsx`
+  - Confirmed destructive action UX.
+
+- `app/src/services/api.ts`
+  - Client API contract surface; any endpoint changes must be reflected here.
+
+- `app/src/types/index.ts`
+  - Shared UI-facing type contracts; drift here causes hidden integration bugs.
+
+## Data Model Decisions
+
+- `projects.deletedAt` (INTEGER epoch ms, nullable) is the soft-delete source of truth.
+  - `NULL` = active project.
+  - non-null = soft-deleted project.
+- Multi-tenant ownership is represented by `projects.accountId`.
+  - Account-scoped requests only see projects belonging to the authenticated account.
+  - Legacy access-key mode can still operate without account scoping for compatibility.
+- `projects.status` is reserved for workflow state (draft/active/locked), not deletion.
+- Final films are tracked in `project_final_films` with status (`processing|completed|failed`) and `videoUrl`.
+- Latest scene videos are resolved per beat from `scene_videos` history.
+
+## Multi-Tenant Auth Foundation
+
+- New auth/domain tables:
+  - `users` (identity)
+  - `accounts` (tenant/workspace)
+  - `account_memberships` (user-to-account role mapping)
+  - `user_sessions` (bearer-token session state)
+- New auth endpoints:
+  - `POST /api/auth/register`
+  - `POST /api/auth/login`
+  - `POST /api/auth/google`
+  - `POST /api/auth/logout`
+  - `GET /api/auth/me`
+- Authentication model:
+  - Bearer token (`Authorization`) resolves `userId` + `accountId`.
+  - Project routes enforce account scoping via authenticated `accountId`.
+  - Legacy access-code flow is removed; account/session auth is now the default path.
+
+## Key Design Decisions (with rationale)
+
+- Use Bun runtime for backend execution.
+  - Reason: fast startup + integrated tooling (`bun test`, simple deployment path).
+
+- Use SQLite for persistence.
+  - Reason: low operational complexity for early-stage product and easy backup/migration.
+
+- Use OpenAI for structured text generation.
+  - Reason: strong structured output capabilities for synopsis/beats/storyboard workflows.
+
+- Use FAL for image/video generation.
+  - Reason: purpose-built media endpoints and async-friendly generation flow.
+
+- Keep remote FAL video URLs for scene playback (instead of local cache-first).
+  - Reason: reduce storage pressure and simplify asset lifecycle.
+
+- Use ffmpeg locally on backend for final-film collation.
+  - Reason: deterministic clip normalization/concatenation under app control.
+
+- Split large UI sections into reusable components.
+  - Reason: reduce cognitive load and improve maintainability as feature count grows.
+
+- Use explicit confirmation modal for deletion.
+  - Reason: safer destructive actions and clearer user intent than native `confirm`.
+
+## API Surface to Protect
+
+- Projects:
+  - `GET /api/projects`
+  - `POST /api/projects`
+  - `PATCH /api/projects/:id`
+  - `DELETE /api/projects/:id` (soft-delete)
+
+- Story pipeline:
+  - `POST /api/projects/:id/synopsis/refine`
+  - `GET|POST /api/projects/:id/notes`
+  - `GET /api/projects/:id/beats`
+  - `POST /api/projects/:id/beats/polish`
+  - `PATCH /api/projects/:id/beats/:beatId/lock`
+
+- Storyboard/video:
+  - `POST /api/projects/:id/storyboard/generate`
+  - `GET /api/projects/:id/storyboard`
+  - `PATCH /api/projects/:id/storyboard/scene-lock`
+  - `GET /api/projects/:id/storyboard/videos`
+  - `POST|GET /api/projects/:id/storyboard/:beatId/video`
+
+- Final film:
+  - `GET /api/projects/:id/final-film`
+  - `POST /api/projects/:id/final-film/generate`
+
+## Deployment + Ops Snapshot
+
+- CI/CD workflows:
+  - `.github/workflows/ci.yml`
+  - `.github/workflows/deploy.yml`
+- Runtime process manager: PM2 (`semipro-ai-api`).
+- Deploy user: non-root `deploy` via SSH key.
+- Recommended health check execution context: run on droplet (`127.0.0.1:3001/api/health`) via SSH action.
+- Nginx should serve frontend static build and proxy `/api` + `/uploads` to backend.
+
+## Security Baseline
+
+- SSH key auth, root login disabled, password auth disabled.
+- UFW allowlist: `22`, `80`, `443`.
+- Access-key middleware gates write/privileged project routes.
+- Keep secrets only in server env and GitHub secrets (never in repo).
+
+## Conventions to Preserve
+
+- Treat `api.ts` + backend routes as a contract; update both together.
+- Preserve project ordering by `updatedAt DESC` unless product requirement changes.
+- Keep long-running media tasks explicit in UI with loading/progress states.
+- Avoid silent destructive actions; use explicit confirmation affordances.
+
+## Known Growth Risks
+
+- `ProjectStudio.tsx` is still orchestration-heavy; further split by domain (synopsis/beats/continuity).
+- Single-process queue may become a bottleneck under heavy video generation volume.
+- SQLite may need migration strategy for high concurrency or multi-instance deployments.
+
+## Next Architecture Milestones
+
+- Move final-film compilation to queued background jobs (same pattern as scene videos).
+- Add project restore flow for soft-deleted items.
+- Add integration tests for project API contract and final-film pipeline.
+- Introduce observability for queue latency, failure rates, and generation durations.

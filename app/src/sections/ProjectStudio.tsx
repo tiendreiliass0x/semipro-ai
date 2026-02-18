@@ -9,7 +9,7 @@ import { ProjectSidebar } from './project-studio/ProjectSidebar';
 import { ScenesWorkspace } from './project-studio/ScenesWorkspace';
 
 export function ProjectStudio() {
-  const { isAuthenticated, verifyKey, isVerifying, error: authError } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [projects, setProjects] = useState<MovieProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [notes, setNotes] = useState<StoryNote[]>([]);
@@ -34,7 +34,6 @@ export function ProjectStudio() {
   const [editingProjectTitle, setEditingProjectTitle] = useState('');
   const [editingProjectPseudoSynopsis, setEditingProjectPseudoSynopsis] = useState('');
   const [isEditingProjectDetails, setIsEditingProjectDetails] = useState(false);
-  const [accessKeyInput, setAccessKeyInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [directorPrompt, setDirectorPrompt] = useState('Cinematic, emotionally grounded, practical for low-budget production.');
   const [filmType, setFilmType] = useState('cinematic live-action');
@@ -639,16 +638,6 @@ export function ProjectStudio() {
     });
   };
 
-  const unlockProjectCreation = async () => {
-    const key = accessKeyInput.trim();
-    if (!key) return;
-    const ok = await verifyKey(key);
-    if (ok) {
-      setBusyMessage('Access granted. You can now create your film.');
-      setAccessKeyInput('');
-    }
-  };
-
   const softDeleteCurrentProject = async () => {
     if (!selectedProject || !isAuthenticated || isDeletingProject) return;
 
@@ -749,7 +738,7 @@ export function ProjectStudio() {
             {!selectedProject && (
               <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-black/70 to-[#111827]/60 p-6 text-gray-300 space-y-4">
                 <p>Create your first project to start.</p>
-                {!isAuthenticated && <p className="text-xs text-amber-200/80">You need an access key before creating a film.</p>}
+                {!isAuthenticated && <p className="text-xs text-amber-200/80">Sign in to create and edit projects.</p>}
                 <button
                   onClick={() => setShowCreateProjectModal(true)}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold"
@@ -1150,16 +1139,11 @@ export function ProjectStudio() {
       <CreateProjectModal
         open={showCreateProjectModal}
         isAuthenticated={isAuthenticated}
-        isVerifying={isVerifying}
-        authError={authError}
-        accessKeyInput={accessKeyInput}
         newTitle={newTitle}
         newPseudoSynopsis={newPseudoSynopsis}
         isRecordCreating={isRecordCreating}
         isCreatingProject={isCreatingProject}
         onClose={() => setShowCreateProjectModal(false)}
-        onChangeAccessKey={setAccessKeyInput}
-        onUnlock={unlockProjectCreation}
         onChangeTitle={setNewTitle}
         onChangePseudoSynopsis={setNewPseudoSynopsis}
         onRecordIdea={recordProjectIdea}

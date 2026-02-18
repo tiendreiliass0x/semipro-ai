@@ -9,9 +9,10 @@ const getBaseUrl = () => {
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 export const UPLOADS_BASE_URL = getBaseUrl();
 
-// Get stored access key
-const getAccessKey = (): string | null => {
-  return localStorage.getItem('afrobeats_access_key');
+const AUTH_TOKEN_STORAGE = 'semipro_auth_token';
+
+const getAuthToken = (): string | null => {
+  return localStorage.getItem(AUTH_TOKEN_STORAGE);
 };
 
 class ApiError extends Error {
@@ -24,15 +25,14 @@ class ApiError extends Error {
 }
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const accessKey = getAccessKey();
+  const authToken = getAuthToken();
   
   const headers: Record<string, string> = {
     ...options?.headers as Record<string, string>,
   };
   
-  // Add access key header when available
-  if (accessKey) {
-    headers['X-Access-Key'] = accessKey;
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
   }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -60,13 +60,13 @@ export const api = {
 
   // Image upload (requires auth)
   uploadImage: async (file: File): Promise<{ url: string; filename: string; success?: boolean }> => {
-    const accessKey = getAccessKey();
+    const authToken = getAuthToken();
     const formData = new FormData();
     formData.append('image', file);
 
     const headers: Record<string, string> = {};
-    if (accessKey) {
-      headers['X-Access-Key'] = accessKey;
+    if (authToken) {
+      headers.Authorization = `Bearer ${authToken}`;
     }
 
     const response = await fetch(`${API_BASE_URL}/upload`, {
@@ -85,13 +85,13 @@ export const api = {
 
   // Multiple images upload (requires auth)
   uploadImages: async (files: File[]): Promise<{ files: Array<{ url: string; filename: string; originalName: string; size: number }> }> => {
-    const accessKey = getAccessKey();
+    const authToken = getAuthToken();
     const formData = new FormData();
     files.forEach(file => formData.append('images', file));
 
     const headers: Record<string, string> = {};
-    if (accessKey) {
-      headers['X-Access-Key'] = accessKey;
+    if (authToken) {
+      headers.Authorization = `Bearer ${authToken}`;
     }
 
     const response = await fetch(`${API_BASE_URL}/upload/multiple`, {
@@ -310,15 +310,40 @@ export const api = {
       body: JSON.stringify({}),
     }),
 
-  // Verify access key
-  verifyKey: async (key: string): Promise<{ valid: boolean; error?: string }> => {
-    const response = await fetch(`${API_BASE_URL}/verify-key`, {
+  setAuthToken: (token: string | null) => {
+    if (token) localStorage.setItem(AUTH_TOKEN_STORAGE, token);
+    else localStorage.removeItem(AUTH_TOKEN_STORAGE);
+  },
+
+  register: (payload: { email: string; password: string; name?: string; accountName: string; accountSlug?: string }) =>
+    fetchApi<{ success: boolean; token: string; expiresAt: number; user: { id: string; email: string; name: string }; account: { id: string; name: string; slug: string; plan: string } }>('/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
-    });
+      body: JSON.stringify(payload),
+    }),
 
-    const data = await response.json();
-    return data;
-  },
+  login: (payload: { email: string; password: string; accountSlug?: string }) =>
+    fetchApi<{ success: boolean; token: string; expiresAt: number; user: { id: string; email: string; name: string }; account: { id: string; name: string; slug: string; plan: string }; memberships: Array<{ accountId: string; accountName: string; accountSlug: string; accountPlan: string; role: string }> }>('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+
+  loginWithGoogle: (payload: { idToken: string; accountName?: string; accountSlug?: string }) =>
+    fetchApi<{ success: boolean; token: string; expiresAt: number; user: { id: string; email: string; name: string }; account: { id: string; name: string; slug: string; plan: string }; memberships: Array<{ accountId: string; accountName: string; accountSlug: string; accountPlan: string; role: string }> }>('/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+
+  logout: () =>
+    fetchApi<{ success: boolean }>('/auth/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }),
+
+  getCurrentUser: () =>
+    fetchApi<{ user: { id: string; email: string; name: string }; account: { id: string; name: string; slug: string }; memberships: Array<{ accountId: string; accountName: string; accountSlug: string; accountPlan: string; role: string }> }>('/auth/me'),
+
 };

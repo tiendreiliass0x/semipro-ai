@@ -12,6 +12,59 @@ const db = new Database(DB_PATH);
 
 // Create tables
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    passwordHash TEXT NOT NULL,
+    name TEXT DEFAULT '',
+    status TEXT DEFAULT 'active',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS accounts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    plan TEXT DEFAULT 'free',
+    status TEXT DEFAULT 'active',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS account_memberships (
+    id TEXT PRIMARY KEY,
+    accountId TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    role TEXT DEFAULT 'member',
+    status TEXT DEFAULT 'active',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    UNIQUE(accountId, userId),
+    FOREIGN KEY (accountId) REFERENCES accounts(id) ON DELETE CASCADE,
+    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_sessions (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    accountId TEXT NOT NULL,
+    tokenHash TEXT UNIQUE NOT NULL,
+    expiresAt INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    lastSeenAt INTEGER NOT NULL,
+    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (accountId) REFERENCES accounts(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS anecdotes (
     id TEXT PRIMARY KEY,
     date TEXT NOT NULL,
@@ -72,6 +125,7 @@ db.exec(`
 db.exec(`
   CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
+    accountId TEXT,
     title TEXT NOT NULL,
     pseudoSynopsis TEXT NOT NULL,
     polishedSynopsis TEXT DEFAULT '',
@@ -187,6 +241,16 @@ db.exec(`
     updatedAt INTEGER NOT NULL
   )
 `);
+
+const ensureTableColumn = (tableName: string, columnName: string, columnSql: string) => {
+  const columns = db.query(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+  if (!columns.find(column => column.name === columnName)) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnSql}`);
+  }
+};
+
+ensureTableColumn('projects', 'accountId', 'TEXT');
+ensureTableColumn('projects', 'deletedAt', 'INTEGER');
 
 const migrationKey = 'projects_duration_to_one_min_v1';
 const alreadyRan = db.query('SELECT value FROM app_meta WHERE key = ?').get(migrationKey) as { value?: string } | null;

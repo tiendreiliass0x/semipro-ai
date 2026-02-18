@@ -43,7 +43,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
   }
 
   if (pathname === '/api/storylines/generate' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     const storyline = body.storyline;
     const prompt = typeof body.prompt === 'string' ? body.prompt : '';
@@ -63,7 +63,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
   }
 
   if (pathname === '/api/storylines/scene/regenerate' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     const storyline = body.storyline;
     const scene = body.scene;
@@ -83,14 +83,14 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
   }
 
   if (pathname === '/api/storylines/packages' && method === 'GET') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const storylineId = url.searchParams.get('storylineId');
     if (!storylineId) return new Response(JSON.stringify({ error: 'storylineId is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify({ items: listStorylinePackages(storylineId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/storylines/package' && method === 'GET') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const storylineId = url.searchParams.get('storylineId');
     if (!storylineId) return new Response(JSON.stringify({ error: 'storylineId is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     const item = getLatestStorylinePackage(storylineId);
@@ -98,7 +98,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
   }
 
   if (pathname === '/api/storylines/package' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     const storylineId = String(body.storylineId || '');
     const payload = body.payload;
@@ -118,7 +118,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
   }
 
   if (pathname === '/api/storylines' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     const storylines = Array.isArray(body) ? body : body.storylines;
     if (!Array.isArray(storylines)) return new Response(JSON.stringify({ error: 'Invalid storylines payload' }), { status: 400, headers: jsonHeaders(corsHeaders) });

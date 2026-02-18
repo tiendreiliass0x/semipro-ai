@@ -13,18 +13,35 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     dontList: ['Avoid generic inspirational cliches', 'Avoid timeline jumps without transition cards'],
   };
 
-  const listProjects = () => {
+  const listProjects = (accountId?: string) => {
+    if (accountId) {
+      return db.query(`
+        SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
+        FROM projects
+        WHERE deletedAt IS NULL AND accountId = ?
+        ORDER BY updatedAt DESC
+      `).all(accountId) as any[];
+    }
+
     return db.query(`
-      SELECT id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
+      SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
       FROM projects
       WHERE deletedAt IS NULL
       ORDER BY updatedAt DESC
     `).all() as any[];
   };
 
-  const getProjectById = (id: string) => {
+  const getProjectById = (id: string, accountId?: string) => {
+    if (accountId) {
+      return db.query(`
+        SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
+        FROM projects
+        WHERE id = ? AND accountId = ? AND deletedAt IS NULL
+      `).get(id, accountId) as any;
+    }
+
     return db.query(`
-      SELECT id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
+      SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
       FROM projects
       WHERE id = ? AND deletedAt IS NULL
     `).get(id) as any;
@@ -36,7 +53,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return Number(result?.changes || 0) > 0;
   };
 
-  const createProject = (input: { title?: string; pseudoSynopsis: string; style?: string; durationMinutes?: number }) => {
+  const createProject = (input: { accountId?: string; title?: string; pseudoSynopsis: string; style?: string; durationMinutes?: number }) => {
     const now = Date.now();
     const id = generateId();
     const style = (input.style || 'cinematic').toLowerCase();
@@ -49,14 +66,14 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     const title = explicitTitle || fallbackTitle;
 
     db.query(`
-      INSERT INTO projects (id, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, title, synopsis, '', '', style, durationMinutes, 'draft', null, now, now);
+      INSERT INTO projects (id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, input.accountId || null, title, synopsis, '', '', style, durationMinutes, 'draft', null, now, now);
     db.query(`
       INSERT INTO project_style_bibles (projectId, payload, createdAt, updatedAt)
       VALUES (?, ?, ?, ?)
     `).run(id, JSON.stringify(DEFAULT_STYLE_BIBLE), now, now);
-    return getProjectById(id);
+    return getProjectById(id, input.accountId);
   };
 
   const getProjectStyleBible = (projectId: string) => {

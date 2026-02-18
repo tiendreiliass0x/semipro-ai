@@ -1,21 +1,23 @@
 import { serve } from 'bun';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
+import { createHash } from 'crypto';
 import { Database } from 'bun:sqlite';
 import { createAnecdotesDb } from './db/anecdotes';
+import { createAuthDb } from './db/auth';
 import { createProjectsDb } from './db/projects';
 import { createStorylinesDb } from './db/storylines';
 import { createSubscribersDb } from './db/subscribers';
 import { generateProjectStoryboardWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
 import { buildDirectorSceneVideoPrompt, createFinalFilmFromClips, generateSceneVideoWithFal } from './lib/sceneVideo';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
+import { handleAuthRoutes } from './routes/auth';
 import { handleProjectsRoutes } from './routes/projects';
 import { handleStorylinesRoutes } from './routes/storylines';
 import { handleSubscribersRoutes } from './routes/subscribers';
 import { handleUploadsRoutes } from './routes/uploads';
 
 const PORT = parseInt(process.env.PORT || '3001');
-const ACCESS_KEY = process.env.ACCESS_KEY || 'PRO12';
 const ADMIN_ACCESS_KEY = process.env.ADMIN_ACCESS_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-4.1-mini';
@@ -23,7 +25,7 @@ const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-4.1-mini';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Access-Key, X-Admin-Key',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Key',
 };
 
 const dataDir = join(import.meta.dir, 'data');
@@ -37,6 +39,59 @@ const DB_PATH = join(dataDir, 'anecdotes.db');
 const db = new Database(DB_PATH);
 
 // Create tables if they don't exist
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    passwordHash TEXT NOT NULL,
+    name TEXT DEFAULT '',
+    status TEXT DEFAULT 'active',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS accounts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    plan TEXT DEFAULT 'free',
+    status TEXT DEFAULT 'active',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS account_memberships (
+    id TEXT PRIMARY KEY,
+    accountId TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    role TEXT DEFAULT 'member',
+    status TEXT DEFAULT 'active',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    UNIQUE(accountId, userId),
+    FOREIGN KEY (accountId) REFERENCES accounts(id) ON DELETE CASCADE,
+    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_sessions (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    accountId TEXT NOT NULL,
+    tokenHash TEXT UNIQUE NOT NULL,
+    expiresAt INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    lastSeenAt INTEGER NOT NULL,
+    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (accountId) REFERENCES accounts(id) ON DELETE CASCADE
+  )
+`);
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS anecdotes (
     id TEXT PRIMARY KEY,
@@ -99,6 +154,7 @@ db.exec(`
 db.exec(`
   CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
+    accountId TEXT,
     title TEXT NOT NULL,
     pseudoSynopsis TEXT NOT NULL,
     polishedSynopsis TEXT DEFAULT '',
@@ -224,6 +280,7 @@ const ensureTableColumn = (tableName: string, columnName: string, columnSql: str
 ensureTableColumn('story_beats', 'locked', 'INTEGER DEFAULT 0');
 ensureTableColumn('projects', 'plotScript', "TEXT DEFAULT ''");
 ensureTableColumn('projects', 'deletedAt', 'INTEGER');
+ensureTableColumn('projects', 'accountId', 'TEXT');
 
 const runOneTimeMigrations = () => {
   const migrationKey = 'projects_duration_to_one_min_v1';
@@ -249,14 +306,48 @@ runOneTimeMigrations();
 const generateId = (): string => crypto.randomUUID();
 
 const verifyAccessKey = (req: Request): boolean => {
-  const key = req.headers.get('x-access-key') || new URL(req.url).searchParams.get('key');
-  return key === ACCESS_KEY;
+  return Boolean(getAuthContext(req));
 };
+
+const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 const verifyAdminKey = (req: Request): boolean => {
   if (!ADMIN_ACCESS_KEY) return false;
   const key = req.headers.get('x-admin-key') || new URL(req.url).searchParams.get('adminKey');
   return key === ADMIN_ACCESS_KEY;
+};
+
+const getAuthContext = (req: Request) => {
+  const authHeader = req.headers.get('authorization') || '';
+  if (!authHeader.toLowerCase().startsWith('bearer ')) return null;
+  const token = authHeader.slice(7).trim();
+  if (!token) return null;
+
+  const session = getSessionByTokenHash(hashToken(token));
+  if (!session) return null;
+  if (Number(session.expiresAt || 0) < Date.now()) {
+    revokeSessionByTokenHash(hashToken(token));
+    return null;
+  }
+  if (String(session.userStatus || '') !== 'active' || String(session.accountStatus || '') !== 'active') {
+    return null;
+  }
+
+  touchSession(session.id);
+  return {
+    sessionId: String(session.id),
+    userId: String(session.userId),
+    accountId: String(session.accountId),
+    email: String(session.email || ''),
+    userName: String(session.userName || ''),
+    accountName: String(session.accountName || ''),
+    accountSlug: String(session.accountSlug || ''),
+  };
+};
+
+const getRequestAccountId = (req: Request): string | null => {
+  const context = getAuthContext(req);
+  return context?.accountId || null;
 };
 
 // Database helpers
@@ -282,6 +373,22 @@ const {
   listSubscribers,
   exportSubscribersCsv,
 } = createSubscribersDb({ db, generateId });
+
+const {
+  getUserByEmail,
+  getUserById,
+  createUser,
+  getAccountById,
+  getAccountBySlug,
+  createAccount,
+  addMembership,
+  listUserMemberships,
+  createSession,
+  getSessionByTokenHash,
+  touchSession,
+  revokeSessionByTokenHash,
+  revokeExpiredSessions,
+} = createAuthDb({ db, generateId });
 
 const {
   listProjects,
@@ -346,6 +453,13 @@ const processSceneVideoQueue = async () => {
 setInterval(() => {
   processSceneVideoQueue().catch(() => null);
 }, 2500);
+
+setInterval(() => {
+  const removed = revokeExpiredSessions();
+  if (removed > 0) {
+    console.log(`[auth] Removed ${removed} expired session(s)`);
+  }
+}, 5 * 60 * 1000);
 
 const requeuedCount = requeueStaleProcessingSceneVideos();
 if (requeuedCount > 0) {
@@ -549,12 +663,30 @@ serve({
       return new Response(JSON.stringify(getDbStats()), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    const authResponse = await handleAuthRoutes({
+      req,
+      pathname,
+      method,
+      corsHeaders,
+      getUserByEmail,
+      createUser,
+      getAccountBySlug,
+      createAccount,
+      addMembership,
+      listUserMemberships,
+      createSession,
+      revokeSessionByTokenHash,
+      getAuthContext,
+    });
+    if (authResponse) return authResponse;
+
     const projectsResponse = await handleProjectsRoutes({
       req,
       pathname,
       method,
       corsHeaders,
       verifyAccessKey,
+      getRequestAccountId,
       listProjects,
       getProjectById,
       softDeleteProject,
@@ -620,14 +752,6 @@ serve({
     });
     if (anecdotesResponse) return anecdotesResponse;
 
-    if (pathname === '/api/verify-key' && method === 'POST') {
-      const body = await req.json();
-      const { key } = body;
-      if (!key) return new Response(JSON.stringify({ valid: false, error: 'Key required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      if (key === ACCESS_KEY) return new Response(JSON.stringify({ valid: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      return new Response(JSON.stringify({ valid: false, error: 'Invalid key' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
     const subscribersResponse = await handleSubscribersRoutes({
       req,
       pathname,
@@ -645,7 +769,6 @@ serve({
 });
 
 console.log(`Server running on port ${PORT}`);
-console.log(`Access key: ${ACCESS_KEY}`);
 console.log(`Admin key configured: ${ADMIN_ACCESS_KEY ? 'yes' : 'no'}`);
 console.log(`LLM model: ${OPENAI_MODEL}`);
 console.log(`Image model: ${OPENAI_IMAGE_MODEL}`);

@@ -3,16 +3,11 @@ import { Loader2, Mic, Plus, X } from 'lucide-react';
 type CreateProjectModalProps = {
   open: boolean;
   isAuthenticated: boolean;
-  isVerifying: boolean;
-  authError: string | null;
-  accessKeyInput: string;
   newTitle: string;
   newPseudoSynopsis: string;
   isRecordCreating: boolean;
   isCreatingProject: boolean;
   onClose: () => void;
-  onChangeAccessKey: (value: string) => void;
-  onUnlock: () => void;
   onChangeTitle: (value: string) => void;
   onChangePseudoSynopsis: (value: string) => void;
   onRecordIdea: () => void;
@@ -23,16 +18,11 @@ export function CreateProjectModal(props: CreateProjectModalProps) {
   const {
     open,
     isAuthenticated,
-    isVerifying,
-    authError,
-    accessKeyInput,
     newTitle,
     newPseudoSynopsis,
     isRecordCreating,
     isCreatingProject,
     onClose,
-    onChangeAccessKey,
-    onUnlock,
     onChangeTitle,
     onChangePseudoSynopsis,
     onRecordIdea,
@@ -52,30 +42,7 @@ export function CreateProjectModal(props: CreateProjectModalProps) {
         </div>
 
         <div className="space-y-3">
-          {!isAuthenticated && (
-            <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 space-y-2">
-              <p className="text-xs uppercase tracking-widest text-amber-200">Unlock Creation</p>
-              <p className="text-[11px] text-amber-100/80">Enter your access key to enable project creation in production.</p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={accessKeyInput}
-                  onChange={event => onChangeAccessKey(event.target.value)}
-                  className="flex-1 bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm"
-                  placeholder="Access key"
-                />
-                <button
-                  onClick={onUnlock}
-                  disabled={!accessKeyInput.trim() || isVerifying}
-                  className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded border border-amber-300/60 text-amber-100 text-sm font-semibold disabled:opacity-50"
-                >
-                  {isVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  {isVerifying ? 'Verifying...' : 'Unlock'}
-                </button>
-              </div>
-              {authError && <p className="text-[11px] text-rose-300">{authError}</p>}
-            </div>
-          )}
+          {!isAuthenticated && <p className="text-[11px] text-amber-100/80">Sign in to create projects.</p>}
 
           <input
             value={newTitle}

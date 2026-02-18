@@ -4,10 +4,11 @@ type ProjectsRouteArgs = {
   method: string;
   corsHeaders: Record<string, string>;
   verifyAccessKey: (req: Request) => boolean;
-  listProjects: () => any[];
-  getProjectById: (id: string) => any;
+  getRequestAccountId: (req: Request) => string | null;
+  listProjects: (accountId?: string) => any[];
+  getProjectById: (id: string, accountId?: string) => any;
   softDeleteProject: (id: string) => boolean;
-  createProject: (input: { title?: string; pseudoSynopsis: string; style?: string; durationMinutes?: number }) => any;
+  createProject: (input: { accountId?: string; title?: string; pseudoSynopsis: string; style?: string; durationMinutes?: number }) => any;
   updateProjectBasics: (id: string, input: { title?: string; pseudoSynopsis?: string }) => any;
   updateProjectSynopsis: (id: string, polishedSynopsis: string, plotScript?: string) => any;
   addStoryNote: (projectId: string, input: { rawText: string; minuteMark?: number; source?: string; transcript?: string }) => any;
@@ -52,6 +53,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     method,
     corsHeaders,
     verifyAccessKey,
+    getRequestAccountId,
     listProjects,
     getProjectById,
     softDeleteProject,
@@ -82,6 +84,11 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     createFinalFilmFromClips,
     uploadsDir,
   } = args;
+
+  const requestAccountId = getRequestAccountId(req);
+  const scopeAccountId = requestAccountId || undefined;
+  const canWrite = verifyAccessKey(req) && Boolean(requestAccountId);
+  const getScopedProject = (projectId: string) => getProjectById(projectId, scopeAccountId);
 
   const buildContinuityIssues = (beats: any[]) => {
     const issues: any[] = [];
@@ -190,16 +197,17 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   };
 
   if (pathname === '/api/projects' && method === 'GET') {
-    return new Response(JSON.stringify(listProjects()), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify(listProjects(scopeAccountId)), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/projects' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     if (!body?.pseudoSynopsis || !String(body.pseudoSynopsis).trim()) {
       return new Response(JSON.stringify({ error: 'pseudoSynopsis is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
     const project = createProject({
+      accountId: scopeAccountId,
       title: body.title ? String(body.title) : '',
       pseudoSynopsis: String(body.pseudoSynopsis),
       style: body.style || 'cinematic',
@@ -210,23 +218,25 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const item = getProjectById(projectId);
+    const item = getProjectById(projectId, scopeAccountId);
     if (!item) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify(item), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+$/) && method === 'DELETE') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const item = getProjectById(projectId);
+    const item = getProjectById(projectId, scopeAccountId);
     if (!item) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const success = softDeleteProject(projectId);
     return new Response(JSON.stringify({ success }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+$/) && method === 'PATCH') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
+    const existing = getProjectById(projectId, scopeAccountId);
+    if (!existing) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json().catch(() => ({}));
     const item = updateProjectBasics(projectId, {
       title: typeof body?.title === 'string' ? body.title : undefined,
@@ -238,21 +248,25 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/style-bible$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify({ item: getProjectStyleBible(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/style-bible$/) && method === 'PUT') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     const item = updateProjectStyleBible(projectId, body?.payload || body || {});
     return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/synopsis\/refine$/) && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getProjectById(projectId);
+    const project = getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
 
     try {
@@ -274,12 +288,16 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/notes$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify({ items: listStoryNotes(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/notes$/) && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     if (!body?.rawText && !body?.transcript) {
       return new Response(JSON.stringify({ error: 'rawText or transcript is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
@@ -295,12 +313,16 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/beats$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify({ items: listStoryBeats(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/beats\/[^/]+\/lock$/) && method === 'PATCH') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const beatId = pathname.split('/')[5];
     const body = await req.json().catch(() => ({}));
     const locked = Boolean(body?.locked);
@@ -309,9 +331,9 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/beats\/polish$/) && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getProjectById(projectId);
+    const project = getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const notes = listStoryNotes(projectId);
     if (!notes.length) {
@@ -340,9 +362,9 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/generate$/) && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getProjectById(projectId);
+    const project = getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const beats = listStoryBeats(projectId);
     if (!beats.length) return new Response(JSON.stringify({ error: 'No polished beats found' }), { status: 400, headers: jsonHeaders(corsHeaders) });
@@ -384,24 +406,30 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const item = getLatestProjectPackage(projectId);
     return new Response(JSON.stringify({ item }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/videos$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify({ items: listLatestSceneVideos(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/final-film$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify({ item: getLatestProjectFinalFilm(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/final-film\/generate$/) && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getProjectById(projectId);
+    const project = getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
 
     const latestPackage = getLatestProjectPackage(projectId);
@@ -451,16 +479,18 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/video$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const beatId = pathname.split('/')[5];
     const item = getLatestSceneVideo(projectId, beatId);
     return new Response(JSON.stringify({ item }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/video$/) && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
     const beatId = pathname.split('/')[5];
-    const project = getProjectById(projectId);
+    const project = getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const latestPackage = getLatestProjectPackage(projectId);
     if (!latestPackage?.payload?.storyboard || !Array.isArray(latestPackage.payload.storyboard)) {
@@ -517,8 +547,10 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/scene-lock$/) && method === 'PATCH') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json().catch(() => ({}));
     if (!body?.beatId) return new Response(JSON.stringify({ error: 'beatId is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     const item = setStoryboardSceneLocked(projectId, String(body.beatId), Boolean(body.locked));
@@ -528,14 +560,18 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/continuity\/check$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const beats = listStoryBeats(projectId);
     const issues = buildContinuityIssues(beats);
     return new Response(JSON.stringify({ success: true, issues }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/continuity\/fix$/) && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Access key required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json().catch(() => ({}));
     const mode = body?.mode === 'timeline' || body?.mode === 'intensity' || body?.mode === 'all' ? body.mode : 'all';
     const dryRun = Boolean(body?.dryRun);
