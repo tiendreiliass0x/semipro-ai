@@ -92,12 +92,17 @@ Purpose: keep a durable, 360-degree view of the product and technical system as 
   - `POST /api/auth/register`
   - `POST /api/auth/login`
   - `POST /api/auth/google`
+  - `POST /api/auth/switch-account`
   - `POST /api/auth/logout`
   - `GET /api/auth/me`
+- New account endpoints:
+  - `GET /api/account`
+  - `PATCH /api/account`
 - Authentication model:
   - Bearer token (`Authorization`) resolves `userId` + `accountId`.
   - Project routes enforce account scoping via authenticated `accountId`.
   - Legacy access-code flow is removed; account/session auth is now the default path.
+  - Workspace name is primary identity in UI (top-right control), with truncation for long names.
 
 ## Key Design Decisions (with rationale)
 

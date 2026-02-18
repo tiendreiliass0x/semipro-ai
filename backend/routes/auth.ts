@@ -40,8 +40,37 @@ const toSlug = (input: string) => {
     .slice(0, 50);
 };
 
+const emailLocalToWorkspaceName = (email: string) => {
+  const local = String(email || '').split('@')[0] || 'creator';
+  const cleaned = local.replace(/[._-]+/g, ' ').trim();
+  const title = cleaned
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+  return `${title || 'Creator'} Workspace`;
+};
+
+const uniqueSlug = (desired: string, getAccountBySlug: (slug: string) => any) => {
+  let base = toSlug(desired);
+  if (!base) base = `workspace-${Date.now()}`;
+  let candidate = base;
+  let counter = 2;
+  while (getAccountBySlug(candidate)) {
+    candidate = `${base}-${counter}`;
+    counter += 1;
+  }
+  return candidate;
+};
+
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+
+const getBearerToken = (req: Request) => {
+  const authHeader = req.headers.get('authorization') || '';
+  if (!authHeader.toLowerCase().startsWith('bearer ')) return '';
+  return authHeader.slice(7).trim();
+};
 
 const issueSession = (args: {
   userId: string;
@@ -90,11 +119,10 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
     const body = await req.json().catch(() => ({}));
     const email = String(body?.email || '').trim().toLowerCase();
     const password = String(body?.password || '');
-    const name = String(body?.name || '').trim();
-    const accountName = String(body?.accountName || '').trim();
+    const accountNameInput = String(body?.accountName || '').trim();
 
-    if (!email || !password || !accountName) {
-      return new Response(JSON.stringify({ error: 'email, password, and accountName are required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
+    if (!email || !password) {
+      return new Response(JSON.stringify({ error: 'email and password are required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
     if (password.length < 10) {
       return new Response(JSON.stringify({ error: 'password must be at least 10 characters' }), { status: 400, headers: jsonHeaders(corsHeaders) });
@@ -105,16 +133,14 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
       return new Response(JSON.stringify({ error: 'email already in use' }), { status: 409, headers: jsonHeaders(corsHeaders) });
     }
 
-    let slug = toSlug(String(body?.accountSlug || accountName));
-    if (!slug) slug = `team-${Date.now()}`;
-    if (getAccountBySlug(slug)) {
-      return new Response(JSON.stringify({ error: 'account slug already in use' }), { status: 409, headers: jsonHeaders(corsHeaders) });
-    }
+    const accountName = accountNameInput || emailLocalToWorkspaceName(email);
+    const slug = uniqueSlug(accountName, getAccountBySlug);
 
     const passwordHash = await Bun.password.hash(password);
-    const user = createUser({ email, passwordHash, name: name || email.split('@')[0] });
+    const user = createUser({ email, passwordHash, name: email.split('@')[0] });
     const account = createAccount({ name: accountName, slug, plan: 'free' });
     addMembership({ accountId: account.id, userId: user.id, role: 'owner' });
+    const memberships = listUserMemberships(user.id);
 
     const { token, expiresAt } = issueSession({ userId: user.id, accountId: account.id, createSession });
     return new Response(JSON.stringify({
@@ -123,6 +149,7 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
       expiresAt,
       user: { id: user.id, email: user.email, name: user.name },
       account: { id: account.id, name: account.name, slug: account.slug, plan: account.plan },
+      memberships: toMembershipPayload(memberships),
     }), { status: 201, headers: jsonHeaders(corsHeaders) });
   }
 
@@ -212,11 +239,8 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
     }
 
     if (!chosenMembership) {
-      const accountName = requestedAccountName || `${name || email.split('@')[0]}'s workspace`;
-      const slug = requestedAccountSlug || toSlug(accountName) || `team-${Date.now()}`;
-      if (getAccountBySlug(slug)) {
-        return new Response(JSON.stringify({ error: 'account slug already in use; choose another' }), { status: 409, headers: jsonHeaders(corsHeaders) });
-      }
+      const accountName = requestedAccountName || emailLocalToWorkspaceName(email);
+      const slug = requestedAccountSlug || uniqueSlug(accountName, getAccountBySlug);
       const account = createAccount({ name: accountName, slug, plan: 'free' });
       addMembership({ accountId: account.id, userId: user.id, role: 'owner' });
       const reloadedMemberships = listUserMemberships(user.id);
@@ -245,13 +269,56 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
   }
 
   if (pathname === '/api/auth/logout' && method === 'POST') {
-    const authHeader = req.headers.get('authorization') || '';
-    const token = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
+    const token = getBearerToken(req);
     if (!token) {
       return new Response(JSON.stringify({ error: 'bearer token required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     }
     const success = revokeSessionByTokenHash(hashToken(token));
     return new Response(JSON.stringify({ success }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname === '/api/auth/switch-account' && method === 'POST') {
+    const context = getAuthContext(req);
+    if (!context) {
+      return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const targetAccountId = String(body?.accountId || '').trim();
+    const targetAccountSlug = String(body?.accountSlug || '').trim().toLowerCase();
+    if (!targetAccountId && !targetAccountSlug) {
+      return new Response(JSON.stringify({ error: 'accountId or accountSlug is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
+    }
+
+    const memberships = listUserMemberships(context.userId);
+    const membership = memberships.find(item => {
+      if (targetAccountId && String(item.accountId) === targetAccountId) return true;
+      if (targetAccountSlug && String(item.accountSlug).toLowerCase() === targetAccountSlug) return true;
+      return false;
+    });
+
+    if (!membership) {
+      return new Response(JSON.stringify({ error: 'account membership not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    }
+
+    const { token, expiresAt } = issueSession({ userId: context.userId, accountId: membership.accountId, createSession });
+    const currentToken = getBearerToken(req);
+    if (currentToken) {
+      revokeSessionByTokenHash(hashToken(currentToken));
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      token,
+      expiresAt,
+      account: {
+        id: membership.accountId,
+        name: membership.accountName,
+        slug: membership.accountSlug,
+        plan: membership.accountPlan,
+      },
+      memberships: toMembershipPayload(memberships),
+    }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/auth/me' && method === 'GET') {

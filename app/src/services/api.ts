@@ -315,8 +315,8 @@ export const api = {
     else localStorage.removeItem(AUTH_TOKEN_STORAGE);
   },
 
-  register: (payload: { email: string; password: string; name?: string; accountName: string; accountSlug?: string }) =>
-    fetchApi<{ success: boolean; token: string; expiresAt: number; user: { id: string; email: string; name: string }; account: { id: string; name: string; slug: string; plan: string } }>('/auth/register', {
+  register: (payload: { email: string; password: string; accountName?: string }) =>
+    fetchApi<{ success: boolean; token: string; expiresAt: number; user: { id: string; email: string; name: string }; account: { id: string; name: string; slug: string; plan: string }; memberships: Array<{ accountId: string; accountName: string; accountSlug: string; accountPlan: string; role: string }> }>('/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -336,6 +336,13 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  switchAccount: (payload: { accountId?: string; accountSlug?: string }) =>
+    fetchApi<{ success: boolean; token: string; expiresAt: number; account: { id: string; name: string; slug: string; plan: string }; memberships: Array<{ accountId: string; accountName: string; accountSlug: string; accountPlan: string; role: string }> }>('/auth/switch-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+
   logout: () =>
     fetchApi<{ success: boolean }>('/auth/logout', {
       method: 'POST',
@@ -345,5 +352,15 @@ export const api = {
 
   getCurrentUser: () =>
     fetchApi<{ user: { id: string; email: string; name: string }; account: { id: string; name: string; slug: string }; memberships: Array<{ accountId: string; accountName: string; accountSlug: string; accountPlan: string; role: string }> }>('/auth/me'),
+
+  getAccount: () =>
+    fetchApi<{ account: { id: string; name: string; slug: string; plan: string; status: string } }>('/account'),
+
+  updateAccount: (payload: { name: string; slug?: string }) =>
+    fetchApi<{ success: boolean; account: { id: string; name: string; slug: string; plan: string; status: string } }>('/account', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
 
 };

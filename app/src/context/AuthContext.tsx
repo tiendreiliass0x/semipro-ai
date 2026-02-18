@@ -8,9 +8,12 @@ interface AuthContextType {
   error: string | null;
   user: { id: string; email: string; name: string } | null;
   account: { id: string; name: string; slug: string } | null;
+  memberships: Array<{ accountId: string; accountName: string; accountSlug: string; accountPlan: string; role: string }>;
   login: (payload: { email: string; password: string; accountSlug?: string }) => Promise<boolean>;
-  register: (payload: { email: string; password: string; name?: string; accountName: string; accountSlug?: string }) => Promise<boolean>;
+  register: (payload: { email: string; password: string; accountName?: string }) => Promise<boolean>;
   loginWithGoogle: (payload: { idToken: string; accountName?: string; accountSlug?: string }) => Promise<boolean>;
+  switchWorkspace: (payload: { accountId?: string; accountSlug?: string }) => Promise<boolean>;
+  updateAccountProfile: (payload: { name: string; slug?: string }) => Promise<boolean>;
   refreshAuth: () => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -23,6 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<{ id: string; email: string; name: string } | null>(null);
   const [account, setAccount] = useState<{ id: string; name: string; slug: string } | null>(null);
+  const [memberships, setMemberships] = useState<Array<{ accountId: string; accountName: string; accountSlug: string; accountPlan: string; role: string }>>([]);
 
   const refreshAuth = useCallback(async () => {
     setIsVerifying(true);
@@ -33,10 +37,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsAuthenticated(true);
       setUser(me.user);
       setAccount(me.account);
+      setMemberships(me.memberships || []);
     } catch (err) {
       setIsAuthenticated(false);
       setUser(null);
       setAccount(null);
+      setMemberships([]);
       setError(err instanceof Error ? err.message : null);
     } finally {
       setIsVerifying(false);
@@ -52,11 +58,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsAuthenticated(true);
       setUser(response.user);
       setAccount({ id: response.account.id, name: response.account.name, slug: response.account.slug });
+      setMemberships(response.memberships || []);
       return true;
     } catch (err) {
       setIsAuthenticated(false);
       setUser(null);
       setAccount(null);
+      setMemberships([]);
       setError(err instanceof Error ? err.message : 'Login failed');
       return false;
     } finally {
@@ -64,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const register = useCallback(async (payload: { email: string; password: string; name?: string; accountName: string; accountSlug?: string }): Promise<boolean> => {
+  const register = useCallback(async (payload: { email: string; password: string; accountName?: string }): Promise<boolean> => {
     setIsVerifying(true);
     setError(null);
     try {
@@ -73,11 +81,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsAuthenticated(true);
       setUser(response.user);
       setAccount({ id: response.account.id, name: response.account.name, slug: response.account.slug });
+      setMemberships(response.memberships || []);
       return true;
     } catch (err) {
       setIsAuthenticated(false);
       setUser(null);
       setAccount(null);
+      setMemberships([]);
       setError(err instanceof Error ? err.message : 'Registration failed');
       return false;
     } finally {
@@ -94,12 +104,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsAuthenticated(true);
       setUser(response.user);
       setAccount({ id: response.account.id, name: response.account.name, slug: response.account.slug });
+      setMemberships(response.memberships || []);
       return true;
     } catch (err) {
       setIsAuthenticated(false);
       setUser(null);
       setAccount(null);
+      setMemberships([]);
       setError(err instanceof Error ? err.message : 'Google sign-in failed');
+      return false;
+    } finally {
+      setIsVerifying(false);
+    }
+  }, []);
+
+  const switchWorkspace = useCallback(async (payload: { accountId?: string; accountSlug?: string }): Promise<boolean> => {
+    setIsVerifying(true);
+    setError(null);
+    try {
+      const response = await api.switchAccount(payload);
+      api.setAuthToken(response.token);
+      setAccount({ id: response.account.id, name: response.account.name, slug: response.account.slug });
+      setMemberships(response.memberships || []);
+      await refreshAuth();
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to switch workspace');
+      return false;
+    } finally {
+      setIsVerifying(false);
+    }
+  }, [refreshAuth]);
+
+  const updateAccountProfile = useCallback(async (payload: { name: string; slug?: string }): Promise<boolean> => {
+    setIsVerifying(true);
+    setError(null);
+    try {
+      const response = await api.updateAccount(payload);
+      setAccount({ id: response.account.id, name: response.account.name, slug: response.account.slug });
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update account');
       return false;
     } finally {
       setIsVerifying(false);
@@ -116,6 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(false);
     setUser(null);
     setAccount(null);
+    setMemberships([]);
     setError(null);
   }, []);
 
@@ -131,9 +177,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error,
         user,
         account,
+        memberships,
         login,
         register,
         loginWithGoogle,
+        switchWorkspace,
+        updateAccountProfile,
         refreshAuth,
         logout,
       }}

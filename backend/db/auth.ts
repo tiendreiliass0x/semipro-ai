@@ -42,6 +42,16 @@ export const createAuthDb = ({ db, generateId }: CreateAuthDbArgs) => {
     return getAccountById(id);
   };
 
+  const updateAccount = (accountId: string, patch: { name?: string; slug?: string }) => {
+    const existing = getAccountById(accountId);
+    if (!existing) return null;
+    const now = Date.now();
+    const nextName = typeof patch.name === 'string' && patch.name.trim() ? patch.name.trim() : String(existing.name || '').trim();
+    const nextSlug = typeof patch.slug === 'string' && patch.slug.trim() ? patch.slug.trim().toLowerCase() : String(existing.slug || '').trim().toLowerCase();
+    db.query('UPDATE accounts SET name = ?, slug = ?, updatedAt = ? WHERE id = ?').run(nextName, nextSlug, now, accountId);
+    return getAccountById(accountId);
+  };
+
   const addMembership = (args: { accountId: string; userId: string; role?: string }) => {
     const now = Date.now();
     const existing = db.query('SELECT * FROM account_memberships WHERE accountId = ? AND userId = ?').get(args.accountId, args.userId) as any;
@@ -111,6 +121,7 @@ export const createAuthDb = ({ db, generateId }: CreateAuthDbArgs) => {
     getAccountById,
     getAccountBySlug,
     createAccount,
+    updateAccount,
     addMembership,
     listUserMemberships,
     createSession,

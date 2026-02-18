@@ -11,6 +11,7 @@ import { createSubscribersDb } from './db/subscribers';
 import { generateProjectStoryboardWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
 import { buildDirectorSceneVideoPrompt, createFinalFilmFromClips, generateSceneVideoWithFal } from './lib/sceneVideo';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
+import { handleAccountRoutes } from './routes/account';
 import { handleAuthRoutes } from './routes/auth';
 import { handleProjectsRoutes } from './routes/projects';
 import { handleStorylinesRoutes } from './routes/storylines';
@@ -381,6 +382,7 @@ const {
   getAccountById,
   getAccountBySlug,
   createAccount,
+  updateAccount,
   addMembership,
   listUserMemberships,
   createSession,
@@ -679,6 +681,18 @@ serve({
       getAuthContext,
     });
     if (authResponse) return authResponse;
+
+    const accountResponse = await handleAccountRoutes({
+      req,
+      pathname,
+      method,
+      corsHeaders,
+      getAuthContext,
+      getAccountById,
+      getAccountBySlug,
+      updateAccount,
+    });
+    if (accountResponse) return accountResponse;
 
     const projectsResponse = await handleProjectsRoutes({
       req,
