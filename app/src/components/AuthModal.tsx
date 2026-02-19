@@ -214,11 +214,9 @@ export function AuthModal() {
                 <h3 className="text-lg font-semibold text-white">{actionLabel}</h3>
                 <p className="text-xs text-gray-500">Semipro AI Workspace Access</p>
               </div>
-              {isAuthenticated && (
-                <button onClick={() => setAuthOpen(false)} className="p-1 rounded border border-gray-700 text-gray-300">
-                  <X className="w-4 h-4" />
-                </button>
-              )}
+              <button onClick={() => setAuthOpen(false)} className="p-1 rounded border border-gray-700 text-gray-300">
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
             <div className="flex gap-2 mb-3">
