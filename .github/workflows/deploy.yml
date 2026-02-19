@@ -27,6 +27,8 @@ jobs:
       run: |
         cd app
         npm run build
+      env:
+        VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
 
     - name: Verify deploy artifacts
       run: |

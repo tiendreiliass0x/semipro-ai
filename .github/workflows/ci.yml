@@ -29,6 +29,8 @@ jobs:
       - name: Build
         working-directory: app
         run: npm run build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
 
   backend:
     name: Backend Tests
