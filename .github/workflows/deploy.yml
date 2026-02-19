@@ -70,7 +70,8 @@ jobs:
           cd /var/www/semipro-ai/backend
           bun install --frozen-lockfile
           bun run migrate
-          pm2 restart semipro-ai-api || pm2 start server.ts --interpreter bun --name semipro-ai-api
+          pm2 delete semipro-ai-api || true
+          pm2 start server.ts --interpreter bun --name semipro-ai-api
           pm2 save
           echo "✅ Deployment complete!"
 
