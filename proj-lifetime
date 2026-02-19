@@ -19,6 +19,8 @@ Purpose: keep a durable, 360-degree view of the product and technical system as 
 7. Compile final film from completed clips.
 8. Soft-delete project when no longer active (hidden from active list, data retained).
 
+UX note: first project creation now starts from an inline long-form idea composer (chatbox + mic) instead of a dedicated "Create Project" modal/button.
+
 ## Critical Backend Modules (and why they matter)
 
 - `backend/server.ts`
@@ -53,6 +55,7 @@ Purpose: keep a durable, 360-degree view of the product and technical system as 
 
 - `app/src/sections/project-studio/ProjectSidebar.tsx`
   - Project switching and settings entry.
+  - Includes persistent left rail treatment for primary navigation affordance.
 
 - `app/src/sections/project-studio/CreateProjectModal.tsx`
   - Creation and access-key unlock UX.

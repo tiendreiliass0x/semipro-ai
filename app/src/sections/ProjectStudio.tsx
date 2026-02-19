@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, Loader2, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
 import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectStyleBible, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
-import { CreateProjectModal } from './project-studio/CreateProjectModal';
 import { DeleteProjectModal } from './project-studio/DeleteProjectModal';
 import { ProjectSidebar } from './project-studio/ProjectSidebar';
 import { ScenesWorkspace } from './project-studio/ScenesWorkspace';
@@ -29,8 +28,7 @@ export function ProjectStudio() {
   const [sceneVideosByBeatId, setSceneVideosByBeatId] = useState<Record<string, SceneVideoJob>>({});
   const [finalFilm, setFinalFilm] = useState<ProjectFinalFilm | null>(null);
 
-  const [newTitle, setNewTitle] = useState('');
-  const [newPseudoSynopsis, setNewPseudoSynopsis] = useState('');
+  const [projectIdeaInput, setProjectIdeaInput] = useState('');
   const [editingProjectTitle, setEditingProjectTitle] = useState('');
   const [editingProjectPseudoSynopsis, setEditingProjectPseudoSynopsis] = useState('');
   const [isEditingProjectDetails, setIsEditingProjectDetails] = useState(false);
@@ -42,7 +40,6 @@ export function ProjectStudio() {
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [isRecordCreating, setIsRecordCreating] = useState(false);
-  const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
   const [showProjectSettingsPane, setShowProjectSettingsPane] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -63,6 +60,7 @@ export function ProjectStudio() {
   const [isGeneratingFinalFilm, setIsGeneratingFinalFilm] = useState(false);
   const [videoPromptByBeatId, setVideoPromptByBeatId] = useState<Record<string, string>>({});
   const beatsScrollRef = useRef<HTMLDivElement | null>(null);
+  const projectIdeaInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const filmTypeOptions = [
     'cinematic live-action',
@@ -221,9 +219,7 @@ export function ProjectStudio() {
       });
       setProjects(prev => [created, ...prev]);
       setSelectedProjectId(created.id);
-      setShowCreateProjectModal(false);
-      setNewTitle('');
-      setNewPseudoSynopsis('');
+      setProjectIdeaInput('');
       setBusyMessage('Project created.');
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to create project');
@@ -232,10 +228,9 @@ export function ProjectStudio() {
     }
   };
 
-  const createProject = async () => {
+  const createProjectFromIdeaBox = async () => {
     await createProjectFromInput({
-      title: newTitle,
-      pseudoSynopsis: newPseudoSynopsis,
+      pseudoSynopsis: projectIdeaInput,
     });
   };
 
@@ -324,17 +319,8 @@ export function ProjectStudio() {
         return;
       }
 
-      const generatedTitle = transcript
-        .split(/\s+/)
-        .slice(0, 6)
-        .join(' ')
-        .replace(/[.,!?;:]+$/g, '');
-
-      setNewPseudoSynopsis(prev => `${prev ? `${prev}\n\n` : ''}${transcript}`.trim());
-      if (!newTitle.trim()) {
-        setNewTitle(generatedTitle);
-      }
-      setBusyMessage('Audio idea captured. Click Create Project when ready.');
+      setProjectIdeaInput(prev => `${prev ? `${prev}\n\n` : ''}${transcript}`.trim());
+      setBusyMessage('Audio idea captured. Press Enter to start creating.');
     };
 
     recognition.start();
@@ -638,6 +624,18 @@ export function ProjectStudio() {
     });
   };
 
+  const resizeProjectIdeaInput = () => {
+    const element = projectIdeaInputRef.current;
+    if (!element) return;
+    element.style.height = '0px';
+    const nextHeight = Math.max(72, Math.min(element.scrollHeight, 220));
+    element.style.height = `${nextHeight}px`;
+  };
+
+  useEffect(() => {
+    resizeProjectIdeaInput();
+  }, [projectIdeaInput]);
+
   const softDeleteCurrentProject = async () => {
     if (!selectedProject || !isAuthenticated || isDeletingProject) return;
 
@@ -711,7 +709,7 @@ export function ProjectStudio() {
     <section id="project-studio" className="relative min-h-screen py-20 px-4 overflow-hidden">
       <div className="pointer-events-none absolute -top-24 -left-20 w-80 h-80 bg-cyan-500/15 blur-3xl rounded-full" />
       <div className="pointer-events-none absolute top-1/3 -right-24 w-96 h-96 bg-amber-500/10 blur-3xl rounded-full" />
-      <div className="max-w-6xl mx-auto">
+      <div className="w-full mx-auto">
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 text-xs uppercase tracking-widest mb-4">
             <Compass className="w-3.5 h-3.5" /> Semipro Workflow
@@ -720,7 +718,7 @@ export function ProjectStudio() {
           <p className="text-gray-400">From rough idea to scene-by-scene cinematic production workflow.</p>
         </div>
 
-        <div className="grid lg:grid-cols-[320px_minmax(0,1fr)] gap-6">
+        <div className="grid lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] gap-6">
           <ProjectSidebar
             projects={projects}
             selectedProjectId={selectedProjectId}
@@ -729,7 +727,6 @@ export function ProjectStudio() {
             isAuthenticated={isAuthenticated}
             isDeletingProject={isDeletingProject}
             onSelectProject={setSelectedProjectId}
-            onOpenCreateProject={() => setShowCreateProjectModal(true)}
             onToggleSettingsPane={() => setShowProjectSettingsPane(prev => !prev)}
             onRequestDelete={() => setShowDeleteConfirmModal(true)}
           />
@@ -737,14 +734,46 @@ export function ProjectStudio() {
           <div className="space-y-6 min-w-0">
             {!selectedProject && (
               <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-black/70 to-[#111827]/60 p-6 text-gray-300 space-y-4">
-                <p>Create your first project to start.</p>
-                {!isAuthenticated && <p className="text-xs text-amber-200/80">Sign in to create and edit projects.</p>}
-                <button
-                  onClick={() => setShowCreateProjectModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold"
-                >
-                  <Plus className="w-4 h-4" /> Create Film
-                </button>
+                <p className="text-sm text-gray-300">Start with your movie idea. We will create a project instantly from your input.</p>
+                {!isAuthenticated && <p className="text-xs text-amber-200/80">Sign in first, then drop your first idea here.</p>}
+
+                <div className={`relative rounded-2xl border bg-black/45 px-4 py-3 transition-all ${projectIdeaInput.trim() ? 'border-cyan-300/40 shadow-[0_0_0_1px_rgba(34,211,238,0.18),0_0_28px_rgba(34,211,238,0.16)]' : 'border-cyan-500/20'}`}>
+                  <textarea
+                    ref={projectIdeaInputRef}
+                    value={projectIdeaInput}
+                    onChange={event => setProjectIdeaInput(event.target.value)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        createProjectFromIdeaBox();
+                      }
+                    }}
+                    className="w-full bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus-visible:outline-none pr-28 text-sm text-gray-100 resize-none leading-relaxed"
+                    placeholder="Describe the film you want to create... tone, world, protagonist, stakes, style."
+                    disabled={!isAuthenticated || isCreatingProject}
+                    rows={1}
+                  />
+
+                  <div className="absolute right-3 bottom-3 inline-flex items-center gap-2">
+                    <button
+                      onClick={recordProjectIdea}
+                      disabled={!isAuthenticated || isRecordCreating || isCreatingProject}
+                      className={`inline-flex items-center justify-center w-9 h-9 rounded-full border text-gray-200 bg-black/45 disabled:opacity-40 ${isRecordCreating ? 'border-[#D0FF59] animate-mic-pulse-ring' : 'border-gray-700'}`}
+                      title={isRecordCreating ? 'Listening...' : 'Record idea'}
+                    >
+                      {isRecordCreating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={createProjectFromIdeaBox}
+                      disabled={!isAuthenticated || !projectIdeaInput.trim() || isCreatingProject}
+                      className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-[#D0FF59] text-black disabled:opacity-40"
+                      title={isCreatingProject ? 'Creating...' : 'Start creating'}
+                    >
+                      {isCreatingProject ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpRight className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500">Press Enter to submit. Use Shift+Enter for a new line.</p>
               </div>
             )}
 
@@ -886,7 +915,11 @@ export function ProjectStudio() {
                     <button onClick={addNote} disabled={!isAuthenticated || isAddingNote} className="h-fit inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
                       {isAddingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} {isAddingNote ? 'Adding...' : 'Add'}
                     </button>
-                    <button onClick={recordNote} disabled={!isAuthenticated || isListening} className="h-fit inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-300 disabled:opacity-50">
+                    <button
+                      onClick={recordNote}
+                      disabled={!isAuthenticated || isListening}
+                      className={`h-fit inline-flex items-center gap-2 px-3 py-2 rounded border text-sm text-gray-300 disabled:opacity-50 ${isListening ? 'border-[#D0FF59] animate-mic-pulse-ring' : 'border-gray-700'}`}
+                    >
                       <Mic className="w-4 h-4" /> {isListening ? 'Listening...' : 'Record'}
                     </button>
                   </div>
@@ -1135,20 +1168,6 @@ export function ProjectStudio() {
           </div>
         </div>
       )}
-
-      <CreateProjectModal
-        open={showCreateProjectModal}
-        isAuthenticated={isAuthenticated}
-        newTitle={newTitle}
-        newPseudoSynopsis={newPseudoSynopsis}
-        isRecordCreating={isRecordCreating}
-        isCreatingProject={isCreatingProject}
-        onClose={() => setShowCreateProjectModal(false)}
-        onChangeTitle={setNewTitle}
-        onChangePseudoSynopsis={setNewPseudoSynopsis}
-        onRecordIdea={recordProjectIdea}
-        onCreateProject={createProject}
-      />
 
       <DeleteProjectModal
         open={showDeleteConfirmModal && !!selectedProject}
