@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setAccount(null);
       setMemberships([]);
-      setError(err instanceof Error ? err.message : null);
+      setError(null);
     } finally {
       setIsVerifying(false);
     }

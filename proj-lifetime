@@ -60,6 +60,10 @@ Purpose: keep a durable, 360-degree view of the product and technical system as 
 - `app/src/sections/project-studio/ScenesWorkspace.tsx`
   - Scene video controls, progress, and final film playback/download.
 
+- `app/src/sections/PublicLanding.tsx` and `app/src/sections/public/*`
+  - Public-facing hero + feature narrative for unauthenticated visitors.
+  - Critical because it controls first-time conversion into registration/login.
+
 - `app/src/sections/project-studio/DeleteProjectModal.tsx`
   - Confirmed destructive action UX.
 

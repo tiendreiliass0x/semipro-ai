@@ -49,8 +49,19 @@ export function AuthModal() {
   const canUseGoogle = googleClientId.length > 0;
 
   useEffect(() => {
-    if (!isAuthenticated) setAuthOpen(true);
-  }, [isAuthenticated]);
+    const handleOpenAuth = (event: Event) => {
+      const custom = event as CustomEvent<{ mode?: 'login' | 'register' }>;
+      if (custom.detail?.mode === 'login' || custom.detail?.mode === 'register') {
+        setMode(custom.detail.mode);
+      }
+      setAuthOpen(true);
+    };
+
+    window.addEventListener('semipro:open-auth', handleOpenAuth as EventListener);
+    return () => {
+      window.removeEventListener('semipro:open-auth', handleOpenAuth as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     if (settingsOpen) {
@@ -160,7 +171,7 @@ export function AuthModal() {
   const onLogout = async () => {
     await logout();
     setSettingsOpen(false);
-    setAuthOpen(true);
+    setAuthOpen(false);
   };
 
   return (
