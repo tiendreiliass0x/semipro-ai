@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Clapperboard, PlayCircle } from 'lucide-react';
-import heroVideo from '@/assets/kling-page1-v2-5-265.mp4';
+import heroVideo from '@/assets/kling-page1-v2-1-265.mp4';
 import heroPoster from '@/assets/hero-poster.svg';
 
 const openAuth = (mode: 'login' | 'register') => {
@@ -25,7 +25,7 @@ export function HeroShowcase() {
     <section className="relative overflow-hidden border-b border-cyan-500/20 min-h-[78vh] md:min-h-[88vh]">
       {showVideo ? (
         <video
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-contain md:object-cover bg-black"
           src={heroVideo}
           poster={heroPoster}
           autoPlay
@@ -36,7 +36,7 @@ export function HeroShowcase() {
           onError={() => setVideoFailed(true)}
         />
       ) : (
-        <img src={heroPoster} alt="" className="absolute inset-0 w-full h-full object-cover" loading="eager" />
+        <img src={heroPoster} alt="" className="absolute inset-0 w-full h-full object-contain md:object-cover bg-black" loading="eager" />
       )}
 
       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(7,4,2,0.66)_0%,rgba(5,5,5,0.22)_40%,rgba(1,1,1,0.72)_100%)]" />
