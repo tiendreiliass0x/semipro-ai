@@ -20,6 +20,7 @@ Purpose: keep a durable, 360-degree view of the product and technical system as 
 8. Soft-delete project when no longer active (hidden from active list, data retained).
 
 UX note: first project creation now starts from an inline long-form idea composer (chatbox + mic) instead of a dedicated "Create Project" modal/button.
+UX note: Scenes workspace now includes a clickable scene-capture timeline strip that jumps to scene cards and mirrors render status per scene.
 
 ## Critical Backend Modules (and why they matter)
 

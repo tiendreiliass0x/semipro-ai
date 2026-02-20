@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Film, Loader2, PlayCircle, RefreshCcw, Video } from 'lucide-react';
 import type { ProjectFinalFilm, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
 
@@ -67,6 +68,24 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     getSceneVideoUrl,
   } = props;
 
+  const orderedScenes = generatedPackage.storyboard || [];
+  const scenesScrollerRef = useRef<HTMLDivElement | null>(null);
+  const sceneCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const statusColor = (beatId: string) => {
+    const status = sceneVideosByBeatId[beatId]?.status;
+    if (status === 'completed') return 'border-[#D0FF59]';
+    if (status === 'processing' || status === 'queued') return 'border-amber-400';
+    if (status === 'failed') return 'border-rose-500';
+    return 'border-gray-700';
+  };
+
+  const jumpToScene = (beatId: string) => {
+    const target = sceneCardRefs.current[beatId];
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  };
+
   return (
     <div className="rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-[#07131f]/70 via-black/60 to-[#1a1208]/70 p-5">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -131,12 +150,41 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
         )}
       </div>
 
+      <div className="mb-4 rounded-xl border border-white/35 bg-[linear-gradient(180deg,rgba(63,24,5,0.62),rgba(16,7,3,0.72))] p-2.5 md:p-3">
+        <div
+          className="grid gap-2"
+          style={{ gridTemplateColumns: `repeat(${Math.max(orderedScenes.length, 1)}, minmax(0, 1fr))` }}
+        >
+          {orderedScenes.map(scene => (
+            <button
+              key={`timeline-thumb-${scene.beatId}`}
+              onClick={() => jumpToScene(scene.beatId)}
+              className={`w-full h-12 md:h-14 rounded-md overflow-hidden border-2 ${statusColor(scene.beatId)} bg-black/40 hover:scale-[1.01] transition`}
+              title={`Scene ${scene.sceneNumber}`}
+            >
+              <img
+                src={getSceneFrameUrl(scene)}
+                alt={`Scene ${scene.sceneNumber}`}
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+            </button>
+          ))}
+        </div>
+      </div>
+
       <h4 className="text-xl text-white font-semibold">{generatedPackage.writeup.headline}</h4>
       <p className="text-sm text-gray-400 mt-1">{generatedPackage.writeup.deck}</p>
-      <div className="mt-4 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div ref={scenesScrollerRef} className="mt-4 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="flex gap-3 min-w-max pr-2">
           {generatedPackage.storyboard.map(scene => (
-            <div key={`${scene.sceneNumber}-${scene.beatId}`} className="w-[320px] md:w-[360px] shrink-0 rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
+            <div
+              key={`${scene.sceneNumber}-${scene.beatId}`}
+              ref={element => {
+                sceneCardRefs.current[scene.beatId] = element;
+              }}
+              className="w-[320px] md:w-[360px] shrink-0 rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2"
+            >
               {sceneVideosByBeatId[scene.beatId]?.status === 'completed' && sceneVideosByBeatId[scene.beatId]?.videoUrl ? (
                 <div className="rounded-md overflow-hidden border border-gray-800 bg-black/40 aspect-video">
                   <video

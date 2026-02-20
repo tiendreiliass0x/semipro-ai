@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, Loader2, ArrowUpRight } from 'lucide-react';
+import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
 import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectStyleBible, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
@@ -40,15 +40,16 @@ export function ProjectStudio() {
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [isRecordCreating, setIsRecordCreating] = useState(false);
-  const [showProjectSettingsPane, setShowProjectSettingsPane] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isSavingProjectDetails, setIsSavingProjectDetails] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [showRightProjectSettings, setShowRightProjectSettings] = useState(false);
   const [isRefiningSynopsis, setIsRefiningSynopsis] = useState(false);
   const [isSavingStyleBible, setIsSavingStyleBible] = useState(false);
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [isPolishingBeats, setIsPolishingBeats] = useState(false);
+  const [isGeneratingMoreStarterBeats, setIsGeneratingMoreStarterBeats] = useState(false);
   const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
   const [isCheckingContinuity, setIsCheckingContinuity] = useState(false);
   const [isPreviewingFix, setIsPreviewingFix] = useState<'timeline' | 'intensity' | 'all' | null>(null);
@@ -139,6 +140,30 @@ export function ProjectStudio() {
     return Array.from(new Set(drafts)).slice(0, maxCount);
   };
 
+  const createStarterBeatsFromPlotScript = (plotScript: string, existingAiStarters: string[]): string[] => {
+    const raw = String(plotScript || '').trim();
+    if (!raw) return [];
+
+    const introLine = raw.split(/\n+/)[0] || '';
+    const chunks = raw
+      .replace(introLine, '')
+      .split(/\n+|(?<=[.!?])\s+/)
+      .map(item => item.trim())
+      .filter(item => item.length > 20);
+
+    const existingSet = new Set(existingAiStarters.map(item => item.trim().toLowerCase()));
+    const outputs: string[] = [];
+    for (const chunk of chunks) {
+      const line = `Beat story: ${chunk.replace(/^[\-\*\d\.\s]+/, '')}`;
+      const normalized = line.trim().toLowerCase();
+      if (existingSet.has(normalized)) continue;
+      outputs.push(line);
+      existingSet.add(normalized);
+      if (outputs.length >= 6) break;
+    }
+    return outputs;
+  };
+
   useEffect(() => {
     if (!selectedProject) return;
     const loadDetails = async () => {
@@ -172,6 +197,7 @@ export function ProjectStudio() {
     setEditingProjectTitle(selectedProject.title || '');
     setEditingProjectPseudoSynopsis(selectedProject.pseudoSynopsis || '');
     setIsEditingProjectDetails(false);
+    setShowRightProjectSettings(false);
   }, [selectedProject?.id]);
 
   useEffect(() => {
@@ -371,6 +397,35 @@ export function ProjectStudio() {
     }
   };
 
+  const generateMoreAiStarterBeats = async () => {
+    if (!selectedProject || !isAuthenticated || isGeneratingMoreStarterBeats) return;
+    const draftStarters = createStarterBeatsFromPlotScript(
+      selectedProject.plotScript,
+      notes.filter(note => note.source === 'ai_starter').map(note => note.rawText)
+    );
+
+    if (draftStarters.length === 0) {
+      setBusyMessage('No additional AI starter beats found from plot script yet.');
+      return;
+    }
+
+    setIsGeneratingMoreStarterBeats(true);
+    setBusyMessage('Generating more AI starter beats...');
+    try {
+      const seededItems: StoryNote[] = [];
+      for (const rawText of draftStarters) {
+        const seeded = await api.addProjectNote(selectedProject.id, { rawText, source: 'ai_starter' });
+        seededItems.push(seeded.item);
+      }
+      setNotes(prev => [...prev, ...seededItems]);
+      setBusyMessage(`Added ${seededItems.length} AI starter beats from plot script.`);
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to generate more AI starter beats');
+    } finally {
+      setIsGeneratingMoreStarterBeats(false);
+    }
+  };
+
   const recordNote = () => startNoteRecording();
 
   const polishBeats = async () => {
@@ -494,6 +549,18 @@ export function ProjectStudio() {
     const currentPseudoSynopsis = String(selectedProject.pseudoSynopsis || '').trim();
     return editingProjectTitle.trim() !== currentTitle || editingProjectPseudoSynopsis.trim() !== currentPseudoSynopsis;
   }, [selectedProject, editingProjectTitle, editingProjectPseudoSynopsis]);
+
+  const miscStats = useMemo(() => {
+    const aiStarters = notes.filter(note => note.source === 'ai_starter').length;
+    const completedVideos = Object.values(sceneVideosByBeatId).filter(item => item?.status === 'completed').length;
+    return {
+      notes: notes.length,
+      aiStarters,
+      beats: beats.length,
+      scenes: generatedPackage?.storyboard?.length || 0,
+      completedVideos,
+    };
+  }, [notes, beats, generatedPackage, sceneVideosByBeatId]);
 
   const getSceneFrameUrl = (scene: any) => {
     if (scene.imageUrl && typeof scene.imageUrl === 'string') {
@@ -657,7 +724,6 @@ export function ProjectStudio() {
       setSceneVideosByBeatId({});
       setFinalFilm(null);
       setShowDeleteConfirmModal(false);
-      setShowProjectSettingsPane(false);
       setBusyMessage('Project soft-deleted.');
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to soft-delete project');
@@ -706,10 +772,17 @@ export function ProjectStudio() {
   };
 
   return (
-    <section id="project-studio" className="relative min-h-screen py-20 px-4 overflow-hidden">
+    <>
+      <ProjectSidebar
+        projects={projects}
+        selectedProjectId={selectedProjectId}
+        onSelectProject={setSelectedProjectId}
+      />
+
+    <section id="project-studio" className="relative min-h-screen py-20 px-4 overflow-hidden lg:pl-[360px] lg:pr-10 xl:pr-16">
       <div className="pointer-events-none absolute -top-24 -left-20 w-80 h-80 bg-cyan-500/15 blur-3xl rounded-full" />
       <div className="pointer-events-none absolute top-1/3 -right-24 w-96 h-96 bg-amber-500/10 blur-3xl rounded-full" />
-      <div className="w-full mx-auto">
+      <div className="w-full max-w-[1500px] mx-auto">
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 text-xs uppercase tracking-widest mb-4">
             <Compass className="w-3.5 h-3.5" /> Semipro Workflow
@@ -718,19 +791,7 @@ export function ProjectStudio() {
           <p className="text-gray-400">From rough idea to scene-by-scene cinematic production workflow.</p>
         </div>
 
-        <div className="grid lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] gap-6">
-          <ProjectSidebar
-            projects={projects}
-            selectedProjectId={selectedProjectId}
-            selectedProject={selectedProject}
-            showProjectSettingsPane={showProjectSettingsPane}
-            isAuthenticated={isAuthenticated}
-            isDeletingProject={isDeletingProject}
-            onSelectProject={setSelectedProjectId}
-            onToggleSettingsPane={() => setShowProjectSettingsPane(prev => !prev)}
-            onRequestDelete={() => setShowDeleteConfirmModal(true)}
-          />
-
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_300px] gap-6 items-start">
           <div className="space-y-6 min-w-0">
             {!selectedProject && (
               <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-black/70 to-[#111827]/60 p-6 text-gray-300 space-y-4">
@@ -909,7 +970,16 @@ export function ProjectStudio() {
                 </div>
 
                 <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-[#071712]/70 to-black/60 p-5">
-                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-3">Beat Story Capture</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <p className="text-xs uppercase tracking-widest text-gray-500">Beat Story Capture</p>
+                    <button
+                      onClick={generateMoreAiStarterBeats}
+                      disabled={!isAuthenticated || isGeneratingMoreStarterBeats || !selectedProject?.plotScript}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded border border-cyan-400/40 text-cyan-100 text-[11px] disabled:opacity-50"
+                    >
+                      {isGeneratingMoreStarterBeats ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />} Generate More AI Starters
+                    </button>
+                  </div>
                   <div className="flex gap-2">
                     <textarea value={noteInput} onChange={event => setNoteInput(event.target.value)} className="flex-1 bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-16" placeholder="Type a beat story note..." />
                     <button onClick={addNote} disabled={!isAuthenticated || isAddingNote} className="h-fit inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
@@ -1107,11 +1177,68 @@ export function ProjectStudio() {
               </>
             )}
           </div>
+
+          <aside className="hidden lg:block sticky top-24 self-start">
+            <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-[#07131f]/80 to-black/80 p-4 h-[calc(100vh-8rem)] overflow-auto shadow-xl shadow-cyan-950/20">
+              <p className="text-xs uppercase tracking-widest text-gray-500 mb-3">Current Project Misc</p>
+
+              {!selectedProject ? (
+                <p className="text-xs text-gray-500">Select or create a project to see details and live production stats.</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-gray-800 bg-black/30 p-3">
+                    <p className="text-[11px] uppercase tracking-widest text-gray-500">Project</p>
+                    <p className="text-sm text-gray-100 mt-1 break-words">{selectedProject.title}</p>
+                    <p className="text-[11px] text-gray-500 mt-2">{selectedProject.durationMinutes} min · {selectedProject.style}</p>
+                  </div>
+
+                  <div className="rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
+                    <p className="text-[11px] uppercase tracking-widest text-gray-500">Live Stats</p>
+                    <p className="text-xs text-gray-300">Notes: {miscStats.notes}</p>
+                    <p className="text-xs text-gray-300">AI Starters: {miscStats.aiStarters}</p>
+                    <p className="text-xs text-gray-300">Beat Scenes: {miscStats.beats}</p>
+                    <p className="text-xs text-gray-300">Storyboard Scenes: {miscStats.scenes}</p>
+                    <p className="text-xs text-gray-300">Videos Completed: {miscStats.completedVideos}</p>
+                  </div>
+
+                  <div className="rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
+                    <p className="text-[11px] uppercase tracking-widest text-gray-500">Pipeline Health</p>
+                    <p className={`text-xs ${selectedProject.polishedSynopsis ? 'text-emerald-300' : 'text-gray-500'}`}>Polished Synopsis {selectedProject.polishedSynopsis ? 'ready' : 'pending'}</p>
+                    <p className={`text-xs ${selectedProject.plotScript ? 'text-emerald-300' : 'text-gray-500'}`}>Plot Script {selectedProject.plotScript ? 'ready' : 'pending'}</p>
+                    <p className={`text-xs ${styleBible.visualStyle || styleBible.cameraGrammar ? 'text-emerald-300' : 'text-gray-500'}`}>Style Bible {(styleBible.visualStyle || styleBible.cameraGrammar) ? 'seeded' : 'pending'}</p>
+                    <p className={`text-xs ${finalFilm?.status === 'completed' ? 'text-emerald-300' : finalFilm?.status === 'failed' ? 'text-rose-300' : 'text-gray-500'}`}>Final Film {finalFilm?.status || 'not started'}</p>
+                  </div>
+
+                  <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-3 space-y-2">
+                    <button
+                      onClick={() => setShowRightProjectSettings(prev => !prev)}
+                      className="w-full inline-flex items-center justify-between gap-2"
+                    >
+                      <span className="text-[11px] uppercase tracking-widest text-rose-200">Project Settings</span>
+                      <ChevronDown className={`w-4 h-4 text-rose-200 transition-transform ${showRightProjectSettings ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {showRightProjectSettings && (
+                      <>
+                        <p className="text-[11px] text-rose-100/80">Soft delete removes this project from active views while preserving data in the database.</p>
+                        <button
+                          onClick={() => setShowDeleteConfirmModal(true)}
+                          className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded border border-rose-400/40 text-rose-100 text-sm"
+                        >
+                          Delete Project
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </aside>
         </div>
 
         {busyMessage && (
           <p className="text-sm text-gray-400 mt-6 flex items-center justify-center gap-2 text-center">
-            {(isCreatingProject || isSavingProjectDetails || isRefiningSynopsis || isSavingStyleBible || isAddingNote || isPolishingBeats || isGeneratingStoryboard || isCheckingContinuity || isPreviewingFix !== null || isApplyingFix || isGeneratingAllVideos || isRefreshingVideos || isGeneratingFinalFilm)
+            {(isCreatingProject || isSavingProjectDetails || isRefiningSynopsis || isSavingStyleBible || isAddingNote || isPolishingBeats || isGeneratingMoreStarterBeats || isGeneratingStoryboard || isCheckingContinuity || isPreviewingFix !== null || isApplyingFix || isGeneratingAllVideos || isRefreshingVideos || isGeneratingFinalFilm)
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : null}
             {busyMessage}
@@ -1178,5 +1305,6 @@ export function ProjectStudio() {
         onConfirmDelete={softDeleteCurrentProject}
       />
     </section>
+    </>
   );
 }
