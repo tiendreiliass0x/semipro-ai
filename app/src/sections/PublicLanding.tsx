@@ -5,9 +5,15 @@ import { ProofStrip } from './public/ProofStrip';
 export function PublicLanding() {
   return (
     <section>
-      <HeroShowcase />
-      <ProofStrip />
-      <FeatureRail />
+      <div id="hero">
+        <HeroShowcase />
+      </div>
+      <div id="proof">
+        <ProofStrip />
+      </div>
+      <div id="features">
+        <FeatureRail />
+      </div>
     </section>
   );
 }

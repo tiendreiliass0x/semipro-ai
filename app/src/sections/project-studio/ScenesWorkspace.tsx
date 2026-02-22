@@ -272,7 +272,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
       <p className="text-sm text-gray-400 mt-1">{generatedPackage.writeup.deck}</p>
       <div ref={scenesScrollerRef} className="mt-4 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="flex gap-3 min-w-max pr-2">
-          {generatedPackage.storyboard.map(scene => (
+          {generatedPackage.storyboard.map((scene, beatIndex) => (
             <div
               key={`${scene.sceneNumber}-${scene.beatId}`}
               ref={element => {
@@ -300,7 +300,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
                 />
               </div>
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm text-gray-100">Scene {scene.sceneNumber} · Beat {scene.beatId}</p>
+                <p className="text-sm text-gray-100">Scene {scene.sceneNumber} · Beat {beatIndex + 1}</p>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => onGenerateSceneVideo(scene.beatId)}

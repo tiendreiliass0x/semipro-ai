@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Bowlby+One+SC&family=Inter:wght@400;500;600;700;800&family=Meow+Script&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bowlby+One+SC&family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&family=Meow+Script&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -50,6 +50,10 @@
 
 .font-script {
   font-family: 'Meow Script', cursive;
+}
+
+.font-hero-sans {
+  font-family: 'Manrope', 'Inter', sans-serif;
 }
 
 /* Custom Scrollbar */
