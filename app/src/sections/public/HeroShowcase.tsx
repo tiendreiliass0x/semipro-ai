@@ -56,7 +56,7 @@ export function HeroShowcase() {
             <div className="inline-flex items-center gap-2 xl:gap-3">
               <button
                 onClick={() => openAuth('login')}
-                className="px-4 xl:px-5 py-1.5 xl:py-2 rounded-full border border-white/45 text-xs md:text-sm xl:text-base text-white bg-white/5 hover:bg-white/10 transition"
+                className="hidden md:inline-flex px-4 xl:px-5 py-1.5 xl:py-2 rounded-full border border-white/45 text-xs md:text-sm xl:text-base text-white bg-white/5 hover:bg-white/10 transition"
               >
                 Sign In
               </button>
