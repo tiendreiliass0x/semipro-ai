@@ -1,3 +1,5 @@
+import { evaluateSceneContinuation } from '../lib/sceneContinuation';
+
 type ProjectsRouteArgs = {
   req: Request;
   pathname: string;
@@ -26,21 +28,50 @@ type ProjectsRouteArgs = {
     provider: string;
     prompt: string;
     sourceImageUrl: string;
+    continuityScore?: number;
+    continuityThreshold?: number;
+    recommendRegenerate?: boolean;
+    continuityReason?: string;
     durationSeconds?: number;
   }) => any;
   getLatestSceneVideo: (projectId: string, beatId: string) => any;
   listLatestSceneVideos: (projectId: string) => any[];
+  createScenePromptLayer: (args: {
+    projectId: string;
+    packageId: string;
+    beatId: string;
+    directorPrompt: string;
+    cinematographerPrompt: string;
+    mergedPrompt: string;
+    filmType?: string;
+    continuationMode?: string;
+    anchorBeatId?: string;
+    autoRegenerateThreshold?: number;
+    source?: string;
+  }) => any;
+  getLatestScenePromptLayer: (projectId: string, beatId: string) => any;
+  listScenePromptLayerHistory: (projectId: string, beatId: string) => any[];
+  listLatestScenePromptLayers: (projectId: string) => any[];
   createProjectFinalFilm: (args: { projectId: string; sourceCount: number }) => any;
   updateProjectFinalFilm: (id: string, patch: { status?: string; sourceCount?: number; videoUrl?: string; error?: string }) => any;
   getLatestProjectFinalFilm: (projectId: string) => any;
   getProjectStyleBible: (projectId: string) => any;
   updateProjectStyleBible: (projectId: string, payload: any) => any;
+  getLatestProjectScreenplay: (projectId: string) => any;
+  saveProjectScreenplay: (projectId: string, payload: any, status?: string) => any;
+  getProjectScenesBible: (projectId: string) => any;
+  updateProjectScenesBible: (projectId: string, payload: any) => any;
   refineSynopsisWithLlm: (args: { pseudoSynopsis: string; style?: string; durationMinutes?: number; styleBible?: any }) => Promise<any>;
+  generateHybridScreenplayWithLlm: (args: { title: string; synopsis: string; plotScript: string; beats: any[]; style?: string; styleBible?: any; durationMinutes?: number }) => Promise<any>;
+  generateScenesBibleWithLlm: (args: { title: string; synopsis: string; plotScript: string; screenplay: string; style?: string; styleBible?: any }) => Promise<any>;
   polishNotesIntoBeatsWithLlm: (args: { synopsis: string; notes: any[]; durationMinutes?: number; style?: string; styleBible?: any }) => Promise<any>;
   generateProjectStoryboardWithLlm: (args: { title: string; synopsis: string; beats: any[]; prompt?: string; style?: string; styleBible?: any; filmType?: string }) => Promise<any>;
   generateStoryboardFrameWithLlm: (prompt: string) => Promise<string>;
   buildDirectorSceneVideoPrompt: (args: { projectTitle: string; synopsis: string; styleBible: any; scene: any; directorPrompt?: string }) => string;
+  buildCinematographerPrompt: (args: { styleBible: any; scene: any; scenesBible?: any }) => string;
+  buildMergedScenePrompt: (args: { directorPrompt: string; cinematographerPrompt: string; scenesBible?: any }) => string;
   createFinalFilmFromClips: (args: { uploadsDir: string; clipUrls: string[]; outputFilename: string }) => Promise<string>;
+  registerUploadOwnership: (args: { filename: string; accountId: string }) => void;
   uploadsDir: string;
 };
 
@@ -71,24 +102,41 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     createSceneVideoJob,
     getLatestSceneVideo,
     listLatestSceneVideos,
+    createScenePromptLayer,
+    getLatestScenePromptLayer,
+    listScenePromptLayerHistory,
+    listLatestScenePromptLayers,
     createProjectFinalFilm,
     updateProjectFinalFilm,
     getLatestProjectFinalFilm,
     getProjectStyleBible,
     updateProjectStyleBible,
+    getLatestProjectScreenplay,
+    saveProjectScreenplay,
+    getProjectScenesBible,
+    updateProjectScenesBible,
     refineSynopsisWithLlm,
+    generateHybridScreenplayWithLlm,
+    generateScenesBibleWithLlm,
     polishNotesIntoBeatsWithLlm,
     generateProjectStoryboardWithLlm,
     generateStoryboardFrameWithLlm,
     buildDirectorSceneVideoPrompt,
+    buildCinematographerPrompt,
+    buildMergedScenePrompt,
     createFinalFilmFromClips,
+    registerUploadOwnership,
     uploadsDir,
   } = args;
 
   const requestAccountId = getRequestAccountId(req);
   const scopeAccountId = requestAccountId || undefined;
-  const canWrite = verifyAccessKey(req) && Boolean(requestAccountId);
+  const canWrite = Boolean(requestAccountId) && verifyAccessKey(req);
   const getScopedProject = (projectId: string) => getProjectById(projectId, scopeAccountId);
+
+  if (pathname.startsWith('/api/projects') && !requestAccountId) {
+    return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+  }
 
   const buildContinuityIssues = (beats: any[]) => {
     const issues: any[] = [];
@@ -263,6 +311,91 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
   }
 
+  if (pathname.match(/^\/api\/projects\/[^/]+\/screenplay$/) && method === 'GET') {
+    const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ item: getLatestProjectScreenplay(projectId) }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/screenplay$/) && method === 'PUT') {
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    const body = await req.json().catch(() => ({}));
+    const payload = body?.payload || null;
+    if (!payload) return new Response(JSON.stringify({ error: 'payload is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
+    const item = saveProjectScreenplay(projectId, payload, 'manual');
+    return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/screenplay\/generate$/) && method === 'POST') {
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    const beats = listStoryBeats(projectId);
+    try {
+      const payload = await generateHybridScreenplayWithLlm({
+        title: project.title,
+        synopsis: project.polishedSynopsis || project.pseudoSynopsis,
+        plotScript: project.plotScript || '',
+        beats,
+        style: project.style || 'cinematic',
+        styleBible: getProjectStyleBible(projectId),
+        durationMinutes: project.durationMinutes || 1,
+      });
+      const item = saveProjectScreenplay(projectId, payload, 'generated');
+      return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate screenplay';
+      return new Response(JSON.stringify({ error: message }), { status: 502, headers: jsonHeaders(corsHeaders) });
+    }
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/scenes-bible$/) && method === 'GET') {
+    const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ item: getProjectScenesBible(projectId) }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/scenes-bible$/) && method === 'PUT') {
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    const body = await req.json().catch(() => ({}));
+    const payload = body?.payload || null;
+    if (!payload) return new Response(JSON.stringify({ error: 'payload is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
+    const item = updateProjectScenesBible(projectId, payload);
+    return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/scenes-bible\/generate$/) && method === 'POST') {
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    const screenplay = getLatestProjectScreenplay(projectId);
+    try {
+      const payload = await generateScenesBibleWithLlm({
+        title: project.title,
+        synopsis: project.polishedSynopsis || project.pseudoSynopsis,
+        plotScript: project.plotScript || '',
+        screenplay: screenplay?.payload?.screenplay || '',
+        style: project.style || 'cinematic',
+        styleBible: getProjectStyleBible(projectId),
+      });
+      const item = updateProjectScenesBible(projectId, payload);
+      return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate scenes bible';
+      return new Response(JSON.stringify({ error: message }), { status: 502, headers: jsonHeaders(corsHeaders) });
+    }
+  }
+
   if (pathname.match(/^\/api\/projects\/[^/]+\/synopsis\/refine$/) && method === 'POST') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
@@ -419,6 +552,84 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     return new Response(JSON.stringify({ items: listLatestSceneVideos(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
+  if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/prompt-layers$/) && method === 'GET') {
+    const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ items: listLatestScenePromptLayers(projectId) }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/prompt-layers$/) && method === 'GET') {
+    const projectId = pathname.split('/')[3];
+    const beatId = pathname.split('/')[5];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ items: listScenePromptLayerHistory(projectId, beatId) }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/prompt-layers$/) && method === 'POST') {
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const projectId = pathname.split('/')[3];
+    const beatId = pathname.split('/')[5];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    const latestPackage = getLatestProjectPackage(projectId);
+    if (!latestPackage?.payload?.storyboard || !Array.isArray(latestPackage.payload.storyboard)) {
+      return new Response(JSON.stringify({ error: 'No storyboard package found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    }
+    const scene = latestPackage.payload.storyboard.find((item: any) => String(item.beatId) === String(beatId));
+    if (!scene) return new Response(JSON.stringify({ error: 'Scene not found for beat' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+
+    const body = await req.json().catch(() => ({}));
+    const directorLayer = typeof body?.directorPrompt === 'string' ? body.directorPrompt.trim() : '';
+    const cinematographerLayer = typeof body?.cinematographerPrompt === 'string' ? body.cinematographerPrompt.trim() : '';
+    const activeFilmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
+    const continuationMode = ['strict', 'balanced', 'loose'].includes(String(body?.continuationMode || '').trim())
+      ? String(body.continuationMode).trim()
+      : 'strict';
+    const anchorBeatId = typeof body?.anchorBeatId === 'string' ? body.anchorBeatId.trim() : '';
+    const autoRegenerateThreshold = Math.max(0, Math.min(1, Number(body?.autoRegenerateThreshold ?? 0.75)));
+    const source = typeof body?.source === 'string' ? body.source.trim() : 'manual';
+
+    const styleBible = getProjectStyleBible(projectId);
+    const scenesBible = getProjectScenesBible(projectId) || null;
+    const resolvedDirectorPrompt = buildDirectorSceneVideoPrompt({
+      projectTitle: project.title,
+      synopsis: project.polishedSynopsis || project.pseudoSynopsis,
+      styleBible,
+      scene,
+      directorPrompt: [
+        activeFilmType ? `Film type: ${activeFilmType}` : '',
+        `Continuation mode: ${continuationMode}`,
+        anchorBeatId ? `Anchor beat: ${anchorBeatId}` : '',
+        `Auto-regenerate threshold: ${autoRegenerateThreshold}`,
+        directorLayer,
+      ].filter(Boolean).join('\n'),
+    });
+    const resolvedCinematographerPrompt = cinematographerLayer || buildCinematographerPrompt({ styleBible, scene, scenesBible });
+    const mergedPrompt = buildMergedScenePrompt({
+      directorPrompt: resolvedDirectorPrompt,
+      cinematographerPrompt: resolvedCinematographerPrompt,
+      scenesBible,
+    });
+
+    const item = createScenePromptLayer({
+      projectId,
+      packageId: latestPackage.id,
+      beatId,
+      directorPrompt: directorLayer,
+      cinematographerPrompt: cinematographerLayer,
+      mergedPrompt,
+      filmType: activeFilmType,
+      continuationMode,
+      anchorBeatId,
+      autoRegenerateThreshold,
+      source,
+    });
+
+    return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
+  }
+
   if (pathname.match(/^\/api\/projects\/[^/]+\/final-film$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
     const project = getScopedProject(projectId);
@@ -462,6 +673,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         clipUrls,
         outputFilename,
       });
+      registerUploadOwnership({ filename: outputFilename, accountId: String(requestAccountId) });
 
       const item = updateProjectFinalFilm(film.id, {
         status: 'completed',
@@ -503,6 +715,13 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const body = await req.json().catch(() => ({}));
     const promptOverride = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
     const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
+    const directorLayerInput = typeof body?.directorPrompt === 'string' ? body.directorPrompt.trim() : '';
+    const cinematographerLayerInput = typeof body?.cinematographerPrompt === 'string' ? body.cinematographerPrompt.trim() : '';
+    const continuationModeInput = ['strict', 'balanced', 'loose'].includes(String(body?.continuationMode || '').trim())
+      ? String(body.continuationMode).trim()
+      : '';
+    const anchorBeatIdInput = typeof body?.anchorBeatId === 'string' ? body.anchorBeatId.trim() : '';
+    const autoRegenerateThresholdInput = Number(body?.autoRegenerateThreshold);
 
     if (!scene.imageUrl || promptOverride) {
       try {
@@ -523,12 +742,66 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     }
 
     const styleBible = getProjectStyleBible(projectId);
-    const videoPrompt = buildDirectorSceneVideoPrompt({
+    const scenesBible = getProjectScenesBible(projectId) || null;
+    const latestLayer = getLatestScenePromptLayer(projectId, beatId);
+    const directorLayer = directorLayerInput || promptOverride || String(latestLayer?.directorPrompt || '').trim();
+    const cinematographerLayer = cinematographerLayerInput || String(latestLayer?.cinematographerPrompt || '').trim();
+    const activeFilmType = filmType || String(latestLayer?.filmType || '').trim();
+    const activeContinuationMode = continuationModeInput || String(latestLayer?.continuationMode || 'strict').trim() || 'strict';
+    const activeAnchorBeatId = anchorBeatIdInput || String(latestLayer?.anchorBeatId || '').trim();
+    const activeAutoRegenerateThreshold = Number.isFinite(autoRegenerateThresholdInput)
+      ? Math.max(0, Math.min(1, autoRegenerateThresholdInput))
+      : Math.max(0, Math.min(1, Number(latestLayer?.autoRegenerateThreshold ?? 0.75)));
+
+    const orderedStoryboard = latestPackage.payload.storyboard || [];
+    const currentSceneIndex = orderedStoryboard.findIndex((item: any) => String(item.beatId) === String(beatId));
+    const previousScene = currentSceneIndex > 0 ? orderedStoryboard[currentSceneIndex - 1] : null;
+    const anchorScene = activeAnchorBeatId
+      ? orderedStoryboard.find((item: any) => String(item.beatId) === String(activeAnchorBeatId))
+      : null;
+    const resolvedAnchorScene = anchorScene || (activeContinuationMode === 'strict' ? previousScene : null);
+    const resolvedSourceImageUrl = String(resolvedAnchorScene?.imageUrl || scene.imageUrl || '').trim();
+
+    const directorPrompt = buildDirectorSceneVideoPrompt({
       projectTitle: project.title,
       synopsis: project.polishedSynopsis || project.pseudoSynopsis,
       styleBible,
       scene,
-      directorPrompt: [filmType ? `Film type: ${filmType}` : '', promptOverride].filter(Boolean).join('\n'),
+      directorPrompt: [
+        activeFilmType ? `Film type: ${activeFilmType}` : '',
+        `Continuation mode: ${activeContinuationMode}`,
+        resolvedAnchorScene?.beatId ? `Anchor beat: ${resolvedAnchorScene.beatId}` : 'Anchor beat: current scene frame',
+        `Auto-regenerate threshold: ${activeAutoRegenerateThreshold}`,
+        directorLayer,
+      ].filter(Boolean).join('\n'),
+    });
+    const cinematographerPrompt = cinematographerLayer || buildCinematographerPrompt({ styleBible, scene, scenesBible });
+    const videoPrompt = buildMergedScenePrompt({
+      directorPrompt,
+      cinematographerPrompt,
+      scenesBible,
+    });
+
+    const promptLayer = createScenePromptLayer({
+      projectId,
+      packageId: latestPackage.id,
+      beatId,
+      directorPrompt: directorLayer,
+      cinematographerPrompt: cinematographerLayer,
+      mergedPrompt: videoPrompt,
+      filmType: activeFilmType,
+      continuationMode: activeContinuationMode,
+      anchorBeatId: String(resolvedAnchorScene?.beatId || ''),
+      autoRegenerateThreshold: activeAutoRegenerateThreshold,
+      source: 'video-generate',
+    });
+
+    const continuationEvaluation = evaluateSceneContinuation({
+      continuationMode: activeContinuationMode as 'strict' | 'balanced' | 'loose',
+      hasAnchor: Boolean(resolvedAnchorScene?.beatId),
+      directorLayer,
+      cinematographerLayer,
+      threshold: activeAutoRegenerateThreshold,
     });
 
     const job = createSceneVideoJob({
@@ -537,13 +810,17 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       beatId,
       provider: 'fal-seedance',
       prompt: videoPrompt,
-      sourceImageUrl: scene.imageUrl,
+      sourceImageUrl: resolvedSourceImageUrl,
+      continuityScore: continuationEvaluation.score,
+      continuityThreshold: activeAutoRegenerateThreshold,
+      recommendRegenerate: continuationEvaluation.recommendRegenerate,
+      continuityReason: continuationEvaluation.reason,
       durationSeconds: Number(scene.durationSeconds || 5),
     });
 
     console.log(`[queue] Enqueued scene video job ${job.id} for project ${projectId}, beat ${beatId}`);
 
-    return new Response(JSON.stringify({ success: true, item: job }), { status: 202, headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ success: true, item: job, promptLayer }), { status: 202, headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/scene-lock$/) && method === 'PATCH') {

@@ -40,6 +40,9 @@ UX note: Scenes workspace now includes a clickable scene-capture timeline strip 
   - Text/storyboard generation adapters (OpenAI + image generation integration).
   - Critical because prompt and schema quality directly affect output quality.
 
+- `backend/lib/storylineLlm.ts` (screenplay + scenes bible)
+  - Adds hybrid screenplay generation and scenes-bible generation as previsualization/coherence layers.
+
 - `backend/lib/sceneVideo.ts`
   - Scene video generation + final film clip collation.
   - Critical because asynchronous media generation and ffmpeg composition live here.
@@ -152,6 +155,12 @@ UX note: Scenes workspace now includes a clickable scene-capture timeline strip 
   - `GET /api/projects/:id/beats`
   - `POST /api/projects/:id/beats/polish`
   - `PATCH /api/projects/:id/beats/:beatId/lock`
+  - `GET /api/projects/:id/screenplay`
+  - `PUT /api/projects/:id/screenplay`
+  - `POST /api/projects/:id/screenplay/generate`
+  - `GET /api/projects/:id/scenes-bible`
+  - `PUT /api/projects/:id/scenes-bible`
+  - `POST /api/projects/:id/scenes-bible/generate`
 
 - Storyboard/video:
   - `POST /api/projects/:id/storyboard/generate`

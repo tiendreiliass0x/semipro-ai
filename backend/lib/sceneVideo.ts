@@ -40,6 +40,48 @@ export const buildDirectorSceneVideoPrompt = (args: {
   ].join('\n');
 };
 
+export const buildCinematographerPrompt = (args: {
+  styleBible: any;
+  scene: any;
+  scenesBible?: any;
+}) => {
+  const styleBible = args.styleBible || {};
+  const scenesBible = args.scenesBible || {};
+  return [
+    `Cinematographer directives:`,
+    `Scene heading: ${args.scene?.slugline || 'UNKNOWN'}`,
+    `Shot design: ${args.scene?.camera || ''}`,
+    `Visual direction: ${args.scene?.visualDirection || ''}`,
+    `Lighting continuity: ${(scenesBible?.locationCanon || '').slice(0, 600)}`,
+    `Camera grammar lock: ${styleBible.cameraGrammar || ''}`,
+    `Palette and texture lock: ${scenesBible?.paletteAndTexture || ''}`,
+    `Cinematic language lock: ${scenesBible?.cinematicLanguage || ''}`,
+    `Continuity invariants: ${Array.isArray(scenesBible?.continuityInvariants) ? scenesBible.continuityInvariants.join(', ') : ''}`,
+    `Technical constraints: preserve axis consistency, avoid jumpy lens changes, maintain subject scale continuity, realistic motivated movement.`,
+  ].join('\n');
+};
+
+export const buildMergedScenePrompt = (args: {
+  directorPrompt: string;
+  cinematographerPrompt: string;
+  scenesBible?: any;
+}) => {
+  const scenesBible = args.scenesBible || {};
+  return [
+    'SCENES BIBLE (HARD CONSTRAINTS):',
+    scenesBible?.overview || '',
+    scenesBible?.characterCanon || '',
+    scenesBible?.locationCanon || '',
+    Array.isArray(scenesBible?.continuityInvariants) ? scenesBible.continuityInvariants.map((item: string) => `- ${item}`).join('\n') : '',
+    '',
+    'CINEMATOGRAPHER PROMPT (camera/lens/lighting priority):',
+    args.cinematographerPrompt,
+    '',
+    'DIRECTOR PROMPT (performance/emotion priority):',
+    args.directorPrompt,
+  ].filter(Boolean).join('\n');
+};
+
 const resolveFalImageUrl = async (args: {
   uploadsDir: string;
   sourceImageUrl: string;

@@ -1,4 +1,4 @@
-import type { Anecdote, ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectStyleBible, RefinedSynopsis, SceneVideoJob, StoryNote, Storyline, StoryboardScene, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
+import type { Anecdote, ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectScenesBible, ProjectScreenplay, ProjectStyleBible, RefinedSynopsis, ScenePromptLayer, SceneVideoJob, StoryNote, Storyline, StoryboardScene, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
 
 // Get the base URL without /api suffix for uploads
 const getBaseUrl = () => {
@@ -53,7 +53,13 @@ export const api = {
   getApiBaseUrl: () => API_BASE_URL,
 
   // Get full URL for uploads
-  getUploadsUrl: (path: string) => `${UPLOADS_BASE_URL}${path}`,
+  getUploadsUrl: (path: string) => {
+    const url = `${UPLOADS_BASE_URL}${path}`;
+    const authToken = getAuthToken();
+    if (!authToken) return url;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}token=${encodeURIComponent(authToken)}`;
+  },
 
   // Health check
   health: () => fetchApi<{ status: string; timestamp: string }>('/health'),
@@ -260,6 +266,40 @@ export const api = {
       body: JSON.stringify({ payload }),
     }),
 
+  getProjectScreenplay: (projectId: string) =>
+    fetchApi<{ item: ProjectScreenplay | null }>(`/projects/${projectId}/screenplay`),
+
+  generateProjectScreenplay: (projectId: string) =>
+    fetchApi<{ success: boolean; item: ProjectScreenplay }>(`/projects/${projectId}/screenplay/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }),
+
+  updateProjectScreenplay: (projectId: string, payload: ProjectScreenplay['payload']) =>
+    fetchApi<{ success: boolean; item: ProjectScreenplay }>(`/projects/${projectId}/screenplay`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload }),
+    }),
+
+  getProjectScenesBible: (projectId: string) =>
+    fetchApi<{ item: ProjectScenesBible | null }>(`/projects/${projectId}/scenes-bible`),
+
+  generateProjectScenesBible: (projectId: string) =>
+    fetchApi<{ success: boolean; item: ProjectScenesBible }>(`/projects/${projectId}/scenes-bible/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }),
+
+  updateProjectScenesBible: (projectId: string, payload: ProjectScenesBible) =>
+    fetchApi<{ success: boolean; item: ProjectScenesBible }>(`/projects/${projectId}/scenes-bible`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload }),
+    }),
+
   checkProjectContinuity: (projectId: string) =>
     fetchApi<{ success: boolean; issues: ContinuityIssue[] }>(`/projects/${projectId}/continuity/check`),
 
@@ -287,11 +327,19 @@ export const api = {
       body: JSON.stringify({ beatId, locked }),
     }),
 
-  generateSceneVideo: (projectId: string, beatId: string, prompt?: string, filmType?: string) =>
-    fetchApi<{ success: boolean; item: SceneVideoJob }>(`/projects/${projectId}/storyboard/${beatId}/video`, {
+  generateSceneVideo: (projectId: string, beatId: string, payload?: {
+    directorPrompt?: string;
+    cinematographerPrompt?: string;
+    filmType?: string;
+    continuationMode?: 'strict' | 'balanced' | 'loose';
+    anchorBeatId?: string;
+    autoRegenerateThreshold?: number;
+    prompt?: string;
+  }) =>
+    fetchApi<{ success: boolean; item: SceneVideoJob; promptLayer?: ScenePromptLayer }>(`/projects/${projectId}/storyboard/${beatId}/video`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: prompt || '', filmType: filmType || '' }),
+      body: JSON.stringify(payload || {}),
     }),
 
   getSceneVideo: (projectId: string, beatId: string) =>
@@ -299,6 +347,27 @@ export const api = {
 
   listSceneVideos: (projectId: string) =>
     fetchApi<{ items: SceneVideoJob[] }>(`/projects/${projectId}/storyboard/videos`),
+
+  listScenePromptLayers: (projectId: string) =>
+    fetchApi<{ items: ScenePromptLayer[] }>(`/projects/${projectId}/storyboard/prompt-layers`),
+
+  getScenePromptLayerHistory: (projectId: string, beatId: string) =>
+    fetchApi<{ items: ScenePromptLayer[] }>(`/projects/${projectId}/storyboard/${beatId}/prompt-layers`),
+
+  saveScenePromptLayer: (projectId: string, beatId: string, payload: {
+    directorPrompt?: string;
+    cinematographerPrompt?: string;
+    filmType?: string;
+    continuationMode?: 'strict' | 'balanced' | 'loose';
+    anchorBeatId?: string;
+    autoRegenerateThreshold?: number;
+    source?: string;
+  }) =>
+    fetchApi<{ success: boolean; item: ScenePromptLayer }>(`/projects/${projectId}/storyboard/${beatId}/prompt-layers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    }),
 
   getLatestProjectFinalFilm: (projectId: string) =>
     fetchApi<{ item: ProjectFinalFilm | null }>(`/projects/${projectId}/final-film`),

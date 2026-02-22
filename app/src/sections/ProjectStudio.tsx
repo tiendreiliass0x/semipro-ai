@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
-import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectStyleBible, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
+import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectScenesBible, ProjectScreenplay, ProjectStyleBible, ScenePromptLayer, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
 import { DeleteProjectModal } from './project-studio/DeleteProjectModal';
 import { ProjectSidebar } from './project-studio/ProjectSidebar';
 import { ScenesWorkspace } from './project-studio/ScenesWorkspace';
@@ -21,6 +21,21 @@ export function ProjectStudio() {
     doList: [],
     dontList: [],
   });
+  const [screenplay, setScreenplay] = useState<ProjectScreenplay['payload']>({
+    title: '',
+    format: 'hybrid',
+    screenplay: '',
+    scenes: [],
+  });
+  const [scenesBible, setScenesBible] = useState<ProjectScenesBible>({
+    overview: '',
+    characterCanon: '',
+    locationCanon: '',
+    cinematicLanguage: '',
+    paletteAndTexture: '',
+    continuityInvariants: [],
+    progressionMap: '',
+  });
   const [continuityIssues, setContinuityIssues] = useState<ContinuityIssue[]>([]);
   const [previewMode, setPreviewMode] = useState<'timeline' | 'intensity' | 'all' | null>(null);
   const [previewBeats, setPreviewBeats] = useState<ProjectBeat[]>([]);
@@ -36,7 +51,10 @@ export function ProjectStudio() {
   const [directorPrompt, setDirectorPrompt] = useState('Cinematic, emotionally grounded, practical for low-budget production.');
   const [filmType, setFilmType] = useState('cinematic live-action');
   const [sceneFilmTypeByBeatId, setSceneFilmTypeByBeatId] = useState<Record<string, string>>({});
-  const [synopsisTab, setSynopsisTab] = useState<'pseudo' | 'polished' | 'plotScript'>('pseudo');
+  const [continuationModeByBeatId, setContinuationModeByBeatId] = useState<Record<string, 'strict' | 'balanced' | 'loose'>>({});
+  const [anchorBeatIdByBeatId, setAnchorBeatIdByBeatId] = useState<Record<string, string>>({});
+  const [autoRegenThresholdByBeatId, setAutoRegenThresholdByBeatId] = useState<Record<string, number>>({});
+  const [synopsisTab, setSynopsisTab] = useState<'pseudo' | 'polished' | 'plotScript' | 'screenplay' | 'scenesBible'>('pseudo');
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [isRecordCreating, setIsRecordCreating] = useState(false);
@@ -47,6 +65,10 @@ export function ProjectStudio() {
   const [showRightProjectSettings, setShowRightProjectSettings] = useState(false);
   const [isRefiningSynopsis, setIsRefiningSynopsis] = useState(false);
   const [isSavingStyleBible, setIsSavingStyleBible] = useState(false);
+  const [isGeneratingScreenplay, setIsGeneratingScreenplay] = useState(false);
+  const [isSavingScreenplay, setIsSavingScreenplay] = useState(false);
+  const [isGeneratingScenesBible, setIsGeneratingScenesBible] = useState(false);
+  const [isSavingScenesBible, setIsSavingScenesBible] = useState(false);
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [isPolishingBeats, setIsPolishingBeats] = useState(false);
   const [isGeneratingMoreStarterBeats, setIsGeneratingMoreStarterBeats] = useState(false);
@@ -60,6 +82,12 @@ export function ProjectStudio() {
   const [isRefreshingVideos, setIsRefreshingVideos] = useState(false);
   const [isGeneratingFinalFilm, setIsGeneratingFinalFilm] = useState(false);
   const [videoPromptByBeatId, setVideoPromptByBeatId] = useState<Record<string, string>>({});
+  const [cinematographerPromptByBeatId, setCinematographerPromptByBeatId] = useState<Record<string, string>>({});
+  const [promptLayerVersionByBeatId, setPromptLayerVersionByBeatId] = useState<Record<string, number>>({});
+  const [promptLayerHistoryByBeatId, setPromptLayerHistoryByBeatId] = useState<Record<string, ScenePromptLayer[]>>({});
+  const [activePromptHistoryBeatId, setActivePromptHistoryBeatId] = useState<string | null>(null);
+  const [isLoadingPromptHistory, setIsLoadingPromptHistory] = useState(false);
+  const [isSavingPromptLayerByBeatId, setIsSavingPromptLayerByBeatId] = useState<Record<string, boolean>>({});
   const beatsScrollRef = useRef<HTMLDivElement | null>(null);
   const projectIdeaInputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -164,10 +192,20 @@ export function ProjectStudio() {
     return outputs;
   };
 
+  const upsertPromptLayerHistoryItem = (item: ScenePromptLayer | null | undefined) => {
+    if (!item?.beatId) return;
+    setPromptLayerHistoryByBeatId(prev => {
+      const current = prev[item.beatId] || [];
+      const merged = [item, ...current.filter(existing => existing.id !== item.id)]
+        .sort((a, b) => Number(b.version || 0) - Number(a.version || 0));
+      return { ...prev, [item.beatId]: merged };
+    });
+  };
+
   useEffect(() => {
     if (!selectedProject) return;
     const loadDetails = async () => {
-      const [notesResponse, beatsResponse, storyboardResponse, styleBibleResponse, continuityResponse, videosResponse, finalFilmResponse] = await Promise.all([
+      const [notesResponse, beatsResponse, storyboardResponse, styleBibleResponse, continuityResponse, videosResponse, finalFilmResponse, screenplayResponse, scenesBibleResponse, promptLayersResponse] = await Promise.all([
         api.getProjectNotes(selectedProject.id).catch(() => ({ items: [] })),
         api.getProjectBeats(selectedProject.id).catch(() => ({ items: [] })),
         api.getLatestProjectStoryboard(selectedProject.id).catch(() => ({ item: null })),
@@ -175,6 +213,9 @@ export function ProjectStudio() {
         api.checkProjectContinuity(selectedProject.id).catch(() => ({ success: true, issues: [] })),
         api.listSceneVideos(selectedProject.id).catch(() => ({ items: [] })),
         api.getLatestProjectFinalFilm(selectedProject.id).catch(() => ({ item: null })),
+        api.getProjectScreenplay(selectedProject.id).catch(() => ({ item: null })),
+        api.getProjectScenesBible(selectedProject.id).catch(() => ({ item: null })),
+        api.listScenePromptLayers(selectedProject.id).catch(() => ({ items: [] })),
       ]);
       setNotes(notesResponse.items || []);
       setBeats(beatsResponse.items || []);
@@ -188,9 +229,83 @@ export function ProjectStudio() {
       });
       setSceneVideosByBeatId(byBeat);
       setFinalFilm(finalFilmResponse.item || null);
+      setScreenplay(screenplayResponse.item?.payload || { title: '', format: 'hybrid', screenplay: '', scenes: [] });
+      setScenesBible(scenesBibleResponse.item || {
+        overview: '',
+        characterCanon: '',
+        locationCanon: '',
+        cinematicLanguage: '',
+        paletteAndTexture: '',
+        continuityInvariants: [],
+        progressionMap: '',
+      });
+      const scenePromptLayers = (promptLayersResponse.items || []) as ScenePromptLayer[];
+      const directorByBeat: Record<string, string> = {};
+      const cinematographerByBeat: Record<string, string> = {};
+      const filmTypeByBeat: Record<string, string> = {};
+      const continuationModeByBeat: Record<string, 'strict' | 'balanced' | 'loose'> = {};
+      const anchorByBeat: Record<string, string> = {};
+      const thresholdByBeat: Record<string, number> = {};
+      const versionByBeat: Record<string, number> = {};
+      scenePromptLayers.forEach(item => {
+        if (!item?.beatId) return;
+        directorByBeat[item.beatId] = String(item.directorPrompt || '');
+        cinematographerByBeat[item.beatId] = String(item.cinematographerPrompt || '');
+        if (String(item.filmType || '').trim()) {
+          filmTypeByBeat[item.beatId] = String(item.filmType);
+        }
+        if (item.continuationMode === 'strict' || item.continuationMode === 'balanced' || item.continuationMode === 'loose') {
+          continuationModeByBeat[item.beatId] = item.continuationMode;
+        }
+        if (String(item.anchorBeatId || '').trim()) {
+          anchorByBeat[item.beatId] = String(item.anchorBeatId);
+        }
+        thresholdByBeat[item.beatId] = Number(item.autoRegenerateThreshold ?? 0.75);
+        versionByBeat[item.beatId] = Number(item.version || 1);
+      });
+      setVideoPromptByBeatId(directorByBeat);
+      setCinematographerPromptByBeatId(cinematographerByBeat);
+      setSceneFilmTypeByBeatId(filmTypeByBeat);
+      setContinuationModeByBeatId(continuationModeByBeat);
+      setAnchorBeatIdByBeatId(anchorByBeat);
+      setAutoRegenThresholdByBeatId(thresholdByBeat);
+      setPromptLayerVersionByBeatId(versionByBeat);
+      setPromptLayerHistoryByBeatId({});
+      setActivePromptHistoryBeatId(null);
     };
     loadDetails();
   }, [selectedProject?.id]);
+
+  const openPromptLayerHistory = async (beatId: string) => {
+    if (!selectedProject?.id) return;
+    setActivePromptHistoryBeatId(beatId);
+    setIsLoadingPromptHistory(true);
+    try {
+      const response = await api.getScenePromptLayerHistory(selectedProject.id, beatId);
+      setPromptLayerHistoryByBeatId(prev => ({
+        ...prev,
+        [beatId]: response.items || [],
+      }));
+    } finally {
+      setIsLoadingPromptHistory(false);
+    }
+  };
+
+  const restoreScenePromptLayer = (beatId: string, layer: ScenePromptLayer) => {
+    if (!beatId || !layer) return;
+    setVideoPromptByBeatId(prev => ({ ...prev, [beatId]: String(layer.directorPrompt || '') }));
+    setCinematographerPromptByBeatId(prev => ({ ...prev, [beatId]: String(layer.cinematographerPrompt || '') }));
+    if (String(layer.filmType || '').trim()) {
+      setSceneFilmTypeByBeatId(prev => ({ ...prev, [beatId]: String(layer.filmType) }));
+    }
+    if (layer.continuationMode === 'strict' || layer.continuationMode === 'balanced' || layer.continuationMode === 'loose') {
+      setContinuationModeByBeatId(prev => ({ ...prev, [beatId]: layer.continuationMode }));
+    }
+    setAnchorBeatIdByBeatId(prev => ({ ...prev, [beatId]: String(layer.anchorBeatId || '') }));
+    setAutoRegenThresholdByBeatId(prev => ({ ...prev, [beatId]: Number(layer.autoRegenerateThreshold ?? 0.75) }));
+    setActivePromptHistoryBeatId(null);
+    setBusyMessage(`Restored prompt layer v${layer.version} to scene editor.`);
+  };
 
   useEffect(() => {
     if (!selectedProject) return;
@@ -229,6 +344,64 @@ export function ProjectStudio() {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to save style bible');
     } finally {
       setIsSavingStyleBible(false);
+    }
+  };
+
+  const generateScreenplay = async () => {
+    if (!selectedProject || !isAuthenticated || isGeneratingScreenplay) return;
+    setIsGeneratingScreenplay(true);
+    setBusyMessage('Generating hybrid screenplay...');
+    try {
+      const response = await api.generateProjectScreenplay(selectedProject.id);
+      setScreenplay(response.item?.payload || { title: '', format: 'hybrid', screenplay: '', scenes: [] });
+      setBusyMessage('Hybrid screenplay generated.');
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to generate screenplay');
+    } finally {
+      setIsGeneratingScreenplay(false);
+    }
+  };
+
+  const saveScreenplay = async () => {
+    if (!selectedProject || !isAuthenticated || isSavingScreenplay) return;
+    setIsSavingScreenplay(true);
+    setBusyMessage('Saving screenplay...');
+    try {
+      await api.updateProjectScreenplay(selectedProject.id, screenplay);
+      setBusyMessage('Screenplay saved.');
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to save screenplay');
+    } finally {
+      setIsSavingScreenplay(false);
+    }
+  };
+
+  const generateScenesBible = async () => {
+    if (!selectedProject || !isAuthenticated || isGeneratingScenesBible) return;
+    setIsGeneratingScenesBible(true);
+    setBusyMessage('Generating scenes bible...');
+    try {
+      const response = await api.generateProjectScenesBible(selectedProject.id);
+      if (response.item) setScenesBible(response.item);
+      setBusyMessage('Scenes bible generated.');
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to generate scenes bible');
+    } finally {
+      setIsGeneratingScenesBible(false);
+    }
+  };
+
+  const saveScenesBible = async () => {
+    if (!selectedProject || !isAuthenticated || isSavingScenesBible) return;
+    setIsSavingScenesBible(true);
+    setBusyMessage('Saving scenes bible...');
+    try {
+      await api.updateProjectScenesBible(selectedProject.id, scenesBible);
+      setBusyMessage('Scenes bible saved.');
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to save scenes bible');
+    } finally {
+      setIsSavingScenesBible(false);
     }
   };
 
@@ -601,14 +774,47 @@ export function ProjectStudio() {
     }
   };
 
-  const generateSceneVideo = async (beatId: string, promptOverride?: string) => {
+  const saveScenePromptLayer = async (beatId: string, source: string = 'manual-edit') => {
+    if (!selectedProject?.id || !isAuthenticated) return null;
+    setIsSavingPromptLayerByBeatId(prev => ({ ...prev, [beatId]: true }));
+    try {
+      const response = await api.saveScenePromptLayer(selectedProject.id, beatId, {
+        directorPrompt: videoPromptByBeatId[beatId] || '',
+        cinematographerPrompt: cinematographerPromptByBeatId[beatId] || '',
+        filmType: sceneFilmTypeByBeatId[beatId] || filmType,
+        continuationMode: continuationModeByBeatId[beatId] || 'strict',
+        anchorBeatId: anchorBeatIdByBeatId[beatId] || '',
+        autoRegenerateThreshold: autoRegenThresholdByBeatId[beatId] ?? 0.75,
+        source,
+      });
+      setPromptLayerVersionByBeatId(prev => ({ ...prev, [beatId]: response.item.version }));
+      upsertPromptLayerHistoryItem(response.item);
+      return response.item;
+    } catch {
+      return null;
+    } finally {
+      setIsSavingPromptLayerByBeatId(prev => ({ ...prev, [beatId]: false }));
+    }
+  };
+
+  const generateSceneVideo = async (beatId: string) => {
     if (!selectedProject?.id || !isAuthenticated) return;
     setIsGeneratingVideoBeatId(beatId);
     setBusyMessage('Queueing scene video render...');
     try {
-      const prompt = [directorPrompt, (promptOverride || '').trim()].filter(Boolean).join('\n');
-      const response = await api.generateSceneVideo(selectedProject.id, beatId, prompt, sceneFilmTypeByBeatId[beatId] || filmType);
+      const response = await api.generateSceneVideo(selectedProject.id, beatId, {
+        directorPrompt: videoPromptByBeatId[beatId] || '',
+        cinematographerPrompt: cinematographerPromptByBeatId[beatId] || '',
+        filmType: sceneFilmTypeByBeatId[beatId] || filmType,
+        continuationMode: continuationModeByBeatId[beatId] || 'strict',
+        anchorBeatId: anchorBeatIdByBeatId[beatId] || '',
+        autoRegenerateThreshold: autoRegenThresholdByBeatId[beatId] ?? 0.75,
+      });
       setSceneVideosByBeatId(prev => ({ ...prev, [beatId]: response.item }));
+      if (response.promptLayer?.version) {
+        setPromptLayerVersionByBeatId(prev => ({ ...prev, [beatId]: response.promptLayer!.version }));
+      }
+      upsertPromptLayerHistoryItem(response.promptLayer);
       setBusyMessage('Scene video job queued. Rendering in background...');
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to generate scene video');
@@ -640,10 +846,20 @@ export function ProjectStudio() {
       for (const scene of generatedPackage.storyboard) {
         const existing = sceneVideosByBeatId[scene.beatId];
         if (existing?.status === 'queued' || existing?.status === 'processing') continue;
-        const prompt = [directorPrompt, (videoPromptByBeatId[scene.beatId] || '').trim()].filter(Boolean).join('\n');
-        const response = await api.generateSceneVideo(selectedProject.id, scene.beatId, prompt, sceneFilmTypeByBeatId[scene.beatId] || filmType).catch(() => null);
+        const response = await api.generateSceneVideo(selectedProject.id, scene.beatId, {
+          directorPrompt: videoPromptByBeatId[scene.beatId] || '',
+          cinematographerPrompt: cinematographerPromptByBeatId[scene.beatId] || '',
+          filmType: sceneFilmTypeByBeatId[scene.beatId] || filmType,
+          continuationMode: continuationModeByBeatId[scene.beatId] || 'strict',
+          anchorBeatId: anchorBeatIdByBeatId[scene.beatId] || '',
+          autoRegenerateThreshold: autoRegenThresholdByBeatId[scene.beatId] ?? 0.75,
+        }).catch(() => null);
         if (response?.item) {
           setSceneVideosByBeatId(prev => ({ ...prev, [scene.beatId]: response.item }));
+          if (response.promptLayer?.version) {
+            setPromptLayerVersionByBeatId(prev => ({ ...prev, [scene.beatId]: response.promptLayer!.version }));
+          }
+          upsertPromptLayerHistoryItem(response.promptLayer);
         }
       }
       setBusyMessage('All scene video jobs queued. Rendering in background...');
@@ -676,7 +892,7 @@ export function ProjectStudio() {
   }, [generatedPackage, sceneVideosByBeatId]);
 
   const appendCameraMoveToPrompt = (beatId: string, move: string) => {
-    setVideoPromptByBeatId(prev => {
+    setCinematographerPromptByBeatId(prev => {
       const current = (prev[beatId] || '').trim();
       if (!current) return { ...prev, [beatId]: move };
       return { ...prev, [beatId]: `${current}, ${move}` };
@@ -723,6 +939,25 @@ export function ProjectStudio() {
       setPreviewIssues([]);
       setSceneVideosByBeatId({});
       setFinalFilm(null);
+      setVideoPromptByBeatId({});
+      setCinematographerPromptByBeatId({});
+      setPromptLayerVersionByBeatId({});
+      setPromptLayerHistoryByBeatId({});
+      setActivePromptHistoryBeatId(null);
+      setSceneFilmTypeByBeatId({});
+      setContinuationModeByBeatId({});
+      setAnchorBeatIdByBeatId({});
+      setAutoRegenThresholdByBeatId({});
+      setScreenplay({ title: '', format: 'hybrid', screenplay: '', scenes: [] });
+      setScenesBible({
+        overview: '',
+        characterCanon: '',
+        locationCanon: '',
+        cinematicLanguage: '',
+        paletteAndTexture: '',
+        continuityInvariants: [],
+        progressionMap: '',
+      });
       setShowDeleteConfirmModal(false);
       setBusyMessage('Project soft-deleted.');
     } catch (error) {
@@ -870,6 +1105,8 @@ export function ProjectStudio() {
                       { id: 'pseudo', label: 'Pseudo Synopsis' },
                       { id: 'polished', label: 'Polished Synopsis' },
                       { id: 'plotScript', label: 'Plot Script' },
+                      { id: 'screenplay', label: 'Screenplay' },
+                      { id: 'scenesBible', label: 'Scenes Bible' },
                     ] as const).map(tab => (
                       <button
                         key={tab.id}
@@ -895,6 +1132,80 @@ export function ProjectStudio() {
                   )}
                   {synopsisTab === 'plotScript' && (
                     <p className="text-sm text-gray-200 whitespace-pre-line">{selectedProject.plotScript || 'Generate polished synopsis to produce plot script.'}</p>
+                  )}
+                  {synopsisTab === 'screenplay' && (
+                    <div className="space-y-2">
+                      <textarea
+                        value={screenplay.screenplay}
+                        onChange={event => setScreenplay(prev => ({ ...prev, screenplay: event.target.value }))}
+                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-44"
+                        placeholder="Generate a hybrid screenplay from plot script and beats."
+                        disabled={!isAuthenticated}
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button onClick={generateScreenplay} disabled={!isAuthenticated || isGeneratingScreenplay} className="inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 disabled:opacity-50">
+                          {isGeneratingScreenplay ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} {isGeneratingScreenplay ? 'Generating...' : 'Generate Screenplay'}
+                        </button>
+                        <button onClick={saveScreenplay} disabled={!isAuthenticated || isSavingScreenplay} className="inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
+                          {isSavingScreenplay ? <Loader2 className="w-4 h-4 animate-spin" /> : null} {isSavingScreenplay ? 'Saving...' : 'Save Screenplay'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {synopsisTab === 'scenesBible' && (
+                    <div className="space-y-2">
+                      <textarea
+                        value={scenesBible.overview}
+                        onChange={event => setScenesBible(prev => ({ ...prev, overview: event.target.value }))}
+                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
+                        placeholder="Scenes bible overview"
+                      />
+                      <textarea
+                        value={scenesBible.characterCanon}
+                        onChange={event => setScenesBible(prev => ({ ...prev, characterCanon: event.target.value }))}
+                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
+                        placeholder="Character canon"
+                      />
+                      <textarea
+                        value={scenesBible.locationCanon}
+                        onChange={event => setScenesBible(prev => ({ ...prev, locationCanon: event.target.value }))}
+                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
+                        placeholder="Location canon"
+                      />
+                      <textarea
+                        value={scenesBible.cinematicLanguage}
+                        onChange={event => setScenesBible(prev => ({ ...prev, cinematicLanguage: event.target.value }))}
+                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
+                        placeholder="Cinematic language"
+                      />
+                      <textarea
+                        value={scenesBible.paletteAndTexture}
+                        onChange={event => setScenesBible(prev => ({ ...prev, paletteAndTexture: event.target.value }))}
+                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
+                        placeholder="Palette and texture"
+                      />
+                      <textarea
+                        value={(scenesBible.continuityInvariants || []).join('\n')}
+                        onChange={event => setScenesBible(prev => ({ ...prev, continuityInvariants: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) }))}
+                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
+                        placeholder="Continuity invariants (one per line)"
+                      />
+                      <textarea
+                        value={scenesBible.progressionMap}
+                        onChange={event => setScenesBible(prev => ({ ...prev, progressionMap: event.target.value }))}
+                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
+                        placeholder="Progression map"
+                      />
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button onClick={generateScenesBible} disabled={!isAuthenticated || isGeneratingScenesBible} className="inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 disabled:opacity-50">
+                          {isGeneratingScenesBible ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} {isGeneratingScenesBible ? 'Generating...' : 'Generate Scenes Bible'}
+                        </button>
+                        <button onClick={saveScenesBible} disabled={!isAuthenticated || isSavingScenesBible} className="inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
+                          {isSavingScenesBible ? <Loader2 className="w-4 h-4 animate-spin" /> : null} {isSavingScenesBible ? 'Saving...' : 'Save Scenes Bible'}
+                        </button>
+                      </div>
+                    </div>
                   )}
 
                   <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -938,6 +1249,7 @@ export function ProjectStudio() {
                       <span className="text-[11px] text-gray-500">Tap to expand</span>
                     </summary>
                     <div className="grid md:grid-cols-2 gap-3 mt-4">
+                      visualStyle
                       <textarea
                         value={styleBible.visualStyle}
                         onChange={event => setStyleBible(prev => ({ ...prev, visualStyle: event.target.value }))}
@@ -1158,7 +1470,16 @@ export function ProjectStudio() {
                     isGeneratingFinalFilm={isGeneratingFinalFilm}
                     isGeneratingVideoBeatId={isGeneratingVideoBeatId}
                     videoPromptByBeatId={videoPromptByBeatId}
+                    cinematographerPromptByBeatId={cinematographerPromptByBeatId}
+                    promptLayerVersionByBeatId={promptLayerVersionByBeatId}
+                    promptLayerHistoryByBeatId={promptLayerHistoryByBeatId}
+                    activePromptHistoryBeatId={activePromptHistoryBeatId}
+                    isLoadingPromptHistory={isLoadingPromptHistory}
+                    isSavingPromptLayerByBeatId={isSavingPromptLayerByBeatId}
                     sceneFilmTypeByBeatId={sceneFilmTypeByBeatId}
+                    continuationModeByBeatId={continuationModeByBeatId}
+                    anchorBeatIdByBeatId={anchorBeatIdByBeatId}
+                    autoRegenThresholdByBeatId={autoRegenThresholdByBeatId}
                     filmType={filmType}
                     filmTypeOptions={filmTypeOptions}
                     cameraMoves={cameraMoves}
@@ -1166,9 +1487,17 @@ export function ProjectStudio() {
                     onGenerateAllSceneVideos={generateAllSceneVideos}
                     onGenerateFinalFilm={generateFinalFilm}
                     onGenerateSceneVideo={generateSceneVideo}
+                    onSaveScenePromptLayer={beatId => saveScenePromptLayer(beatId)}
+                    onOpenPromptLayerHistory={openPromptLayerHistory}
+                    onClosePromptLayerHistory={() => setActivePromptHistoryBeatId(null)}
+                    onRestoreScenePromptLayer={restoreScenePromptLayer}
                     onToggleSceneLock={toggleSceneLock}
                     onChangeSceneFilmType={(beatId, value) => setSceneFilmTypeByBeatId(prev => ({ ...prev, [beatId]: value }))}
+                    onChangeContinuationMode={(beatId, value) => setContinuationModeByBeatId(prev => ({ ...prev, [beatId]: value }))}
+                    onChangeAnchorBeatId={(beatId, value) => setAnchorBeatIdByBeatId(prev => ({ ...prev, [beatId]: value }))}
+                    onChangeAutoRegenThreshold={(beatId, value) => setAutoRegenThresholdByBeatId(prev => ({ ...prev, [beatId]: value }))}
                     onChangeVideoPrompt={(beatId, prompt) => setVideoPromptByBeatId(prev => ({ ...prev, [beatId]: prompt }))}
+                    onChangeCinematographerPrompt={(beatId, prompt) => setCinematographerPromptByBeatId(prev => ({ ...prev, [beatId]: prompt }))}
                     onAppendCameraMove={appendCameraMoveToPrompt}
                     getSceneFrameUrl={getSceneFrameUrl}
                     getSceneVideoUrl={getSceneVideoUrl}
@@ -1205,7 +1534,9 @@ export function ProjectStudio() {
                     <p className="text-[11px] uppercase tracking-widest text-gray-500">Pipeline Health</p>
                     <p className={`text-xs ${selectedProject.polishedSynopsis ? 'text-emerald-300' : 'text-gray-500'}`}>Polished Synopsis {selectedProject.polishedSynopsis ? 'ready' : 'pending'}</p>
                     <p className={`text-xs ${selectedProject.plotScript ? 'text-emerald-300' : 'text-gray-500'}`}>Plot Script {selectedProject.plotScript ? 'ready' : 'pending'}</p>
+                    <p className={`text-xs ${screenplay.screenplay ? 'text-emerald-300' : 'text-gray-500'}`}>Hybrid Screenplay {screenplay.screenplay ? 'ready' : 'pending'}</p>
                     <p className={`text-xs ${styleBible.visualStyle || styleBible.cameraGrammar ? 'text-emerald-300' : 'text-gray-500'}`}>Style Bible {(styleBible.visualStyle || styleBible.cameraGrammar) ? 'seeded' : 'pending'}</p>
+                    <p className={`text-xs ${scenesBible.overview ? 'text-emerald-300' : 'text-gray-500'}`}>Scenes Bible {scenesBible.overview ? 'ready' : 'pending'}</p>
                     <p className={`text-xs ${finalFilm?.status === 'completed' ? 'text-emerald-300' : finalFilm?.status === 'failed' ? 'text-rose-300' : 'text-gray-500'}`}>Final Film {finalFilm?.status || 'not started'}</p>
                   </div>
 
@@ -1238,7 +1569,7 @@ export function ProjectStudio() {
 
         {busyMessage && (
           <p className="text-sm text-gray-400 mt-6 flex items-center justify-center gap-2 text-center">
-            {(isCreatingProject || isSavingProjectDetails || isRefiningSynopsis || isSavingStyleBible || isAddingNote || isPolishingBeats || isGeneratingMoreStarterBeats || isGeneratingStoryboard || isCheckingContinuity || isPreviewingFix !== null || isApplyingFix || isGeneratingAllVideos || isRefreshingVideos || isGeneratingFinalFilm)
+            {(isCreatingProject || isSavingProjectDetails || isRefiningSynopsis || isSavingStyleBible || isGeneratingScreenplay || isSavingScreenplay || isGeneratingScenesBible || isSavingScenesBible || isAddingNote || isPolishingBeats || isGeneratingMoreStarterBeats || isGeneratingStoryboard || isCheckingContinuity || isPreviewingFix !== null || isApplyingFix || isGeneratingAllVideos || isRefreshingVideos || isGeneratingFinalFilm)
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : null}
             {busyMessage}

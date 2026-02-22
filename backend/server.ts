@@ -8,8 +8,8 @@ import { createAuthDb } from './db/auth';
 import { createProjectsDb } from './db/projects';
 import { createStorylinesDb } from './db/storylines';
 import { createSubscribersDb } from './db/subscribers';
-import { generateProjectStoryboardWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
-import { buildDirectorSceneVideoPrompt, createFinalFilmFromClips, generateSceneVideoWithFal } from './lib/sceneVideo';
+import { generateHybridScreenplayWithLlm, generateProjectStoryboardWithLlm, generateScenesBibleWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
+import { buildCinematographerPrompt, buildDirectorSceneVideoPrompt, buildMergedScenePrompt, createFinalFilmFromClips, generateSceneVideoWithFal } from './lib/sceneVideo';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
 import { handleAccountRoutes } from './routes/account';
 import { handleAuthRoutes } from './routes/auth';
@@ -228,6 +228,10 @@ db.exec(`
     provider TEXT DEFAULT 'local-ffmpeg',
     prompt TEXT DEFAULT '',
     sourceImageUrl TEXT DEFAULT '',
+    continuityScore REAL DEFAULT 0.75,
+    continuityThreshold REAL DEFAULT 0.75,
+    recommendRegenerate INTEGER DEFAULT 0,
+    continuityReason TEXT DEFAULT '',
     status TEXT DEFAULT 'queued',
     jobId TEXT DEFAULT '',
     videoUrl TEXT DEFAULT '',
@@ -238,6 +242,52 @@ db.exec(`
     FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
   )
 `);
+
+const ensureSceneVideoColumn = (columnSql: string) => {
+  try {
+    db.exec(`ALTER TABLE scene_videos ADD COLUMN ${columnSql}`);
+  } catch {
+    // no-op if column already exists
+  }
+};
+
+ensureSceneVideoColumn('continuityScore REAL DEFAULT 0.75');
+ensureSceneVideoColumn('continuityThreshold REAL DEFAULT 0.75');
+ensureSceneVideoColumn('recommendRegenerate INTEGER DEFAULT 0');
+ensureSceneVideoColumn("continuityReason TEXT DEFAULT ''");
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS scene_prompt_layers (
+    id TEXT PRIMARY KEY,
+    projectId TEXT NOT NULL,
+    packageId TEXT NOT NULL,
+    beatId TEXT NOT NULL,
+    directorPrompt TEXT DEFAULT '',
+    cinematographerPrompt TEXT DEFAULT '',
+    mergedPrompt TEXT DEFAULT '',
+    filmType TEXT DEFAULT '',
+    continuationMode TEXT DEFAULT 'strict',
+    anchorBeatId TEXT DEFAULT '',
+    autoRegenerateThreshold REAL DEFAULT 0.75,
+    source TEXT DEFAULT 'manual',
+    version INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+const ensureScenePromptLayerColumn = (columnSql: string) => {
+  try {
+    db.exec(`ALTER TABLE scene_prompt_layers ADD COLUMN ${columnSql}`);
+  } catch {
+    // no-op if column already exists
+  }
+};
+
+ensureScenePromptLayerColumn("continuationMode TEXT DEFAULT 'strict'");
+ensureScenePromptLayerColumn("anchorBeatId TEXT DEFAULT ''");
+ensureScenePromptLayerColumn('autoRegenerateThreshold REAL DEFAULT 0.75');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS project_final_films (
@@ -254,7 +304,40 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS account_uploads (
+    filename TEXT PRIMARY KEY,
+    accountId TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (accountId) REFERENCES accounts(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS project_style_bibles (
+    projectId TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS project_screenplays (
+    id TEXT PRIMARY KEY,
+    projectId TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    status TEXT DEFAULT 'draft',
+    version INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS project_scenes_bibles (
     projectId TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
     createdAt INTEGER NOT NULL,
@@ -300,11 +383,97 @@ const runOneTimeMigrations = () => {
   if (changed > 0) {
     console.log(`[migration] Updated ${changed} project(s) to 1-minute duration default`);
   }
+
+  const uploadOwnershipMigrationKey = 'upload_ownership_from_projects_v1';
+  const ownershipAlreadyRan = db.query('SELECT value FROM app_meta WHERE key = ?').get(uploadOwnershipMigrationKey) as { value?: string } | null;
+  if (ownershipAlreadyRan?.value !== 'done') {
+    const migrationNow = Date.now();
+    const syncUploadOwnership = db.query(`
+      INSERT INTO account_uploads (filename, accountId, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(filename) DO UPDATE SET accountId = excluded.accountId, updatedAt = excluded.updatedAt
+    `);
+    const extractUploadFilename = (rawUrl: string): string | null => {
+      if (!rawUrl.startsWith('/uploads/')) return null;
+      const [withoutQuery] = rawUrl.split('?');
+      const parts = withoutQuery.split('/').filter(Boolean);
+      const filename = parts[parts.length - 1] || '';
+      return filename.trim() ? filename : null;
+    };
+
+    let mapped = 0;
+    const sceneRows = db.query(`
+      SELECT p.accountId as accountId, sv.sourceImageUrl as sourceImageUrl, sv.videoUrl as videoUrl
+      FROM scene_videos sv
+      JOIN projects p ON p.id = sv.projectId
+      WHERE p.accountId IS NOT NULL
+    `).all() as Array<{ accountId?: string | null; sourceImageUrl?: string | null; videoUrl?: string | null }>;
+    sceneRows.forEach(row => {
+      const accountId = String(row.accountId || '').trim();
+      if (!accountId) return;
+      [row.sourceImageUrl, row.videoUrl].forEach(value => {
+        const filename = extractUploadFilename(String(value || ''));
+        if (!filename) return;
+        syncUploadOwnership.run(filename, accountId, migrationNow, migrationNow);
+        mapped += 1;
+      });
+    });
+
+    const finalFilmRows = db.query(`
+      SELECT p.accountId as accountId, pf.videoUrl as videoUrl
+      FROM project_final_films pf
+      JOIN projects p ON p.id = pf.projectId
+      WHERE p.accountId IS NOT NULL
+    `).all() as Array<{ accountId?: string | null; videoUrl?: string | null }>;
+    finalFilmRows.forEach(row => {
+      const accountId = String(row.accountId || '').trim();
+      if (!accountId) return;
+      const filename = extractUploadFilename(String(row.videoUrl || ''));
+      if (!filename) return;
+      syncUploadOwnership.run(filename, accountId, migrationNow, migrationNow);
+      mapped += 1;
+    });
+
+    db.query(`
+      INSERT INTO app_meta (key, value, updatedAt)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt
+    `).run(uploadOwnershipMigrationKey, 'done', migrationNow);
+
+    if (mapped > 0) {
+      console.log(`[migration] Mapped ${mapped} upload reference(s) to owning account`);
+    }
+  }
 };
 
 runOneTimeMigrations();
 
 const generateId = (): string => crypto.randomUUID();
+
+const getUploadFilenameFromUrl = (rawUrl: string): string | null => {
+  if (!rawUrl.startsWith('/uploads/')) return null;
+  const [withoutQuery] = rawUrl.split('?');
+  const parts = withoutQuery.split('/').filter(Boolean);
+  const filename = parts[parts.length - 1] || '';
+  return filename.trim() ? filename : null;
+};
+
+const registerUploadOwnership = (args: { filename: string; accountId: string }) => {
+  const filename = String(args.filename || '').trim();
+  const accountId = String(args.accountId || '').trim();
+  if (!filename || !accountId) return;
+  const now = Date.now();
+  db.query(`
+    INSERT INTO account_uploads (filename, accountId, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(filename) DO UPDATE SET accountId = excluded.accountId, updatedAt = excluded.updatedAt
+  `).run(filename, accountId, now, now);
+};
+
+const getUploadOwnerAccountId = (filename: string): string | null => {
+  const row = db.query('SELECT accountId FROM account_uploads WHERE filename = ?').get(filename) as { accountId?: string } | null;
+  return row?.accountId ? String(row.accountId) : null;
+};
 
 const verifyAccessKey = (req: Request): boolean => {
   return Boolean(getAuthContext(req));
@@ -320,8 +489,13 @@ const verifyAdminKey = (req: Request): boolean => {
 
 const getAuthContext = (req: Request) => {
   const authHeader = req.headers.get('authorization') || '';
-  if (!authHeader.toLowerCase().startsWith('bearer ')) return null;
-  const token = authHeader.slice(7).trim();
+  let token = '';
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    token = authHeader.slice(7).trim();
+  } else {
+    const tokenFromQuery = new URL(req.url).searchParams.get('token') || '';
+    token = tokenFromQuery.trim();
+  }
   if (!token) return null;
 
   const session = getSessionByTokenHash(hashToken(token));
@@ -416,8 +590,16 @@ const {
   getLatestProjectFinalFilm,
   claimNextQueuedSceneVideo,
   requeueStaleProcessingSceneVideos,
+  createScenePromptLayer,
+  getLatestScenePromptLayer,
+  listScenePromptLayerHistory,
+  listLatestScenePromptLayers,
   getProjectStyleBible,
   updateProjectStyleBible,
+  getLatestProjectScreenplay,
+  saveProjectScreenplay,
+  getProjectScenesBible,
+  updateProjectScenesBible,
 } = createProjectsDb({ db, generateId });
 
 let sceneVideoWorkerActive = false;
@@ -438,6 +620,14 @@ const processSceneVideoQueue = async () => {
           prompt: String(job.prompt || ''),
           durationSeconds: Number(job.durationSeconds || 5),
         });
+
+        const project = getProjectById(String(job.projectId || ''));
+        if (project?.accountId) {
+          const filename = getUploadFilenameFromUrl(String(videoUrl || ''));
+          if (filename) {
+            registerUploadOwnership({ filename, accountId: String(project.accountId) });
+          }
+        }
 
         updateSceneVideoJob(job.id, { status: 'completed', videoUrl, error: '' });
         console.log(`[queue] Completed scene video job ${job.id}`);
@@ -651,6 +841,9 @@ serve({
       uploadsDir,
       corsHeaders,
       verifyAccessKey,
+      getRequestAccountId,
+      getUploadOwnerAccountId,
+      registerUploadOwnership,
     });
     if (uploadsResponse) return uploadsResponse;
 
@@ -718,17 +911,30 @@ serve({
       createSceneVideoJob,
       getLatestSceneVideo,
       listLatestSceneVideos,
+      createScenePromptLayer,
+      getLatestScenePromptLayer,
+      listScenePromptLayerHistory,
+      listLatestScenePromptLayers,
       createProjectFinalFilm,
       updateProjectFinalFilm,
       getLatestProjectFinalFilm,
       getProjectStyleBible,
       updateProjectStyleBible,
+      getLatestProjectScreenplay,
+      saveProjectScreenplay,
+      getProjectScenesBible,
+      updateProjectScenesBible,
       refineSynopsisWithLlm,
+      generateHybridScreenplayWithLlm,
+      generateScenesBibleWithLlm,
       polishNotesIntoBeatsWithLlm,
       generateProjectStoryboardWithLlm,
       generateStoryboardFrameWithLlm,
       buildDirectorSceneVideoPrompt,
+      buildCinematographerPrompt,
+      buildMergedScenePrompt,
       createFinalFilmFromClips,
+      registerUploadOwnership,
       uploadsDir,
     });
     if (projectsResponse) return projectsResponse;

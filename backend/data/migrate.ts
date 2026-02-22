@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
 
 const dataDir = import.meta.dir;
@@ -199,6 +199,10 @@ db.exec(`
     provider TEXT DEFAULT 'local-ffmpeg',
     prompt TEXT DEFAULT '',
     sourceImageUrl TEXT DEFAULT '',
+    continuityScore REAL DEFAULT 0.75,
+    continuityThreshold REAL DEFAULT 0.75,
+    recommendRegenerate INTEGER DEFAULT 0,
+    continuityReason TEXT DEFAULT '',
     status TEXT DEFAULT 'queued',
     jobId TEXT DEFAULT '',
     videoUrl TEXT DEFAULT '',
@@ -209,6 +213,52 @@ db.exec(`
     FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
   )
 `);
+
+const ensureSceneVideoColumn = (columnSql: string) => {
+  try {
+    db.exec(`ALTER TABLE scene_videos ADD COLUMN ${columnSql}`);
+  } catch {
+    // no-op when column already exists
+  }
+};
+
+ensureSceneVideoColumn('continuityScore REAL DEFAULT 0.75');
+ensureSceneVideoColumn('continuityThreshold REAL DEFAULT 0.75');
+ensureSceneVideoColumn('recommendRegenerate INTEGER DEFAULT 0');
+ensureSceneVideoColumn("continuityReason TEXT DEFAULT ''");
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS scene_prompt_layers (
+    id TEXT PRIMARY KEY,
+    projectId TEXT NOT NULL,
+    packageId TEXT NOT NULL,
+    beatId TEXT NOT NULL,
+    directorPrompt TEXT DEFAULT '',
+    cinematographerPrompt TEXT DEFAULT '',
+    mergedPrompt TEXT DEFAULT '',
+    filmType TEXT DEFAULT '',
+    continuationMode TEXT DEFAULT 'strict',
+    anchorBeatId TEXT DEFAULT '',
+    autoRegenerateThreshold REAL DEFAULT 0.75,
+    source TEXT DEFAULT 'manual',
+    version INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+const ensureScenePromptLayerColumn = (columnSql: string) => {
+  try {
+    db.exec(`ALTER TABLE scene_prompt_layers ADD COLUMN ${columnSql}`);
+  } catch {
+    // no-op when column already exists
+  }
+};
+
+ensureScenePromptLayerColumn("continuationMode TEXT DEFAULT 'strict'");
+ensureScenePromptLayerColumn("anchorBeatId TEXT DEFAULT ''");
+ensureScenePromptLayerColumn('autoRegenerateThreshold REAL DEFAULT 0.75');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS project_final_films (
@@ -225,7 +275,40 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS account_uploads (
+    filename TEXT PRIMARY KEY,
+    accountId TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (accountId) REFERENCES accounts(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS project_style_bibles (
+    projectId TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS project_screenplays (
+    id TEXT PRIMARY KEY,
+    projectId TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    status TEXT DEFAULT 'draft',
+    version INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS project_scenes_bibles (
     projectId TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
     createdAt INTEGER NOT NULL,
@@ -265,6 +348,66 @@ if (alreadyRan?.value !== 'done') {
   const changed = Number(result?.changes || 0);
   if (changed > 0) {
     console.log(`Migrated ${changed} project(s) to 1-minute duration`);
+  }
+}
+
+const uploadOwnershipMigrationKey = 'upload_ownership_from_projects_v1';
+const uploadOwnershipAlreadyRan = db.query('SELECT value FROM app_meta WHERE key = ?').get(uploadOwnershipMigrationKey) as { value?: string } | null;
+if (uploadOwnershipAlreadyRan?.value !== 'done') {
+  const now = Date.now();
+  const upsertOwnership = db.query(`
+    INSERT INTO account_uploads (filename, accountId, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(filename) DO UPDATE SET accountId = excluded.accountId, updatedAt = excluded.updatedAt
+  `);
+  const getUploadFilename = (rawUrl: string): string | null => {
+    if (!rawUrl.startsWith('/uploads/')) return null;
+    const value = basename(rawUrl.split('?')[0] || '');
+    return value.trim() ? value : null;
+  };
+
+  let mapped = 0;
+  const sceneRows = db.query(`
+    SELECT p.accountId as accountId, sv.sourceImageUrl as sourceImageUrl, sv.videoUrl as videoUrl
+    FROM scene_videos sv
+    JOIN projects p ON p.id = sv.projectId
+    WHERE p.accountId IS NOT NULL
+  `).all() as Array<{ accountId?: string | null; sourceImageUrl?: string | null; videoUrl?: string | null }>;
+
+  sceneRows.forEach(row => {
+    const accountId = String(row.accountId || '').trim();
+    if (!accountId) return;
+    [row.sourceImageUrl, row.videoUrl].forEach(url => {
+      const filename = getUploadFilename(String(url || ''));
+      if (!filename) return;
+      upsertOwnership.run(filename, accountId, now, now);
+      mapped += 1;
+    });
+  });
+
+  const finalFilmRows = db.query(`
+    SELECT p.accountId as accountId, pf.videoUrl as videoUrl
+    FROM project_final_films pf
+    JOIN projects p ON p.id = pf.projectId
+    WHERE p.accountId IS NOT NULL
+  `).all() as Array<{ accountId?: string | null; videoUrl?: string | null }>;
+  finalFilmRows.forEach(row => {
+    const accountId = String(row.accountId || '').trim();
+    if (!accountId) return;
+    const filename = getUploadFilename(String(row.videoUrl || ''));
+    if (!filename) return;
+    upsertOwnership.run(filename, accountId, now, now);
+    mapped += 1;
+  });
+
+  db.query(`
+    INSERT INTO app_meta (key, value, updatedAt)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt
+  `).run(uploadOwnershipMigrationKey, 'done', now);
+
+  if (mapped > 0) {
+    console.log(`Mapped ${mapped} upload reference(s) to owning account`);
   }
 }
 

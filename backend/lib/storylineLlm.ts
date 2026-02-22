@@ -120,6 +120,48 @@ const POLISHED_BEATS_SCHEMA = {
 
 const PROJECT_STORYBOARD_SCHEMA = STORY_PACKAGE_SCHEMA;
 
+const HYBRID_SCREENPLAY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['title', 'format', 'screenplay', 'scenes'],
+  properties: {
+    title: { type: 'string' },
+    format: { type: 'string' },
+    screenplay: { type: 'string' },
+    scenes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['sceneId', 'sceneNumber', 'heading', 'action', 'dialogue', 'shotNotes'],
+        properties: {
+          sceneId: { type: 'string' },
+          sceneNumber: { type: 'number' },
+          heading: { type: 'string' },
+          action: { type: 'string' },
+          dialogue: { type: 'array', items: { type: 'string' } },
+          shotNotes: { type: 'string' },
+        },
+      },
+    },
+  },
+} as const;
+
+const SCENES_BIBLE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['overview', 'characterCanon', 'locationCanon', 'cinematicLanguage', 'paletteAndTexture', 'continuityInvariants', 'progressionMap'],
+  properties: {
+    overview: { type: 'string' },
+    characterCanon: { type: 'string' },
+    locationCanon: { type: 'string' },
+    cinematicLanguage: { type: 'string' },
+    paletteAndTexture: { type: 'string' },
+    continuityInvariants: { type: 'array', items: { type: 'string' } },
+    progressionMap: { type: 'string' },
+  },
+} as const;
+
 const parseJsonFromText = (text: string) => {
   try {
     return JSON.parse(text);
@@ -333,6 +375,58 @@ export const generateProjectStoryboardWithLlm = async (args: { title: string; sy
     },
     temperature: 0.7,
     responseSchema: PROJECT_STORYBOARD_SCHEMA,
+  }, client.responses.create.bind(client.responses));
+};
+
+export const generateHybridScreenplayWithLlm = async (args: {
+  title: string;
+  synopsis: string;
+  plotScript: string;
+  beats: any[];
+  style?: string;
+  styleBible?: any;
+  durationMinutes?: number;
+}) => {
+  const client = createOpenAIClient();
+  return callLlmForJson({
+    taskName: 'generate-hybrid-screenplay',
+    systemInstruction: 'You are a screenwriter and directing consultant. Produce a hybrid screenplay that combines classic scene headings/action/dialogue with short practical shot notes for each scene. Enforce INT./EXT. LOCATION - TIME headings, coherent chronology, and emotionally clear character beats. Return only JSON with keys: title, format, screenplay, scenes. Scene format must include sceneId, sceneNumber, heading, action, dialogue[], shotNotes.',
+    payload: {
+      title: args.title,
+      style: args.style || 'cinematic',
+      durationMinutes: Number(args.durationMinutes || 1),
+      styleBible: args.styleBible || null,
+      synopsis: args.synopsis,
+      plotScript: args.plotScript,
+      beats: args.beats,
+    },
+    temperature: 0.65,
+    responseSchema: HYBRID_SCREENPLAY_SCHEMA,
+  }, client.responses.create.bind(client.responses));
+};
+
+export const generateScenesBibleWithLlm = async (args: {
+  title: string;
+  synopsis: string;
+  plotScript: string;
+  screenplay: string;
+  style?: string;
+  styleBible?: any;
+}) => {
+  const client = createOpenAIClient();
+  return callLlmForJson({
+    taskName: 'generate-scenes-bible',
+    systemInstruction: 'You are a film continuity supervisor and cinematography lead. Build a Scenes Bible that keeps the full film coherent across scene clips. Include global identity and environment canon, visual language constraints, palette and texture rules, non-negotiable continuity invariants, and progression guidance across the film. Return only JSON with keys: overview, characterCanon, locationCanon, cinematicLanguage, paletteAndTexture, continuityInvariants, progressionMap.',
+    payload: {
+      title: args.title,
+      style: args.style || 'cinematic',
+      styleBible: args.styleBible || null,
+      synopsis: args.synopsis,
+      plotScript: args.plotScript,
+      screenplay: args.screenplay,
+    },
+    temperature: 0.55,
+    responseSchema: SCENES_BIBLE_SCHEMA,
   }, client.responses.create.bind(client.responses));
 };
 

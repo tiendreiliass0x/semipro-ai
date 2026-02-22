@@ -9,6 +9,9 @@ type UploadsRouteArgs = {
   uploadsDir: string;
   corsHeaders: Record<string, string>;
   verifyAccessKey: (req: Request) => boolean;
+  getRequestAccountId: (req: Request) => string | null;
+  getUploadOwnerAccountId: (filename: string) => string | null;
+  registerUploadOwnership: (args: { filename: string; accountId: string }) => void;
 };
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
@@ -32,10 +35,20 @@ const jsonHeaders = (corsHeaders: Record<string, string>) => ({
 });
 
 export const handleUploadsRoutes = async (args: UploadsRouteArgs): Promise<Response | null> => {
-  const { req, pathname, method, uploadsDir, corsHeaders, verifyAccessKey } = args;
+  const { req, pathname, method, uploadsDir, corsHeaders, verifyAccessKey, getRequestAccountId, getUploadOwnerAccountId, registerUploadOwnership } = args;
 
   if (pathname.startsWith('/uploads/')) {
+    const accountId = getRequestAccountId(req);
+    if (!accountId) {
+      return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    }
+
     const filename = basename(pathname);
+    const ownerAccountId = getUploadOwnerAccountId(filename);
+    if (!ownerAccountId || ownerAccountId !== accountId) {
+      return new Response(JSON.stringify({ error: 'File not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    }
+
     const filePath = join(uploadsDir, filename);
     if (existsSync(filePath)) {
       const ext = extname(filename).toLowerCase();
@@ -47,6 +60,8 @@ export const handleUploadsRoutes = async (args: UploadsRouteArgs): Promise<Respo
 
   if (pathname === '/api/upload' && method === 'POST') {
     if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const accountId = getRequestAccountId(req);
+    if (!accountId) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
 
     const { files } = await parseMultipart(req);
     const imageFile = files.find(file => IMAGE_EXTENSIONS.includes(extname(file.filename).toLowerCase()));
@@ -57,6 +72,7 @@ export const handleUploadsRoutes = async (args: UploadsRouteArgs): Promise<Respo
     const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}${extname(imageFile.filename)}`;
     const filePath = join(uploadsDir, uniqueName);
     await Bun.write(filePath, imageFile.data);
+    registerUploadOwnership({ filename: uniqueName, accountId });
 
     return new Response(JSON.stringify({ success: true, url: `/uploads/${uniqueName}`, filename: uniqueName }), {
       headers: jsonHeaders(corsHeaders),

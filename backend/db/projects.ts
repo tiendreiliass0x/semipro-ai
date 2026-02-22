@@ -97,6 +97,53 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return getProjectStyleBible(projectId);
   };
 
+  const getLatestProjectScreenplay = (projectId: string) => {
+    const row = db.query(`
+      SELECT id, projectId, payload, version, status, createdAt, updatedAt
+      FROM project_screenplays
+      WHERE projectId = ?
+      ORDER BY version DESC
+      LIMIT 1
+    `).get(projectId) as any;
+    if (!row) return null;
+    return {
+      ...row,
+      payload: JSON.parse(row.payload || '{}'),
+    };
+  };
+
+  const saveProjectScreenplay = (projectId: string, payload: any, status: string = 'draft') => {
+    const now = Date.now();
+    const id = generateId();
+    const row = db.query('SELECT COALESCE(MAX(version), 0) as maxVersion FROM project_screenplays WHERE projectId = ?').get(projectId) as { maxVersion: number };
+    const version = Number(row?.maxVersion || 0) + 1;
+    db.query(`
+      INSERT INTO project_screenplays (id, projectId, payload, status, version, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, projectId, JSON.stringify(payload || {}), status, version, now, now);
+    return { id, projectId, payload, status, version, createdAt: now, updatedAt: now };
+  };
+
+  const getProjectScenesBible = (projectId: string) => {
+    const row = db.query('SELECT payload FROM project_scenes_bibles WHERE projectId = ?').get(projectId) as { payload?: string } | null;
+    if (!row?.payload) return null;
+    try {
+      return JSON.parse(row.payload);
+    } catch {
+      return null;
+    }
+  };
+
+  const updateProjectScenesBible = (projectId: string, payload: any) => {
+    const now = Date.now();
+    db.query(`
+      INSERT INTO project_scenes_bibles (projectId, payload, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(projectId) DO UPDATE SET payload = excluded.payload, updatedAt = excluded.updatedAt
+    `).run(projectId, JSON.stringify(payload || {}), now, now);
+    return getProjectScenesBible(projectId);
+  };
+
   const updateProjectSynopsis = (id: string, polishedSynopsis: string, plotScript: string = '') => {
     const now = Date.now();
     db.query('UPDATE projects SET polishedSynopsis = ?, plotScript = ?, updatedAt = ? WHERE id = ?').run(polishedSynopsis, plotScript || '', now, id);
@@ -283,6 +330,10 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     provider: string;
     prompt: string;
     sourceImageUrl: string;
+    continuityScore?: number;
+    continuityThreshold?: number;
+    recommendRegenerate?: boolean;
+    continuityReason?: string;
     durationSeconds?: number;
   }) => {
     const id = generateId();
@@ -291,8 +342,9 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     db.query(`
       INSERT INTO scene_videos (
         id, projectId, packageId, beatId, provider, prompt, sourceImageUrl,
+        continuityScore, continuityThreshold, recommendRegenerate, continuityReason,
         status, jobId, videoUrl, durationSeconds, error, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       args.projectId,
@@ -301,6 +353,10 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
       args.provider || 'local-ffmpeg',
       args.prompt || '',
       args.sourceImageUrl || '',
+      Math.max(0, Math.min(1, Number(args.continuityScore ?? 0.75))),
+      Math.max(0, Math.min(1, Number(args.continuityThreshold ?? 0.75))),
+      args.recommendRegenerate ? 1 : 0,
+      args.continuityReason || '',
       'queued',
       '',
       '',
@@ -452,6 +508,83 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return Number(result?.changes || 0);
   };
 
+  const createScenePromptLayer = (args: {
+    projectId: string;
+    packageId: string;
+    beatId: string;
+    directorPrompt: string;
+    cinematographerPrompt: string;
+    mergedPrompt: string;
+    filmType?: string;
+    continuationMode?: string;
+    anchorBeatId?: string;
+    autoRegenerateThreshold?: number;
+    source?: string;
+  }) => {
+    const id = generateId();
+    const now = Date.now();
+    const row = db.query('SELECT COALESCE(MAX(version), 0) as maxVersion FROM scene_prompt_layers WHERE projectId = ? AND beatId = ?').get(args.projectId, args.beatId) as { maxVersion: number };
+    const version = Number(row?.maxVersion || 0) + 1;
+    db.query(`
+      INSERT INTO scene_prompt_layers (
+        id, projectId, packageId, beatId, directorPrompt, cinematographerPrompt,
+        mergedPrompt, filmType, continuationMode, anchorBeatId, autoRegenerateThreshold,
+        source, version, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      args.projectId,
+      args.packageId,
+      args.beatId,
+      args.directorPrompt || '',
+      args.cinematographerPrompt || '',
+      args.mergedPrompt || '',
+      args.filmType || '',
+      args.continuationMode || 'strict',
+      args.anchorBeatId || '',
+      Number(args.autoRegenerateThreshold || 0.75),
+      args.source || 'manual',
+      version,
+      now,
+      now
+    );
+    return db.query('SELECT * FROM scene_prompt_layers WHERE id = ?').get(id) as any;
+  };
+
+  const getLatestScenePromptLayer = (projectId: string, beatId: string) => {
+    return db.query(`
+      SELECT * FROM scene_prompt_layers
+      WHERE projectId = ? AND beatId = ?
+      ORDER BY version DESC, createdAt DESC
+      LIMIT 1
+    `).get(projectId, beatId) as any;
+  };
+
+  const listScenePromptLayerHistory = (projectId: string, beatId: string) => {
+    return db.query(`
+      SELECT * FROM scene_prompt_layers
+      WHERE projectId = ? AND beatId = ?
+      ORDER BY version DESC, createdAt DESC
+    `).all(projectId, beatId) as any[];
+  };
+
+  const listLatestScenePromptLayers = (projectId: string) => {
+    const rows = db.query(`
+      SELECT * FROM scene_prompt_layers
+      WHERE projectId = ?
+      ORDER BY beatId ASC, version DESC, createdAt DESC
+    `).all(projectId) as any[];
+    const seen = new Set<string>();
+    const items: any[] = [];
+    for (const row of rows) {
+      const beatId = String(row.beatId || '');
+      if (!beatId || seen.has(beatId)) continue;
+      seen.add(beatId);
+      items.push(row);
+    }
+    return items;
+  };
+
   return {
     listProjects,
     getProjectById,
@@ -476,7 +609,15 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     getLatestProjectFinalFilm,
     claimNextQueuedSceneVideo,
     requeueStaleProcessingSceneVideos,
+    createScenePromptLayer,
+    getLatestScenePromptLayer,
+    listScenePromptLayerHistory,
+    listLatestScenePromptLayers,
     getProjectStyleBible,
     updateProjectStyleBible,
+    getLatestProjectScreenplay,
+    saveProjectScreenplay,
+    getProjectScenesBible,
+    updateProjectScenesBible,
   };
 };

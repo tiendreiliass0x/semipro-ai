@@ -223,11 +223,33 @@ export interface SceneVideoJob {
   provider: string;
   prompt: string;
   sourceImageUrl: string;
+  continuityScore?: number;
+  continuityThreshold?: number;
+  recommendRegenerate?: number | boolean;
+  continuityReason?: string;
   status: 'queued' | 'processing' | 'completed' | 'failed';
   jobId: string;
   videoUrl: string;
   durationSeconds: number;
   error: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ScenePromptLayer {
+  id: string;
+  projectId: string;
+  packageId: string;
+  beatId: string;
+  directorPrompt: string;
+  cinematographerPrompt: string;
+  mergedPrompt: string;
+  filmType: string;
+  continuationMode: 'strict' | 'balanced' | 'loose';
+  anchorBeatId: string;
+  autoRegenerateThreshold: number;
+  source: string;
+  version: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -241,4 +263,36 @@ export interface ProjectFinalFilm {
   error: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface ProjectScreenplay {
+  id: string;
+  projectId: string;
+  payload: {
+    title: string;
+    format: string;
+    screenplay: string;
+    scenes: Array<{
+      sceneId: string;
+      sceneNumber: number;
+      heading: string;
+      action: string;
+      dialogue: string[];
+      shotNotes: string;
+    }>;
+  };
+  status: string;
+  version: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProjectScenesBible {
+  overview: string;
+  characterCanon: string;
+  locationCanon: string;
+  cinematicLanguage: string;
+  paletteAndTexture: string;
+  continuityInvariants: string[];
+  progressionMap: string;
 }
