@@ -4,7 +4,7 @@ import { ProofStrip } from './public/ProofStrip';
 
 export function PublicLanding() {
   return (
-    <section>
+    <section className="font-hero-sans">
       <div id="hero">
         <HeroShowcase />
       </div>

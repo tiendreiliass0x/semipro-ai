@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Clapperboard, PlayCircle } from 'lucide-react';
+import { ArrowRight, PlayCircle } from 'lucide-react';
 import heroVideo from '@/assets/kling-page1-v2-1-265.mp4';
 import heroPoster from '@/assets/hero-poster.svg';
 
@@ -43,35 +43,8 @@ export function HeroShowcase() {
       <div className="absolute inset-0 bg-[radial-gradient(900px_360px_at_50%_50%,rgba(245,158,11,0.18),transparent_70%)]" />
 
       <div className="relative max-w-[1560px] mx-auto px-4 md:px-6 xl:px-10 min-h-[70vh] md:min-h-[88vh] flex flex-col">
-        <header className="pt-5 md:pt-6 xl:pt-8">
-          <nav className="rounded-full border border-white/20 bg-black/35 backdrop-blur-md px-4 md:px-6 xl:px-8 py-2.5 xl:py-3 flex items-center justify-between gap-4 xl:gap-8 text-white">
-            <button className="inline-flex items-center gap-2 text-sm md:text-base xl:text-lg font-semibold tracking-wide">
-              <Clapperboard className="w-4 h-4" /> Semipro AI
-            </button>
-            <div className="hidden md:flex items-center gap-8 xl:gap-12 text-sm xl:text-base text-white/85">
-              <a href="#hero" className="hover:text-white transition">Home</a>
-              <a href="#proof" className="hover:text-white transition">Proof</a>
-              <a href="#features" className="hover:text-white transition">Features</a>
-            </div>
-            <div className="inline-flex items-center gap-2 xl:gap-3">
-              <button
-                onClick={() => openAuth('login')}
-                className="hidden md:inline-flex px-4 xl:px-5 py-1.5 xl:py-2 rounded-full border border-white/45 text-xs md:text-sm xl:text-base text-white bg-white/5 hover:bg-white/10 transition"
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => openAuth('register')}
-                className="px-4 xl:px-5 py-1.5 xl:py-2 rounded-full bg-white text-black text-xs md:text-sm xl:text-base font-semibold hover:bg-white/90 transition"
-              >
-                Try Now
-              </button>
-            </div>
-          </nav>
-        </header>
-
         <div className="mt-auto pb-4 md:pb-12 xl:pb-14">
-          <div className="max-w-[92vw] md:max-w-none rounded-xl md:rounded-2xl xl:rounded-3xl border border-white/15 bg-black/20 md:bg-black/28 backdrop-blur-0 md:backdrop-blur-[2px] p-3 md:p-6 xl:p-8">
+          <div className="max-w-[92vw] md:max-w-none rounded-xl md:rounded-2xl xl:rounded-3xl backdrop-blur-0 md:backdrop-blur-[2px] p-3 md:p-6 xl:p-8">
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-5 md:gap-8 xl:gap-12">
               <div className="max-w-2xl xl:max-w-3xl">
                 <h1 className="font-hero-sans text-3xl sm:text-6xl lg:text-7xl xl:text-8xl leading-[0.98] text-white drop-shadow-[0_6px_25px_rgba(0,0,0,0.55)]">

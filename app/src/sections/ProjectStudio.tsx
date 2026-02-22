@@ -367,8 +367,17 @@ export function ProjectStudio() {
     setIsSavingScreenplay(true);
     setBusyMessage('Saving screenplay...');
     try {
-      await api.updateProjectScreenplay(selectedProject.id, screenplay);
-      setBusyMessage('Screenplay saved.');
+      const payload = {
+        title: String(screenplay.title || selectedProject.title || '').trim(),
+        format: String(screenplay.format || 'hybrid').trim() || 'hybrid',
+        screenplay: String(screenplay.screenplay || ''),
+        scenes: Array.isArray(screenplay.scenes) ? screenplay.scenes : [],
+      };
+      const response = await api.updateProjectScreenplay(selectedProject.id, payload);
+      if (response.item?.payload) {
+        setScreenplay(response.item.payload);
+      }
+      setBusyMessage(`Screenplay saved (v${response.item?.version || 'n/a'}).`);
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to save screenplay');
     } finally {
@@ -396,7 +405,19 @@ export function ProjectStudio() {
     setIsSavingScenesBible(true);
     setBusyMessage('Saving scenes bible...');
     try {
-      await api.updateProjectScenesBible(selectedProject.id, scenesBible);
+      const payload = {
+        overview: String(scenesBible.overview || ''),
+        characterCanon: String(scenesBible.characterCanon || ''),
+        locationCanon: String(scenesBible.locationCanon || ''),
+        cinematicLanguage: String(scenesBible.cinematicLanguage || ''),
+        paletteAndTexture: String(scenesBible.paletteAndTexture || ''),
+        continuityInvariants: Array.isArray(scenesBible.continuityInvariants) ? scenesBible.continuityInvariants : [],
+        progressionMap: String(scenesBible.progressionMap || ''),
+      };
+      const response = await api.updateProjectScenesBible(selectedProject.id, payload);
+      if (response.item) {
+        setScenesBible(response.item);
+      }
       setBusyMessage('Scenes bible saved.');
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to save scenes bible');
@@ -1018,12 +1039,11 @@ export function ProjectStudio() {
       <div className="pointer-events-none absolute -top-24 -left-20 w-80 h-80 bg-cyan-500/15 blur-3xl rounded-full" />
       <div className="pointer-events-none absolute top-1/3 -right-24 w-96 h-96 bg-amber-500/10 blur-3xl rounded-full" />
       <div className="w-full max-w-[1500px] mx-auto">
-        <div className="text-center mb-10">
+        <div className="text-center mb-10 mt-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 text-xs uppercase tracking-widest mb-4">
-            <Compass className="w-3.5 h-3.5" /> Semipro Workflow
+            <Compass className="w-3.5 h-3.5" /> Workflow
           </div>
-          <h2 className="font-display text-4xl md:text-5xl text-white mb-3 bg-gradient-to-r from-cyan-200 via-white to-amber-200 bg-clip-text text-transparent">SEMIPRO AI</h2>
-          <p className="text-gray-400">From rough idea to scene-by-scene cinematic production workflow.</p>
+          
         </div>
 
         <div className="grid lg:grid-cols-[minmax(0,1fr)_300px] gap-6 items-start">
@@ -1154,48 +1174,71 @@ export function ProjectStudio() {
                   )}
                   {synopsisTab === 'scenesBible' && (
                     <div className="space-y-2">
-                      <textarea
-                        value={scenesBible.overview}
-                        onChange={event => setScenesBible(prev => ({ ...prev, overview: event.target.value }))}
-                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
-                        placeholder="Scenes bible overview"
-                      />
-                      <textarea
-                        value={scenesBible.characterCanon}
-                        onChange={event => setScenesBible(prev => ({ ...prev, characterCanon: event.target.value }))}
-                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
-                        placeholder="Character canon"
-                      />
-                      <textarea
-                        value={scenesBible.locationCanon}
-                        onChange={event => setScenesBible(prev => ({ ...prev, locationCanon: event.target.value }))}
-                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
-                        placeholder="Location canon"
-                      />
-                      <textarea
-                        value={scenesBible.cinematicLanguage}
-                        onChange={event => setScenesBible(prev => ({ ...prev, cinematicLanguage: event.target.value }))}
-                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
-                        placeholder="Cinematic language"
-                      />
-                      <textarea
-                        value={scenesBible.paletteAndTexture}
-                        onChange={event => setScenesBible(prev => ({ ...prev, paletteAndTexture: event.target.value }))}
-                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
-                        placeholder="Palette and texture"
-                      />
-                      <textarea
-                        value={(scenesBible.continuityInvariants || []).join('\n')}
-                        onChange={event => setScenesBible(prev => ({ ...prev, continuityInvariants: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) }))}
-                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
-                        placeholder="Continuity invariants (one per line)"
-                      />
-                      <textarea
-                        value={scenesBible.progressionMap}
-                        onChange={event => setScenesBible(prev => ({ ...prev, progressionMap: event.target.value }))}
-                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-20"
-                        placeholder="Progression map"
-                      />
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <p className="text-[11px] uppercase tracking-widest text-gray-500">Overview</p>
+                          <textarea
+                            value={scenesBible.overview}
+                            onChange={event => setScenesBible(prev => ({ ...prev, overview: event.target.value }))}
+                            className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-24"
+                            placeholder="Scenes bible overview"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[11px] uppercase tracking-widest text-gray-500">Character Canon</p>
+                          <textarea
+                            value={scenesBible.characterCanon}
+                            onChange={event => setScenesBible(prev => ({ ...prev, characterCanon: event.target.value }))}
+                            className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-24"
+                            placeholder="Character canon"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[11px] uppercase tracking-widest text-gray-500">Location Canon</p>
+                          <textarea
+                            value={scenesBible.locationCanon}
+                            onChange={event => setScenesBible(prev => ({ ...prev, locationCanon: event.target.value }))}
+                            className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-24"
+                            placeholder="Location canon"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[11px] uppercase tracking-widest text-gray-500">Cinematic Language</p>
+                          <textarea
+                            value={scenesBible.cinematicLanguage}
+                            onChange={event => setScenesBible(prev => ({ ...prev, cinematicLanguage: event.target.value }))}
+                            className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-24"
+                            placeholder="Cinematic language"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[11px] uppercase tracking-widest text-gray-500">Palette and Texture</p>
+                          <textarea
+                            value={scenesBible.paletteAndTexture}
+                            onChange={event => setScenesBible(prev => ({ ...prev, paletteAndTexture: event.target.value }))}
+                            className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-24"
+                            placeholder="Palette and texture"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[11px] uppercase tracking-widest text-gray-500">Continuity Invariants</p>
+                          <textarea
+                            value={(scenesBible.continuityInvariants || []).join('\n')}
+                            onChange={event => setScenesBible(prev => ({ ...prev, continuityInvariants: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) }))}
+                            className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-24"
+                            placeholder="One invariant per line"
+                          />
+                        </div>
+                        <div className="space-y-1 md:col-span-2">
+                          <p className="text-[11px] uppercase tracking-widest text-gray-500">Progression Map</p>
+                          <textarea
+                            value={scenesBible.progressionMap}
+                            onChange={event => setScenesBible(prev => ({ ...prev, progressionMap: event.target.value }))}
+                            className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-24"
+                            placeholder="Progression map"
+                          />
+                        </div>
+                      </div>
 
                       <div className="flex flex-wrap items-center gap-2">
                         <button onClick={generateScenesBible} disabled={!isAuthenticated || isGeneratingScenesBible} className="inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 disabled:opacity-50">

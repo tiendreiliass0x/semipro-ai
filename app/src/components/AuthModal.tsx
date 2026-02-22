@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, LogOut, Settings, UserCircle2, X } from 'lucide-react';
+import { Clapperboard, Loader2, LogOut, Settings, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 declare global {
@@ -176,33 +176,56 @@ export function AuthModal() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-cyan-500/20 bg-[#03060d]/90 backdrop-blur-sm">
-        <div className="max-w-[1200px] mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] uppercase tracking-widest text-cyan-300/80">Semipro Workflow</p>
-            <p className="text-sm font-semibold text-white">SEMIPRO AI</p>
-          </div>
+      <header className="fixed inset-x-0 top-0 z-40 px-4 pt-4 md:px-6 md:pt-5 xl:pt-6 pointer-events-none">
+        <div className="max-w-[1560px] mx-auto pointer-events-auto">
+          <nav className="rounded-full border border-white/20 bg-black/35 backdrop-blur-md px-4 md:px-6 xl:px-8 py-2.5 xl:py-3 flex items-center justify-between gap-4 xl:gap-8 text-white">
+            <button className="inline-flex items-center gap-2 text-sm md:text-base xl:text-lg font-semibold tracking-wide">
+              <Clapperboard className="w-4 h-4" /> Semipro AI
+            </button>
 
-          {!isAuthenticated ? (
-            <button
-              onClick={() => setAuthOpen(true)}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded border border-cyan-400/40 text-cyan-100 bg-black/40"
-            >
-              <UserCircle2 className="w-4 h-4" /> Sign In
-            </button>
-          ) : (
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 bg-black/40 max-w-[280px]"
-              title="Open account settings"
-            >
-              <div className="text-right leading-tight min-w-0">
-                <p className="text-xs text-gray-100 truncate">{truncate(account?.name || account?.slug || 'Workspace')}</p>
-                <p className="text-[10px] text-gray-500 truncate">{truncate(user?.email || user?.name || '')}</p>
+            {!isAuthenticated && (
+              <div className="hidden md:flex items-center gap-8 xl:gap-12 text-sm xl:text-base text-white/85">
+                <a href="#hero" className="hover:text-white transition">Home</a>
+                <a href="#proof" className="hover:text-white transition">Proof</a>
+                <a href="#features" className="hover:text-white transition">Features</a>
               </div>
-              <Settings className="w-4 h-4 text-gray-300" />
-            </button>
-          )}
+            )}
+
+            {!isAuthenticated ? (
+              <div className="inline-flex items-center gap-2 xl:gap-3">
+                <button
+                  onClick={() => {
+                    setMode('login');
+                    setAuthOpen(true);
+                  }}
+                  className="hidden md:inline-flex px-4 xl:px-5 py-1.5 xl:py-2 rounded-full border border-white/45 text-xs md:text-sm xl:text-base text-white bg-white/5 hover:bg-white/10 transition"
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() => {
+                    setMode('register');
+                    setAuthOpen(true);
+                  }}
+                  className="px-4 xl:px-5 py-1.5 xl:py-2 rounded-full bg-white text-black text-xs md:text-sm xl:text-base font-semibold hover:bg-white/90 transition"
+                >
+                  Try Now
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="inline-flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-white/30 bg-black/40 max-w-[300px]"
+                title="Open account settings"
+              >
+                <div className="text-right leading-tight min-w-0">
+                  <p className="text-xs text-gray-100 truncate">{truncate(account?.name || account?.slug || 'Workspace')}</p>
+                  <p className="text-[10px] text-gray-400 truncate">{truncate(user?.email || user?.name || '')}</p>
+                </div>
+                <Settings className="w-4 h-4 text-gray-300" />
+              </button>
+            )}
+          </nav>
         </div>
       </header>
 

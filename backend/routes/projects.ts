@@ -324,7 +324,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const project = getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json().catch(() => ({}));
-    const payload = body?.payload || null;
+    const payload = body?.payload || body || null;
     if (!payload) return new Response(JSON.stringify({ error: 'payload is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     const item = saveProjectScreenplay(projectId, payload, 'manual');
     return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
@@ -367,7 +367,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const project = getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json().catch(() => ({}));
-    const payload = body?.payload || null;
+    const payload = body?.payload || body || null;
     if (!payload) return new Response(JSON.stringify({ error: 'payload is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     const item = updateProjectScenesBible(projectId, payload);
     return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });

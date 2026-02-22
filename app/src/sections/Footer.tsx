@@ -2,7 +2,7 @@ import { Disc3, Github, Globe2, Instagram, Twitter, Youtube } from 'lucide-react
 
 export function Footer() {
   return (
-    <footer className="relative mt-24 py-20 px-4 border-t border-cyan-500/20 bg-gradient-to-b from-[#05080f] to-black">
+    <footer className="relative mt-24 py-20 px-4 border-t border-cyan-500/20 bg-gradient-to-b from-[#05080f] to-black font-hero-sans">
       <div className="max-w-6xl mx-auto">
         <div className="text-center text-sm text-gray-400 mb-16">
           Craft your first polished short film with <span className="text-cyan-200">Semipro AI Director Studio</span>.
@@ -10,7 +10,7 @@ export function Footer() {
 
         <div className="grid md:grid-cols-[1.4fr_1fr_1fr_1fr] gap-12">
           <div>
-            <h2 className="font-display text-4xl text-white mb-3">SEMIPRO AI</h2>
+            <h2 className="font-hero-sans font-extrabold text-4xl text-white mb-3">SEMIPRO AI</h2>
             <p className="text-sm text-gray-400 max-w-sm">
               AI-first filmmaking workspace for directors, creators, and ambitious amateurs.
             </p>

@@ -34,7 +34,7 @@ export function FeatureRail() {
       <div className="max-w-[1200px] mx-auto px-4 py-14 md:py-20">
         <div className="mb-8">
           <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-300/80">Platform Overview</p>
-          <h2 className="font-display text-3xl md:text-4xl text-white mt-2">One pipeline, full cinematic workflow.</h2>
+          <h2 className="font-hero-sans font-extrabold text-3xl md:text-4xl text-white mt-2">One pipeline, full cinematic workflow.</h2>
         </div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
