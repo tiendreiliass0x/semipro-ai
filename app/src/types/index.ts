@@ -254,6 +254,15 @@ export interface ScenePromptLayer {
   updatedAt: number;
 }
 
+export interface SceneVideoPromptTrace {
+  traceId: string;
+  projectId: string;
+  packageId: string;
+  beatId: string;
+  payload: Record<string, unknown>;
+  createdAt: number;
+}
+
 export interface ProjectFinalFilm {
   id: string;
   projectId: string;

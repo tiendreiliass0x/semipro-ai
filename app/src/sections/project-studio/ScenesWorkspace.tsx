@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Film, Loader2, PlayCircle, RefreshCcw, Video } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import type { ProjectFinalFilm, ScenePromptLayer, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
+import type { ProjectFinalFilm, ScenePromptLayer, SceneVideoJob, SceneVideoPromptTrace, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
 
 type VideoStats = {
   total: number;
@@ -29,6 +29,9 @@ type ScenesWorkspaceProps = {
   promptLayerHistoryByBeatId: Record<string, ScenePromptLayer[]>;
   activePromptHistoryBeatId: string | null;
   isLoadingPromptHistory: boolean;
+  traceHistoryByBeatId: Record<string, SceneVideoPromptTrace[]>;
+  activeTraceBeatId: string | null;
+  isLoadingTraceHistory: boolean;
   isSavingPromptLayerByBeatId: Record<string, boolean>;
   sceneFilmTypeByBeatId: Record<string, string>;
   continuationModeByBeatId: Record<string, 'strict' | 'balanced' | 'loose'>;
@@ -44,6 +47,8 @@ type ScenesWorkspaceProps = {
   onSaveScenePromptLayer: (beatId: string) => void;
   onOpenPromptLayerHistory: (beatId: string) => void;
   onClosePromptLayerHistory: () => void;
+  onOpenSceneVideoTraceHistory: (beatId: string) => void;
+  onCloseSceneVideoTraceHistory: () => void;
   onRestoreScenePromptLayer: (beatId: string, layer: ScenePromptLayer) => void;
   onToggleSceneLock: (beatId: string, locked: boolean) => void;
   onChangeSceneFilmType: (beatId: string, filmType: string) => void;
@@ -75,6 +80,9 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     promptLayerHistoryByBeatId,
     activePromptHistoryBeatId,
     isLoadingPromptHistory,
+    traceHistoryByBeatId,
+    activeTraceBeatId,
+    isLoadingTraceHistory,
     isSavingPromptLayerByBeatId,
     sceneFilmTypeByBeatId,
     continuationModeByBeatId,
@@ -90,6 +98,8 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     onSaveScenePromptLayer,
     onOpenPromptLayerHistory,
     onClosePromptLayerHistory,
+    onOpenSceneVideoTraceHistory,
+    onCloseSceneVideoTraceHistory,
     onRestoreScenePromptLayer,
     onToggleSceneLock,
     onChangeSceneFilmType,
@@ -146,6 +156,10 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     ? orderedScenes.find(scene => String(scene.beatId) === String(activePromptHistoryBeatId))
     : null;
   const activePromptHistoryItems = activePromptHistoryBeatId ? (promptLayerHistoryByBeatId[activePromptHistoryBeatId] || []) : [];
+  const activeTraceScene = activeTraceBeatId
+    ? orderedScenes.find(scene => String(scene.beatId) === String(activeTraceBeatId))
+    : null;
+  const activeTraceItems = activeTraceBeatId ? (traceHistoryByBeatId[activeTraceBeatId] || []) : [];
 
   const jumpToScene = (beatId: string) => {
     const target = sceneCardRefs.current[beatId];
@@ -178,6 +192,14 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
       setTimeout(() => setCopiedDiagnosticsBeatId(current => (current === beatId ? null : current)), 1500);
     } catch {
       // ignore clipboard failures
+    }
+  };
+
+  const formatTracePayload = (payload: Record<string, unknown>) => {
+    try {
+      return JSON.stringify(payload || {}, null, 2);
+    } catch {
+      return '{}';
     }
   };
 
@@ -480,6 +502,12 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
                       Regenerate (Recommended)
                     </button>
                   )}
+                  <button
+                    onClick={() => onOpenSceneVideoTraceHistory(scene.beatId)}
+                    className="text-[10px] px-2 py-1 rounded border border-cyan-500/40 text-cyan-100 hover:text-white"
+                  >
+                    Prompt Trace
+                  </button>
                 </div>
               )}
               <p className="text-[11px] text-gray-500 line-clamp-2">{scene.imagePrompt || scene.visualDirection}</p>
@@ -487,6 +515,35 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
           ))}
         </div>
       </div>
+
+      {activeTraceBeatId && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl rounded-2xl border border-gray-800 bg-[#050505] p-5 max-h-[85vh] overflow-auto">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h4 className="text-lg text-white font-semibold">
+                Prompt Trace {activeTraceScene ? `· Scene ${activeTraceScene.sceneNumber}` : ''}
+              </h4>
+              <button onClick={onCloseSceneVideoTraceHistory} className="text-xs px-2 py-1 rounded border border-gray-700 text-gray-300">Close</button>
+            </div>
+            {isLoadingTraceHistory ? (
+              <p className="text-sm text-gray-400 inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Loading prompt trace...</p>
+            ) : activeTraceItems.length === 0 ? (
+              <p className="text-sm text-gray-400">No prompt traces found yet for this scene.</p>
+            ) : (
+              <div className="space-y-3">
+                {activeTraceItems.map(item => (
+                  <div key={item.traceId} className="rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
+                    <p className="text-xs text-cyan-200">trace {item.traceId} · {new Date(item.createdAt).toLocaleString()}</p>
+                    <pre className="text-[11px] text-gray-200 whitespace-pre-wrap break-words rounded border border-gray-800 bg-black/40 p-2 overflow-auto max-h-[360px]">
+{formatTracePayload(item.payload)}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {activePromptHistoryBeatId && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">

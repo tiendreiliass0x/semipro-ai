@@ -277,6 +277,18 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS scene_video_prompt_traces (
+    traceId TEXT PRIMARY KEY,
+    projectId TEXT NOT NULL,
+    packageId TEXT NOT NULL,
+    beatId TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
 const ensureScenePromptLayerColumn = (columnSql: string) => {
   try {
     db.exec(`ALTER TABLE scene_prompt_layers ADD COLUMN ${columnSql}`);
@@ -594,6 +606,8 @@ const {
   getLatestScenePromptLayer,
   listScenePromptLayerHistory,
   listLatestScenePromptLayers,
+  createSceneVideoPromptTrace,
+  listSceneVideoPromptTraces,
   getProjectStyleBible,
   updateProjectStyleBible,
   getLatestProjectScreenplay,
@@ -915,6 +929,8 @@ serve({
       getLatestScenePromptLayer,
       listScenePromptLayerHistory,
       listLatestScenePromptLayers,
+      createSceneVideoPromptTrace,
+      listSceneVideoPromptTraces,
       createProjectFinalFilm,
       updateProjectFinalFilm,
       getLatestProjectFinalFilm,

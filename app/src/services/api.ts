@@ -1,4 +1,4 @@
-import type { Anecdote, ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectScenesBible, ProjectScreenplay, ProjectStyleBible, RefinedSynopsis, ScenePromptLayer, SceneVideoJob, StoryNote, Storyline, StoryboardScene, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
+import type { Anecdote, ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectScenesBible, ProjectScreenplay, ProjectStyleBible, RefinedSynopsis, ScenePromptLayer, SceneVideoJob, SceneVideoPromptTrace, StoryNote, Storyline, StoryboardScene, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
 
 // Get the base URL without /api suffix for uploads
 const getBaseUrl = () => {
@@ -353,6 +353,9 @@ export const api = {
 
   getScenePromptLayerHistory: (projectId: string, beatId: string) =>
     fetchApi<{ items: ScenePromptLayer[] }>(`/projects/${projectId}/storyboard/${beatId}/prompt-layers`),
+
+  listSceneVideoPromptTraces: (projectId: string, beatId: string, limit: number = 20) =>
+    fetchApi<{ items: SceneVideoPromptTrace[] }>(`/projects/${projectId}/storyboard/${beatId}/video-traces?limit=${encodeURIComponent(String(limit))}`),
 
   saveScenePromptLayer: (projectId: string, beatId: string, payload: {
     directorPrompt?: string;

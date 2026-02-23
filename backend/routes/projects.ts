@@ -52,6 +52,8 @@ type ProjectsRouteArgs = {
   getLatestScenePromptLayer: (projectId: string, beatId: string) => any;
   listScenePromptLayerHistory: (projectId: string, beatId: string) => any[];
   listLatestScenePromptLayers: (projectId: string) => any[];
+  createSceneVideoPromptTrace: (args: { traceId: string; projectId: string; packageId: string; beatId: string; payload: any }) => any;
+  listSceneVideoPromptTraces: (projectId: string, beatId: string, limit?: number) => any[];
   createProjectFinalFilm: (args: { projectId: string; sourceCount: number }) => any;
   updateProjectFinalFilm: (id: string, patch: { status?: string; sourceCount?: number; videoUrl?: string; error?: string }) => any;
   getLatestProjectFinalFilm: (projectId: string) => any;
@@ -76,6 +78,21 @@ type ProjectsRouteArgs = {
 };
 
 const jsonHeaders = (corsHeaders: Record<string, string>) => ({ ...corsHeaders, 'Content-Type': 'application/json' });
+
+const previewText = (value: unknown, max: number = 420) => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}...`;
+};
+
+const safeJson = (value: unknown) => {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return '[unserializable-trace]';
+  }
+};
 
 export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Response | null> => {
   const {
@@ -106,6 +123,8 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     getLatestScenePromptLayer,
     listScenePromptLayerHistory,
     listLatestScenePromptLayers,
+    createSceneVideoPromptTrace,
+    listSceneVideoPromptTraces,
     createProjectFinalFilm,
     updateProjectFinalFilm,
     getLatestProjectFinalFilm,
@@ -630,6 +649,17 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
   }
 
+  if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/video-traces$/) && method === 'GET') {
+    const projectId = pathname.split('/')[3];
+    const beatId = pathname.split('/')[5];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    const url = new URL(req.url);
+    const limit = Number(url.searchParams.get('limit') || 20);
+    const items = listSceneVideoPromptTraces(projectId, beatId, limit);
+    return new Response(JSON.stringify({ items }), { headers: jsonHeaders(corsHeaders) });
+  }
+
   if (pathname.match(/^\/api\/projects\/[^/]+\/final-film$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
     const project = getScopedProject(projectId);
@@ -782,6 +812,70 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       scenesBible,
     });
 
+    const traceId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const promptTrace = {
+      traceId,
+      projectId,
+      beatId,
+      packageId: latestPackage.id,
+      scene: {
+        sceneNumber: Number(scene.sceneNumber || 0),
+        slugline: previewText(scene.slugline, 140),
+        visualDirection: previewText(scene.visualDirection, 240),
+        imagePrompt: previewText(scene.imagePrompt, 240),
+        hasImageUrl: Boolean(scene.imageUrl),
+      },
+      input: {
+        promptOverride: previewText(promptOverride, 240),
+        directorPrompt: previewText(directorLayerInput, 240),
+        cinematographerPrompt: previewText(cinematographerLayerInput, 240),
+        filmType,
+        continuationMode: continuationModeInput || null,
+        anchorBeatId: anchorBeatIdInput || null,
+        autoRegenerateThreshold: Number.isFinite(autoRegenerateThresholdInput) ? autoRegenerateThresholdInput : null,
+      },
+      resolved: {
+        directorLayerSource: directorLayerInput ? 'request.directorPrompt' : promptOverride ? 'request.prompt' : 'latestPromptLayer.directorPrompt',
+        cinematographerLayerSource: cinematographerLayerInput ? 'request.cinematographerPrompt' : 'latestPromptLayer.cinematographerPrompt|auto-build',
+        activeFilmType,
+        continuationMode: activeContinuationMode,
+        anchorBeatId: String(resolvedAnchorScene?.beatId || ''),
+        sourceImageUrl: previewText(resolvedSourceImageUrl, 220),
+        autoRegenerateThreshold: activeAutoRegenerateThreshold,
+      },
+      components: {
+        styleBible: {
+          visualStyle: previewText(styleBible?.visualStyle, 180),
+          cameraGrammar: previewText(styleBible?.cameraGrammar, 180),
+          doCount: Array.isArray(styleBible?.doList) ? styleBible.doList.length : 0,
+          dontCount: Array.isArray(styleBible?.dontList) ? styleBible.dontList.length : 0,
+        },
+        scenesBible: {
+          hasScenesBible: Boolean(scenesBible),
+          overview: previewText(scenesBible?.overview, 160),
+          continuityInvariantsCount: Array.isArray(scenesBible?.continuityInvariants) ? scenesBible.continuityInvariants.length : 0,
+        },
+        directorPrompt: previewText(directorPrompt, 900),
+        cinematographerPrompt: previewText(cinematographerPrompt, 900),
+        mergedPrompt: previewText(videoPrompt, 1200),
+      },
+      lengths: {
+        directorLayer: directorLayer.length,
+        cinematographerLayer: cinematographerLayer.length,
+        directorPrompt: directorPrompt.length,
+        cinematographerPrompt: cinematographerPrompt.length,
+        mergedPrompt: videoPrompt.length,
+      },
+    };
+    console.log(`[trace] scene-video-prompt\n${safeJson(promptTrace)}`);
+    createSceneVideoPromptTrace({
+      traceId,
+      projectId,
+      packageId: latestPackage.id,
+      beatId,
+      payload: promptTrace,
+    });
+
     const promptLayer = createScenePromptLayer({
       projectId,
       packageId: latestPackage.id,
@@ -820,7 +914,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
     console.log(`[queue] Enqueued scene video job ${job.id} for project ${projectId}, beat ${beatId}`);
 
-    return new Response(JSON.stringify({ success: true, item: job, promptLayer }), { status: 202, headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ success: true, item: job, promptLayer, traceId }), { status: 202, headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/scene-lock$/) && method === 'PATCH') {

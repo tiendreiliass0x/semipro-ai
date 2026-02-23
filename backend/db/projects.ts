@@ -585,6 +585,61 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return items;
   };
 
+  const createSceneVideoPromptTrace = (args: {
+    traceId: string;
+    projectId: string;
+    packageId: string;
+    beatId: string;
+    payload: any;
+  }) => {
+    const now = Date.now();
+    db.query(`
+      INSERT INTO scene_video_prompt_traces (
+        traceId, projectId, packageId, beatId, payload, createdAt
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      String(args.traceId || ''),
+      String(args.projectId || ''),
+      String(args.packageId || ''),
+      String(args.beatId || ''),
+      JSON.stringify(args.payload || {}),
+      now
+    );
+    const row = db.query('SELECT * FROM scene_video_prompt_traces WHERE traceId = ?').get(String(args.traceId || '')) as any;
+    if (!row) return null;
+    return {
+      ...row,
+      payload: (() => {
+        try {
+          return JSON.parse(String(row.payload || '{}'));
+        } catch {
+          return {};
+        }
+      })(),
+    };
+  };
+
+  const listSceneVideoPromptTraces = (projectId: string, beatId: string, limit: number = 20) => {
+    const rows = db.query(`
+      SELECT traceId, projectId, packageId, beatId, payload, createdAt
+      FROM scene_video_prompt_traces
+      WHERE projectId = ? AND beatId = ?
+      ORDER BY createdAt DESC, traceId DESC
+      LIMIT ?
+    `).all(projectId, beatId, Math.max(1, Math.min(100, Number(limit || 20)))) as any[];
+
+    return rows.map(row => ({
+      ...row,
+      payload: (() => {
+        try {
+          return JSON.parse(String(row.payload || '{}'));
+        } catch {
+          return {};
+        }
+      })(),
+    }));
+  };
+
   return {
     listProjects,
     getProjectById,
@@ -613,6 +668,8 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     getLatestScenePromptLayer,
     listScenePromptLayerHistory,
     listLatestScenePromptLayers,
+    createSceneVideoPromptTrace,
+    listSceneVideoPromptTraces,
     getProjectStyleBible,
     updateProjectStyleBible,
     getLatestProjectScreenplay,

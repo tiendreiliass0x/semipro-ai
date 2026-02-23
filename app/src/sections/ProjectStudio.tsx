@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
-import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectScenesBible, ProjectScreenplay, ProjectStyleBible, ScenePromptLayer, SceneVideoJob, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
+import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectScenesBible, ProjectScreenplay, ProjectStyleBible, ScenePromptLayer, SceneVideoJob, SceneVideoPromptTrace, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
 import { DeleteProjectModal } from './project-studio/DeleteProjectModal';
 import { ProjectSidebar } from './project-studio/ProjectSidebar';
 import { ScenesWorkspace } from './project-studio/ScenesWorkspace';
@@ -67,8 +67,10 @@ export function ProjectStudio() {
   const [isSavingStyleBible, setIsSavingStyleBible] = useState(false);
   const [isGeneratingScreenplay, setIsGeneratingScreenplay] = useState(false);
   const [isSavingScreenplay, setIsSavingScreenplay] = useState(false);
+  const [screenplayInlineError, setScreenplayInlineError] = useState<string | null>(null);
   const [isGeneratingScenesBible, setIsGeneratingScenesBible] = useState(false);
   const [isSavingScenesBible, setIsSavingScenesBible] = useState(false);
+  const [scenesBibleInlineError, setScenesBibleInlineError] = useState<string | null>(null);
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [isPolishingBeats, setIsPolishingBeats] = useState(false);
   const [isGeneratingMoreStarterBeats, setIsGeneratingMoreStarterBeats] = useState(false);
@@ -87,6 +89,9 @@ export function ProjectStudio() {
   const [promptLayerHistoryByBeatId, setPromptLayerHistoryByBeatId] = useState<Record<string, ScenePromptLayer[]>>({});
   const [activePromptHistoryBeatId, setActivePromptHistoryBeatId] = useState<string | null>(null);
   const [isLoadingPromptHistory, setIsLoadingPromptHistory] = useState(false);
+  const [traceHistoryByBeatId, setTraceHistoryByBeatId] = useState<Record<string, SceneVideoPromptTrace[]>>({});
+  const [activeTraceBeatId, setActiveTraceBeatId] = useState<string | null>(null);
+  const [isLoadingTraceHistory, setIsLoadingTraceHistory] = useState(false);
   const [isSavingPromptLayerByBeatId, setIsSavingPromptLayerByBeatId] = useState<Record<string, boolean>>({});
   const beatsScrollRef = useRef<HTMLDivElement | null>(null);
   const projectIdeaInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -119,6 +124,18 @@ export function ProjectStudio() {
     'Tracking shot',
     'Static shot',
   ] as const;
+
+  const getFriendlySaveError = (error: unknown, label: 'screenplay' | 'scenes bible') => {
+    const fallback = `We couldn't save the ${label}. Please try again.`;
+    if (!(error instanceof Error)) return fallback;
+    const text = String(error.message || '').toLowerCase();
+    if (!text) return fallback;
+    if (text.includes('authentication required') || text.includes('401')) return 'Your session expired. Please sign in again and retry.';
+    if (text.includes('project not found') || text.includes('404')) return 'This project is no longer available. Refresh and try again.';
+    if (text.includes('payload is required') || text.includes('400')) return `Some ${label} fields are missing. Please review and try again.`;
+    if (text.includes('network') || text.includes('fetch')) return 'Network issue detected. Check your connection and retry.';
+    return fallback;
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -272,6 +289,8 @@ export function ProjectStudio() {
       setPromptLayerVersionByBeatId(versionByBeat);
       setPromptLayerHistoryByBeatId({});
       setActivePromptHistoryBeatId(null);
+      setTraceHistoryByBeatId({});
+      setActiveTraceBeatId(null);
     };
     loadDetails();
   }, [selectedProject?.id]);
@@ -288,6 +307,21 @@ export function ProjectStudio() {
       }));
     } finally {
       setIsLoadingPromptHistory(false);
+    }
+  };
+
+  const openSceneVideoTraceHistory = async (beatId: string) => {
+    if (!selectedProject?.id) return;
+    setActiveTraceBeatId(beatId);
+    setIsLoadingTraceHistory(true);
+    try {
+      const response = await api.listSceneVideoPromptTraces(selectedProject.id, beatId, 20);
+      setTraceHistoryByBeatId(prev => ({
+        ...prev,
+        [beatId]: response.items || [],
+      }));
+    } finally {
+      setIsLoadingTraceHistory(false);
     }
   };
 
@@ -313,6 +347,8 @@ export function ProjectStudio() {
     setEditingProjectPseudoSynopsis(selectedProject.pseudoSynopsis || '');
     setIsEditingProjectDetails(false);
     setShowRightProjectSettings(false);
+    setScreenplayInlineError(null);
+    setScenesBibleInlineError(null);
   }, [selectedProject?.id]);
 
   useEffect(() => {
@@ -365,6 +401,7 @@ export function ProjectStudio() {
   const saveScreenplay = async () => {
     if (!selectedProject || !isAuthenticated || isSavingScreenplay) return;
     setIsSavingScreenplay(true);
+    setScreenplayInlineError(null);
     setBusyMessage('Saving screenplay...');
     try {
       const payload = {
@@ -379,7 +416,9 @@ export function ProjectStudio() {
       }
       setBusyMessage(`Screenplay saved (v${response.item?.version || 'n/a'}).`);
     } catch (error) {
-      setBusyMessage(error instanceof Error ? error.message : 'Failed to save screenplay');
+      const friendly = getFriendlySaveError(error, 'screenplay');
+      setScreenplayInlineError(friendly);
+      setBusyMessage(friendly);
     } finally {
       setIsSavingScreenplay(false);
     }
@@ -403,6 +442,7 @@ export function ProjectStudio() {
   const saveScenesBible = async () => {
     if (!selectedProject || !isAuthenticated || isSavingScenesBible) return;
     setIsSavingScenesBible(true);
+    setScenesBibleInlineError(null);
     setBusyMessage('Saving scenes bible...');
     try {
       const payload = {
@@ -420,7 +460,9 @@ export function ProjectStudio() {
       }
       setBusyMessage('Scenes bible saved.');
     } catch (error) {
-      setBusyMessage(error instanceof Error ? error.message : 'Failed to save scenes bible');
+      const friendly = getFriendlySaveError(error, 'scenes bible');
+      setScenesBibleInlineError(friendly);
+      setBusyMessage(friendly);
     } finally {
       setIsSavingScenesBible(false);
     }
@@ -965,6 +1007,8 @@ export function ProjectStudio() {
       setPromptLayerVersionByBeatId({});
       setPromptLayerHistoryByBeatId({});
       setActivePromptHistoryBeatId(null);
+      setTraceHistoryByBeatId({});
+      setActiveTraceBeatId(null);
       setSceneFilmTypeByBeatId({});
       setContinuationModeByBeatId({});
       setAnchorBeatIdByBeatId({});
@@ -1170,6 +1214,9 @@ export function ProjectStudio() {
                           {isSavingScreenplay ? <Loader2 className="w-4 h-4 animate-spin" /> : null} {isSavingScreenplay ? 'Saving...' : 'Save Screenplay'}
                         </button>
                       </div>
+                      {screenplayInlineError && (
+                        <p className="text-xs text-rose-300">{screenplayInlineError}</p>
+                      )}
                     </div>
                   )}
                   {synopsisTab === 'scenesBible' && (
@@ -1248,6 +1295,9 @@ export function ProjectStudio() {
                           {isSavingScenesBible ? <Loader2 className="w-4 h-4 animate-spin" /> : null} {isSavingScenesBible ? 'Saving...' : 'Save Scenes Bible'}
                         </button>
                       </div>
+                      {scenesBibleInlineError && (
+                        <p className="text-xs text-rose-300">{scenesBibleInlineError}</p>
+                      )}
                     </div>
                   )}
 
@@ -1518,6 +1568,9 @@ export function ProjectStudio() {
                     promptLayerHistoryByBeatId={promptLayerHistoryByBeatId}
                     activePromptHistoryBeatId={activePromptHistoryBeatId}
                     isLoadingPromptHistory={isLoadingPromptHistory}
+                    traceHistoryByBeatId={traceHistoryByBeatId}
+                    activeTraceBeatId={activeTraceBeatId}
+                    isLoadingTraceHistory={isLoadingTraceHistory}
                     isSavingPromptLayerByBeatId={isSavingPromptLayerByBeatId}
                     sceneFilmTypeByBeatId={sceneFilmTypeByBeatId}
                     continuationModeByBeatId={continuationModeByBeatId}
@@ -1533,6 +1586,8 @@ export function ProjectStudio() {
                     onSaveScenePromptLayer={beatId => saveScenePromptLayer(beatId)}
                     onOpenPromptLayerHistory={openPromptLayerHistory}
                     onClosePromptLayerHistory={() => setActivePromptHistoryBeatId(null)}
+                    onOpenSceneVideoTraceHistory={openSceneVideoTraceHistory}
+                    onCloseSceneVideoTraceHistory={() => setActiveTraceBeatId(null)}
                     onRestoreScenePromptLayer={restoreScenePromptLayer}
                     onToggleSceneLock={toggleSceneLock}
                     onChangeSceneFilmType={(beatId, value) => setSceneFilmTypeByBeatId(prev => ({ ...prev, [beatId]: value }))}
