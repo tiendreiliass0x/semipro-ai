@@ -1,10 +1,12 @@
 import OpenAI from 'openai';
 import { fal } from '@fal-ai/client';
+import { resolveImageModel } from './imageModel';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 const FAL_KEY = process.env.FAL_KEY || process.env.FAL_API_KEY || '';
 const FAL_IMAGE_MODEL = process.env.FAL_IMAGE_MODEL || 'fal-ai/flux-pro/kontext/text-to-image';
+const XAI_API_KEY = process.env.XAI_API_KEY || process.env.GROK_API_KEY || '';
 const SUPPORTS_TEMPERATURE = !OPENAI_MODEL.startsWith('gpt-5');
 
 if (FAL_KEY) {
@@ -262,13 +264,58 @@ const callLlmForJson = async (
 
 const createOpenAIClient = () => new OpenAI({ apiKey: OPENAI_API_KEY });
 
-export const generateStoryboardFrameWithLlm = async (prompt: string) => {
-  if (!FAL_KEY) {
-    throw new Error('FAL_KEY is not configured');
+const generateImageWithXai = async (args: { prompt: string; modelId: string }) => {
+  if (!XAI_API_KEY) {
+    throw new Error('XAI_API_KEY is not configured for Grok image');
   }
+
+  const response = await fetch('https://api.x.ai/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${XAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: args.modelId,
+      prompt: args.prompt,
+      size: '1536x1024',
+      n: 1,
+      response_format: 'url',
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Grok image generation failed (${response.status})`);
+  }
+
+  const data = await response.json() as any;
+  const imageUrl =
+    data?.data?.[0]?.url
+    || data?.images?.[0]?.url
+    || '';
+  if (!imageUrl) {
+    throw new Error('Grok image generation returned no image URL');
+  }
+  return String(imageUrl);
+};
+
+export const generateStoryboardFrameWithLlm = async (prompt: string, imageModelKey?: string) => {
+  if (!FAL_KEY) {
+    if (resolveImageModel(imageModelKey).provider === 'fal') {
+      throw new Error('FAL_KEY is not configured');
+    }
+  }
+  const imageModel = resolveImageModel(imageModelKey);
   const startedAt = Date.now();
-  console.log(`[image] frame generation started (model: ${FAL_IMAGE_MODEL})`);
-  const result = await fal.subscribe(FAL_IMAGE_MODEL, {
+  console.log(`[image] frame generation started (model: ${imageModel.key} -> ${imageModel.modelId || FAL_IMAGE_MODEL})`);
+
+  if (imageModel.provider === 'xai') {
+    const imageUrl = await generateImageWithXai({ prompt, modelId: imageModel.modelId });
+    console.log(`[image] frame generation completed in ${Date.now() - startedAt}ms`);
+    return imageUrl;
+  }
+
+  const result = await fal.subscribe(imageModel.modelId || FAL_IMAGE_MODEL, {
     input: {
       prompt,
     },

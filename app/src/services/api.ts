@@ -310,11 +310,11 @@ export const api = {
       body: JSON.stringify({ mode, dryRun }),
     }),
 
-  generateProjectStoryboard: (projectId: string, prompt?: string, filmType?: string) =>
+  generateProjectStoryboard: (projectId: string, prompt?: string, filmType?: string, imageModelKey?: 'fal' | 'grok') =>
     fetchApi<{ success: boolean; result: StorylineGenerationResult; package: StorylinePackageRecord }>(`/projects/${projectId}/storyboard/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: prompt || '', filmType: filmType || '' }),
+      body: JSON.stringify({ prompt: prompt || '', filmType: filmType || '', imageModelKey: imageModelKey || 'fal' }),
     }),
 
   getLatestProjectStoryboard: (projectId: string) =>
@@ -331,6 +331,8 @@ export const api = {
     directorPrompt?: string;
     cinematographerPrompt?: string;
     filmType?: string;
+    imageModelKey?: 'fal' | 'grok';
+    modelKey?: 'seedance' | 'kling' | 'veo3';
     continuationMode?: 'strict' | 'balanced' | 'loose';
     anchorBeatId?: string;
     autoRegenerateThreshold?: number;
@@ -361,6 +363,7 @@ export const api = {
     directorPrompt?: string;
     cinematographerPrompt?: string;
     filmType?: string;
+    modelKey?: 'seedance' | 'kling' | 'veo3';
     continuationMode?: 'strict' | 'balanced' | 'loose';
     anchorBeatId?: string;
     autoRegenerateThreshold?: number;

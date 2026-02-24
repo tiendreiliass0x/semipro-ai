@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, Film, Loader2, PlayCircle, RefreshCcw, Video } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { ProjectFinalFilm, ScenePromptLayer, SceneVideoJob, SceneVideoPromptTrace, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
@@ -34,11 +34,13 @@ type ScenesWorkspaceProps = {
   isLoadingTraceHistory: boolean;
   isSavingPromptLayerByBeatId: Record<string, boolean>;
   sceneFilmTypeByBeatId: Record<string, string>;
+  sceneModelByBeatId: Record<string, 'seedance' | 'kling' | 'veo3'>;
   continuationModeByBeatId: Record<string, 'strict' | 'balanced' | 'loose'>;
   anchorBeatIdByBeatId: Record<string, string>;
   autoRegenThresholdByBeatId: Record<string, number>;
   filmType: string;
   filmTypeOptions: string[];
+  videoModelOptions: Array<{ key: 'seedance' | 'kling' | 'veo3'; label: string }>;
   cameraMoves: readonly string[];
   onRefreshSceneVideos: () => void;
   onGenerateAllSceneVideos: () => void;
@@ -52,6 +54,7 @@ type ScenesWorkspaceProps = {
   onRestoreScenePromptLayer: (beatId: string, layer: ScenePromptLayer) => void;
   onToggleSceneLock: (beatId: string, locked: boolean) => void;
   onChangeSceneFilmType: (beatId: string, filmType: string) => void;
+  onChangeSceneModel: (beatId: string, value: 'seedance' | 'kling' | 'veo3') => void;
   onChangeContinuationMode: (beatId: string, value: 'strict' | 'balanced' | 'loose') => void;
   onChangeAnchorBeatId: (beatId: string, value: string) => void;
   onChangeAutoRegenThreshold: (beatId: string, value: number) => void;
@@ -85,11 +88,13 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     isLoadingTraceHistory,
     isSavingPromptLayerByBeatId,
     sceneFilmTypeByBeatId,
+    sceneModelByBeatId,
     continuationModeByBeatId,
     anchorBeatIdByBeatId,
     autoRegenThresholdByBeatId,
     filmType,
     filmTypeOptions,
+    videoModelOptions,
     cameraMoves,
     onRefreshSceneVideos,
     onGenerateAllSceneVideos,
@@ -103,6 +108,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     onRestoreScenePromptLayer,
     onToggleSceneLock,
     onChangeSceneFilmType,
+    onChangeSceneModel,
     onChangeContinuationMode,
     onChangeAnchorBeatId,
     onChangeAutoRegenThreshold,
@@ -114,17 +120,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
   } = props;
 
   const orderedScenes = generatedPackage.storyboard || [];
-  const scenesScrollerRef = useRef<HTMLDivElement | null>(null);
-  const sceneCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [copiedDiagnosticsBeatId, setCopiedDiagnosticsBeatId] = useState<string | null>(null);
-
-  const statusColor = (beatId: string) => {
-    const status = sceneVideosByBeatId[beatId]?.status;
-    if (status === 'completed') return 'border-[#D0FF59]';
-    if (status === 'processing' || status === 'queued') return 'border-amber-400';
-    if (status === 'failed') return 'border-rose-500';
-    return 'border-gray-700';
-  };
 
   const getContinuityBadge = (score: number, threshold: number) => {
     const safeScore = Math.max(0, Math.min(1, Number(score || 0)));
@@ -160,12 +156,6 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     ? orderedScenes.find(scene => String(scene.beatId) === String(activeTraceBeatId))
     : null;
   const activeTraceItems = activeTraceBeatId ? (traceHistoryByBeatId[activeTraceBeatId] || []) : [];
-
-  const jumpToScene = (beatId: string) => {
-    const target = sceneCardRefs.current[beatId];
-    if (!target) return;
-    target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-  };
 
   const copyDiagnostics = async (scene: any) => {
     const beatId = String(scene?.beatId || '');
@@ -203,10 +193,46 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     }
   };
 
+  const readPath = (source: any, path: string) => {
+    return path.split('.').reduce((acc: any, key) => (acc && typeof acc === 'object' ? acc[key] : undefined), source);
+  };
+
+  const summarizeTraceDiff = (latest: Record<string, unknown>, previous: Record<string, unknown>) => {
+    const watchedPaths = [
+      'input.promptOverride',
+      'input.directorPrompt',
+      'input.cinematographerPrompt',
+      'input.filmType',
+      'input.continuationMode',
+      'input.anchorBeatId',
+      'input.autoRegenerateThreshold',
+      'resolved.directorLayerSource',
+      'resolved.cinematographerLayerSource',
+      'resolved.activeFilmType',
+      'resolved.continuationMode',
+      'resolved.anchorBeatId',
+      'resolved.sourceImageUrl',
+      'lengths.directorPrompt',
+      'lengths.cinematographerPrompt',
+      'lengths.mergedPrompt',
+    ];
+
+    return watchedPaths
+      .map(path => {
+        const current = readPath(latest, path);
+        const prev = readPath(previous, path);
+        const a = JSON.stringify(current ?? null);
+        const b = JSON.stringify(prev ?? null);
+        if (a === b) return null;
+        return `${path}: ${String(prev ?? '(empty)')} -> ${String(current ?? '(empty)')}`;
+      })
+      .filter(Boolean) as string[];
+  };
+
   return (
     <div className="rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-[#07131f]/70 via-black/60 to-[#1a1208]/70 p-5">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <p className="text-xs uppercase tracking-widest text-gray-500"><Film className="w-4 h-4" /> Scenes Workspace</p>
+        <span className="inline-flex items-center gap-1.5 text-xs uppercase tracking-widest text-gray-500"><Film className="w-4 h-4" /> Scenes Studio</span>
         {latestPackage && <p className="text-xs text-gray-500">v{latestPackage.version}</p>}
       </div>
 
@@ -267,39 +293,13 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
         )}
       </div>
 
-      <div className="mb-4 rounded-xl border border-white/35 bg-[linear-gradient(180deg,rgba(63,24,5,0.62),rgba(16,7,3,0.72))] p-2.5 md:p-3">
-        <div
-          className="grid gap-2"
-          style={{ gridTemplateColumns: `repeat(${Math.max(orderedScenes.length, 1)}, minmax(0, 1fr))` }}
-        >
-          {orderedScenes.map(scene => (
-            <button
-              key={`timeline-thumb-${scene.beatId}`}
-              onClick={() => jumpToScene(scene.beatId)}
-              className={`w-full h-12 md:h-14 rounded-md overflow-hidden border-2 ${statusColor(scene.beatId)} bg-black/40 hover:scale-[1.01] transition`}
-              title={`Scene ${scene.sceneNumber}`}
-            >
-              <img
-                src={getSceneFrameUrl(scene)}
-                alt={`Scene ${scene.sceneNumber}`}
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-            </button>
-          ))}
-        </div>
-      </div>
-
       <h4 className="text-xl text-white font-semibold">{generatedPackage.writeup.headline}</h4>
       <p className="text-sm text-gray-400 mt-1">{generatedPackage.writeup.deck}</p>
-      <div ref={scenesScrollerRef} className="mt-4 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="mt-4 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="flex gap-3 min-w-max pr-2">
           {generatedPackage.storyboard.map((scene, beatIndex) => (
             <div
               key={`${scene.sceneNumber}-${scene.beatId}`}
-              ref={element => {
-                sceneCardRefs.current[scene.beatId] = element;
-              }}
               className="w-[320px] md:w-[360px] shrink-0 rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2"
             >
               {sceneVideosByBeatId[scene.beatId]?.status === 'completed' && sceneVideosByBeatId[scene.beatId]?.videoUrl ? (
@@ -324,6 +324,16 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm text-gray-100">Scene {scene.sceneNumber} · Beat {beatIndex + 1}</p>
                 <div className="flex items-center gap-2">
+                  <select
+                    value={sceneModelByBeatId[scene.beatId] || 'seedance'}
+                    onChange={event => onChangeSceneModel(scene.beatId, event.target.value as 'seedance' | 'kling' | 'veo3')}
+                    className="max-w-[108px] bg-black/40 border border-gray-700 rounded px-2 py-1 text-[11px] text-gray-200"
+                    title="Generation model"
+                  >
+                    {videoModelOptions.map(option => (
+                      <option key={`${scene.beatId}-quick-model-${option.key}`} value={option.key}>{option.label}</option>
+                    ))}
+                  </select>
                   <button
                     onClick={() => onGenerateSceneVideo(scene.beatId)}
                     disabled={!isAuthenticated || isGeneratingVideoBeatId === scene.beatId || sceneVideosByBeatId[scene.beatId]?.status === 'processing'}
@@ -531,6 +541,26 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
               <p className="text-sm text-gray-400">No prompt traces found yet for this scene.</p>
             ) : (
               <div className="space-y-3">
+                {activeTraceItems.length > 1 && (
+                  <div className="rounded-lg border border-cyan-500/25 bg-cyan-500/5 p-3">
+                    <p className="text-[11px] uppercase tracking-widest text-cyan-200 mb-2">Latest vs Previous</p>
+                    {(() => {
+                      const latest = (activeTraceItems[0]?.payload || {}) as Record<string, unknown>;
+                      const previous = (activeTraceItems[1]?.payload || {}) as Record<string, unknown>;
+                      const changes = summarizeTraceDiff(latest, previous);
+                      if (!changes.length) {
+                        return <p className="text-xs text-gray-400">No tracked prompt inputs/resolved values changed.</p>;
+                      }
+                      return (
+                        <div className="space-y-1">
+                          {changes.map(change => (
+                            <p key={change} className="text-xs text-gray-200">{change}</p>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
                 {activeTraceItems.map(item => (
                   <div key={item.traceId} className="rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
                     <p className="text-xs text-cyan-200">trace {item.traceId} · {new Date(item.createdAt).toLocaleString()}</p>

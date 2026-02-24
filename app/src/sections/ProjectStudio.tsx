@@ -4,7 +4,6 @@ import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
 import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectScenesBible, ProjectScreenplay, ProjectStyleBible, ScenePromptLayer, SceneVideoJob, SceneVideoPromptTrace, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
 import { DeleteProjectModal } from './project-studio/DeleteProjectModal';
-import { ProjectSidebar } from './project-studio/ProjectSidebar';
 import { ScenesWorkspace } from './project-studio/ScenesWorkspace';
 
 export function ProjectStudio() {
@@ -50,11 +49,13 @@ export function ProjectStudio() {
   const [noteInput, setNoteInput] = useState('');
   const [directorPrompt, setDirectorPrompt] = useState('Cinematic, emotionally grounded, practical for low-budget production.');
   const [filmType, setFilmType] = useState('cinematic live-action');
+  const [storyboardImageModel, setStoryboardImageModel] = useState<'fal' | 'grok'>('fal');
   const [sceneFilmTypeByBeatId, setSceneFilmTypeByBeatId] = useState<Record<string, string>>({});
+  const [sceneModelByBeatId, setSceneModelByBeatId] = useState<Record<string, 'seedance' | 'kling' | 'veo3'>>({});
   const [continuationModeByBeatId, setContinuationModeByBeatId] = useState<Record<string, 'strict' | 'balanced' | 'loose'>>({});
   const [anchorBeatIdByBeatId, setAnchorBeatIdByBeatId] = useState<Record<string, string>>({});
   const [autoRegenThresholdByBeatId, setAutoRegenThresholdByBeatId] = useState<Record<string, number>>({});
-  const [synopsisTab, setSynopsisTab] = useState<'pseudo' | 'polished' | 'plotScript' | 'screenplay' | 'scenesBible'>('pseudo');
+  const [synopsisTab, setSynopsisTab] = useState<'pseudo' | 'polished' | 'screenplay' | 'scenesBible'>('pseudo');
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [isRecordCreating, setIsRecordCreating] = useState(false);
@@ -74,6 +75,7 @@ export function ProjectStudio() {
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [isPolishingBeats, setIsPolishingBeats] = useState(false);
   const [isGeneratingMoreStarterBeats, setIsGeneratingMoreStarterBeats] = useState(false);
+  const [isBeatCaptureInputOpen, setIsBeatCaptureInputOpen] = useState(true);
   const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
   const [isCheckingContinuity, setIsCheckingContinuity] = useState(false);
   const [isPreviewingFix, setIsPreviewingFix] = useState<'timeline' | 'intensity' | 'all' | null>(null);
@@ -105,6 +107,15 @@ export function ProjectStudio() {
     'neo-noir graphic novel',
     'retro 80s cyberpunk',
     'documentary realism',
+  ];
+  const videoModelOptions: Array<{ key: 'seedance' | 'kling' | 'veo3'; label: string }> = [
+    { key: 'seedance', label: 'Seedance' },
+    { key: 'kling', label: 'Kling' },
+    { key: 'veo3', label: 'Veo 3' },
+  ];
+  const storyboardImageModelOptions: Array<{ key: 'fal' | 'grok'; label: string }> = [
+    { key: 'fal', label: 'FAL Flux' },
+    { key: 'grok', label: 'Grok Image' },
   ];
 
   const cameraMoves = [
@@ -185,8 +196,8 @@ export function ProjectStudio() {
     return Array.from(new Set(drafts)).slice(0, maxCount);
   };
 
-  const createStarterBeatsFromPlotScript = (plotScript: string, existingAiStarters: string[]): string[] => {
-    const raw = String(plotScript || '').trim();
+  const createStarterBeatsFromSource = (textSource: string, existingAiStarters: string[]): string[] => {
+    const raw = String(textSource || '').trim();
     if (!raw) return [];
 
     const introLine = raw.split(/\n+/)[0] || '';
@@ -260,6 +271,7 @@ export function ProjectStudio() {
       const directorByBeat: Record<string, string> = {};
       const cinematographerByBeat: Record<string, string> = {};
       const filmTypeByBeat: Record<string, string> = {};
+      const modelByBeat: Record<string, 'seedance' | 'kling' | 'veo3'> = {};
       const continuationModeByBeat: Record<string, 'strict' | 'balanced' | 'loose'> = {};
       const anchorByBeat: Record<string, string> = {};
       const thresholdByBeat: Record<string, number> = {};
@@ -270,6 +282,9 @@ export function ProjectStudio() {
         cinematographerByBeat[item.beatId] = String(item.cinematographerPrompt || '');
         if (String(item.filmType || '').trim()) {
           filmTypeByBeat[item.beatId] = String(item.filmType);
+        }
+        if (item.generationModel === 'seedance' || item.generationModel === 'kling' || item.generationModel === 'veo3') {
+          modelByBeat[item.beatId] = item.generationModel;
         }
         if (item.continuationMode === 'strict' || item.continuationMode === 'balanced' || item.continuationMode === 'loose') {
           continuationModeByBeat[item.beatId] = item.continuationMode;
@@ -283,6 +298,7 @@ export function ProjectStudio() {
       setVideoPromptByBeatId(directorByBeat);
       setCinematographerPromptByBeatId(cinematographerByBeat);
       setSceneFilmTypeByBeatId(filmTypeByBeat);
+      setSceneModelByBeatId(modelByBeat);
       setContinuationModeByBeatId(continuationModeByBeat);
       setAnchorBeatIdByBeatId(anchorByBeat);
       setAutoRegenThresholdByBeatId(thresholdByBeat);
@@ -331,6 +347,9 @@ export function ProjectStudio() {
     setCinematographerPromptByBeatId(prev => ({ ...prev, [beatId]: String(layer.cinematographerPrompt || '') }));
     if (String(layer.filmType || '').trim()) {
       setSceneFilmTypeByBeatId(prev => ({ ...prev, [beatId]: String(layer.filmType) }));
+    }
+    if (layer.generationModel === 'seedance' || layer.generationModel === 'kling' || layer.generationModel === 'veo3') {
+      setSceneModelByBeatId(prev => ({ ...prev, [beatId]: layer.generationModel }));
     }
     if (layer.continuationMode === 'strict' || layer.continuationMode === 'balanced' || layer.continuationMode === 'loose') {
       setContinuationModeByBeatId(prev => ({ ...prev, [beatId]: layer.continuationMode }));
@@ -635,13 +654,13 @@ export function ProjectStudio() {
 
   const generateMoreAiStarterBeats = async () => {
     if (!selectedProject || !isAuthenticated || isGeneratingMoreStarterBeats) return;
-    const draftStarters = createStarterBeatsFromPlotScript(
-      selectedProject.plotScript,
+    const draftStarters = createStarterBeatsFromSource(
+      selectedProject.polishedSynopsis || selectedProject.pseudoSynopsis,
       notes.filter(note => note.source === 'ai_starter').map(note => note.rawText)
     );
 
     if (draftStarters.length === 0) {
-      setBusyMessage('No additional AI starter beats found from plot script yet.');
+      setBusyMessage('No additional AI starter beats found from your current synopsis yet.');
       return;
     }
 
@@ -654,7 +673,7 @@ export function ProjectStudio() {
         seededItems.push(seeded.item);
       }
       setNotes(prev => [...prev, ...seededItems]);
-      setBusyMessage(`Added ${seededItems.length} AI starter beats from plot script.`);
+      setBusyMessage(`Added ${seededItems.length} AI starter beats from your synopsis.`);
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to generate more AI starter beats');
     } finally {
@@ -821,12 +840,20 @@ export function ProjectStudio() {
     return api.getUploadsUrl(videoUrl);
   };
 
+  const getStoryboardThumbBorder = (beatId: string) => {
+    const status = sceneVideosByBeatId[beatId]?.status;
+    if (status === 'completed') return 'border-[#D0FF59]';
+    if (status === 'processing' || status === 'queued') return 'border-amber-400';
+    if (status === 'failed') return 'border-rose-500';
+    return 'border-gray-700';
+  };
+
   const generateStoryboard = async () => {
     if (!selectedProject || !isAuthenticated) return;
     setIsGeneratingStoryboard(true);
     setBusyMessage('Generating storyboard package...');
     try {
-      const response = await api.generateProjectStoryboard(selectedProject.id, directorPrompt, filmType);
+      const response = await api.generateProjectStoryboard(selectedProject.id, directorPrompt, filmType, storyboardImageModel);
       setGeneratedPackage(response.result);
       setLatestPackage(response.package);
       setBusyMessage(`Storyboard generated (v${response.package.version}).`);
@@ -845,6 +872,7 @@ export function ProjectStudio() {
         directorPrompt: videoPromptByBeatId[beatId] || '',
         cinematographerPrompt: cinematographerPromptByBeatId[beatId] || '',
         filmType: sceneFilmTypeByBeatId[beatId] || filmType,
+        modelKey: sceneModelByBeatId[beatId] || 'seedance',
         continuationMode: continuationModeByBeatId[beatId] || 'strict',
         anchorBeatId: anchorBeatIdByBeatId[beatId] || '',
         autoRegenerateThreshold: autoRegenThresholdByBeatId[beatId] ?? 0.75,
@@ -869,6 +897,8 @@ export function ProjectStudio() {
         directorPrompt: videoPromptByBeatId[beatId] || '',
         cinematographerPrompt: cinematographerPromptByBeatId[beatId] || '',
         filmType: sceneFilmTypeByBeatId[beatId] || filmType,
+        imageModelKey: storyboardImageModel,
+        modelKey: sceneModelByBeatId[beatId] || 'seedance',
         continuationMode: continuationModeByBeatId[beatId] || 'strict',
         anchorBeatId: anchorBeatIdByBeatId[beatId] || '',
         autoRegenerateThreshold: autoRegenThresholdByBeatId[beatId] ?? 0.75,
@@ -913,6 +943,8 @@ export function ProjectStudio() {
           directorPrompt: videoPromptByBeatId[scene.beatId] || '',
           cinematographerPrompt: cinematographerPromptByBeatId[scene.beatId] || '',
           filmType: sceneFilmTypeByBeatId[scene.beatId] || filmType,
+          imageModelKey: storyboardImageModel,
+          modelKey: sceneModelByBeatId[scene.beatId] || 'seedance',
           continuationMode: continuationModeByBeatId[scene.beatId] || 'strict',
           anchorBeatId: anchorBeatIdByBeatId[scene.beatId] || '',
           autoRegenerateThreshold: autoRegenThresholdByBeatId[scene.beatId] ?? 0.75,
@@ -1010,6 +1042,7 @@ export function ProjectStudio() {
       setTraceHistoryByBeatId({});
       setActiveTraceBeatId(null);
       setSceneFilmTypeByBeatId({});
+      setSceneModelByBeatId({});
       setContinuationModeByBeatId({});
       setAnchorBeatIdByBeatId({});
       setAutoRegenThresholdByBeatId({});
@@ -1035,7 +1068,7 @@ export function ProjectStudio() {
   const saveProjectDetails = async () => {
     if (!selectedProject || !isAuthenticated || isSavingProjectDetails) return;
     if (!editingProjectTitle.trim() || !editingProjectPseudoSynopsis.trim()) {
-      setBusyMessage('Project title and pseudo synopsis are required.');
+      setBusyMessage('Project title and logline are required.');
       return;
     }
 
@@ -1073,13 +1106,7 @@ export function ProjectStudio() {
 
   return (
     <>
-      <ProjectSidebar
-        projects={projects}
-        selectedProjectId={selectedProjectId}
-        onSelectProject={setSelectedProjectId}
-      />
-
-    <section id="project-studio" className="relative min-h-screen py-20 px-4 overflow-hidden lg:pl-[360px] lg:pr-10 xl:pr-16">
+    <section id="project-studio" className="relative min-h-screen py-20 px-4 overflow-hidden lg:px-10 xl:px-16">
       <div className="pointer-events-none absolute -top-24 -left-20 w-80 h-80 bg-cyan-500/15 blur-3xl rounded-full" />
       <div className="pointer-events-none absolute top-1/3 -right-24 w-96 h-96 bg-amber-500/10 blur-3xl rounded-full" />
       <div className="w-full max-w-[1500px] mx-auto">
@@ -1166,9 +1193,8 @@ export function ProjectStudio() {
 
                   <div className="flex flex-wrap gap-2 mb-3">
                     {([
-                      { id: 'pseudo', label: 'Pseudo Synopsis' },
+                      { id: 'pseudo', label: 'Logline' },
                       { id: 'polished', label: 'Polished Synopsis' },
-                      { id: 'plotScript', label: 'Plot Script' },
                       { id: 'screenplay', label: 'Screenplay' },
                       { id: 'scenesBible', label: 'Scenes Bible' },
                     ] as const).map(tab => (
@@ -1187,15 +1213,12 @@ export function ProjectStudio() {
                       value={editingProjectPseudoSynopsis}
                       onChange={event => setEditingProjectPseudoSynopsis(event.target.value)}
                       className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-28"
-                      placeholder="Pseudo synopsis"
+                      placeholder="Logline"
                       disabled={!isAuthenticated}
                     />
                   )}
                   {synopsisTab === 'polished' && (
                     <p className="text-sm text-gray-200 whitespace-pre-line">{selectedProject.polishedSynopsis || 'Not polished yet.'}</p>
-                  )}
-                  {synopsisTab === 'plotScript' && (
-                    <p className="text-sm text-gray-200 whitespace-pre-line">{selectedProject.plotScript || 'Generate polished synopsis to produce plot script.'}</p>
                   )}
                   {synopsisTab === 'screenplay' && (
                     <div className="space-y-2">
@@ -1203,7 +1226,7 @@ export function ProjectStudio() {
                         value={screenplay.screenplay}
                         onChange={event => setScreenplay(prev => ({ ...prev, screenplay: event.target.value }))}
                         className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-44"
-                        placeholder="Generate a hybrid screenplay from plot script and beats."
+                        placeholder="Generate a hybrid screenplay from your story beats."
                         disabled={!isAuthenticated}
                       />
                       <div className="flex flex-wrap items-center gap-2">
@@ -1342,31 +1365,42 @@ export function ProjectStudio() {
                       <span className="text-[11px] text-gray-500">Tap to expand</span>
                     </summary>
                     <div className="grid md:grid-cols-2 gap-3 mt-4">
-                      visualStyle
-                      <textarea
-                        value={styleBible.visualStyle}
-                        onChange={event => setStyleBible(prev => ({ ...prev, visualStyle: event.target.value }))}
-                        className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
-                        placeholder="Visual style"
-                      />
-                      <textarea
-                        value={styleBible.cameraGrammar}
-                        onChange={event => setStyleBible(prev => ({ ...prev, cameraGrammar: event.target.value }))}
-                        className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
-                        placeholder="Camera grammar"
-                      />
-                      <textarea
-                        value={(styleBible.doList || []).join('\n')}
-                        onChange={event => setStyleBible(prev => ({ ...prev, doList: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) }))}
-                        className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
-                        placeholder="Do list (one per line)"
-                      />
-                      <textarea
-                        value={(styleBible.dontList || []).join('\n')}
-                        onChange={event => setStyleBible(prev => ({ ...prev, dontList: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) }))}
-                        className="bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
-                        placeholder="Don't list (one per line)"
-                      />
+                      <div className="space-y-1">
+                        <p className="text-[11px] uppercase tracking-widest text-gray-500">Visual Style</p>
+                        <textarea
+                          value={styleBible.visualStyle}
+                          onChange={event => setStyleBible(prev => ({ ...prev, visualStyle: event.target.value }))}
+                          className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
+                          placeholder="Visual style"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[11px] uppercase tracking-widest text-gray-500">Camera Grammar</p>
+                        <textarea
+                          value={styleBible.cameraGrammar}
+                          onChange={event => setStyleBible(prev => ({ ...prev, cameraGrammar: event.target.value }))}
+                          className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
+                          placeholder="Camera grammar"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[11px] uppercase tracking-widest text-gray-500">Do List</p>
+                        <textarea
+                          value={(styleBible.doList || []).join('\n')}
+                          onChange={event => setStyleBible(prev => ({ ...prev, doList: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) }))}
+                          className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
+                          placeholder="One item per line"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[11px] uppercase tracking-widest text-gray-500">Don't List</p>
+                        <textarea
+                          value={(styleBible.dontList || []).join('\n')}
+                          onChange={event => setStyleBible(prev => ({ ...prev, dontList: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) }))}
+                          className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-20"
+                          placeholder="One item per line"
+                        />
+                      </div>
                     </div>
                     <button onClick={saveStyleBible} disabled={!isAuthenticated || isSavingStyleBible} className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 hover:text-cyan-200 disabled:opacity-50">
                       {isSavingStyleBible ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} {isSavingStyleBible ? 'Saving...' : 'Save Style Bible'}
@@ -1377,27 +1411,38 @@ export function ProjectStudio() {
                 <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-[#071712]/70 to-black/60 p-5">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <p className="text-xs uppercase tracking-widest text-gray-500">Beat Story Capture</p>
-                    <button
-                      onClick={generateMoreAiStarterBeats}
-                      disabled={!isAuthenticated || isGeneratingMoreStarterBeats || !selectedProject?.plotScript}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded border border-cyan-400/40 text-cyan-100 text-[11px] disabled:opacity-50"
-                    >
-                      {isGeneratingMoreStarterBeats ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />} Generate More AI Starters
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setIsBeatCaptureInputOpen(prev => !prev)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded border border-gray-700 bg-[#D0FF59] text-black font-semibold text-[11px]"
+                      >
+                        <ChevronDown className={`w-3 h-3 transition-transform ${isBeatCaptureInputOpen ? 'rotate-180' : ''}`} />
+                        {isBeatCaptureInputOpen ? 'Close': <><span>Add Beat Story</span><Plus className="w-4 h-4" /></>}
+                      </button>
+                      <button
+                        onClick={generateMoreAiStarterBeats}
+                        disabled={!isAuthenticated || isGeneratingMoreStarterBeats}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded border border-cyan-400/40 text-cyan-100 text-[11px] disabled:opacity-50"
+                      >
+                        {isGeneratingMoreStarterBeats ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />} Generate More AI Starters
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <textarea value={noteInput} onChange={event => setNoteInput(event.target.value)} className="flex-1 bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-16" placeholder="Type a beat story note..." />
-                    <button onClick={addNote} disabled={!isAuthenticated || isAddingNote} className="h-fit inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
-                      {isAddingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} {isAddingNote ? 'Adding...' : 'Add'}
-                    </button>
-                    <button
-                      onClick={recordNote}
-                      disabled={!isAuthenticated || isListening}
-                      className={`h-fit inline-flex items-center gap-2 px-3 py-2 rounded border text-sm text-gray-300 disabled:opacity-50 ${isListening ? 'border-[#D0FF59] animate-mic-pulse-ring' : 'border-gray-700'}`}
-                    >
-                      <Mic className="w-4 h-4" /> {isListening ? 'Listening...' : 'Record'}
-                    </button>
-                  </div>
+                  {isBeatCaptureInputOpen && (
+                    <div className="flex gap-2">
+                      <textarea value={noteInput} onChange={event => setNoteInput(event.target.value)} className="flex-1 bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-16" placeholder="Type a beat story note..." />
+                      <button onClick={addNote} disabled={!isAuthenticated || isAddingNote} className="h-fit inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
+                        {isAddingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} {isAddingNote ? 'Adding...' : 'Add'}
+                      </button>
+                      <button
+                        onClick={recordNote}
+                        disabled={!isAuthenticated || isListening}
+                        className={`h-fit inline-flex items-center gap-2 px-3 py-2 rounded border text-sm text-gray-300 disabled:opacity-50 ${isListening ? 'border-[#D0FF59] animate-mic-pulse-ring' : 'border-gray-700'}`}
+                      >
+                        <Mic className="w-4 h-4" /> {isListening ? 'Listening...' : 'Record'}
+                      </button>
+                    </div>
+                  )}
                   <div className="mt-3 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                       {([
@@ -1539,9 +1584,45 @@ export function ProjectStudio() {
                       ))}
                     </select>
                   </div>
+                  <div className="mt-3">
+                    <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Storyboard Image Model</p>
+                    <select
+                      value={storyboardImageModel}
+                      onChange={event => setStoryboardImageModel(event.target.value as 'fal' | 'grok')}
+                      className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm text-gray-200"
+                    >
+                      {storyboardImageModelOptions.map(option => (
+                        <option key={option.key} value={option.key}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
                   <button onClick={generateStoryboard} disabled={!isAuthenticated || isGeneratingStoryboard} className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
                     {isGeneratingStoryboard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clapperboard className="w-4 h-4" />} {isGeneratingStoryboard ? 'Generating...' : 'Generate Storyboard'}
                   </button>
+
+                  {generatedPackage?.storyboard?.length ? (
+                    <div className="mt-3 rounded-xl border border-white/25 bg-black/25 p-2.5">
+                      <div
+                        className="grid gap-2"
+                        style={{ gridTemplateColumns: `repeat(${Math.max(generatedPackage.storyboard.length, 1)}, minmax(0, 1fr))` }}
+                      >
+                        {generatedPackage.storyboard.map(scene => (
+                          <div
+                            key={`storyboard-top-strip-${scene.beatId}`}
+                            className={`w-full h-12 md:h-14 rounded-md overflow-hidden border-2 ${getStoryboardThumbBorder(scene.beatId)} bg-black/40`}
+                            title={`Scene ${scene.sceneNumber}`}
+                          >
+                            <img
+                              src={getSceneFrameUrl(scene)}
+                              alt={`Scene ${scene.sceneNumber}`}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
                 {isGeneratingStoryboard && (
@@ -1573,11 +1654,13 @@ export function ProjectStudio() {
                     isLoadingTraceHistory={isLoadingTraceHistory}
                     isSavingPromptLayerByBeatId={isSavingPromptLayerByBeatId}
                     sceneFilmTypeByBeatId={sceneFilmTypeByBeatId}
+                    sceneModelByBeatId={sceneModelByBeatId}
                     continuationModeByBeatId={continuationModeByBeatId}
                     anchorBeatIdByBeatId={anchorBeatIdByBeatId}
                     autoRegenThresholdByBeatId={autoRegenThresholdByBeatId}
                     filmType={filmType}
                     filmTypeOptions={filmTypeOptions}
+                    videoModelOptions={videoModelOptions}
                     cameraMoves={cameraMoves}
                     onRefreshSceneVideos={refreshSceneVideoStatuses}
                     onGenerateAllSceneVideos={generateAllSceneVideos}
@@ -1591,6 +1674,7 @@ export function ProjectStudio() {
                     onRestoreScenePromptLayer={restoreScenePromptLayer}
                     onToggleSceneLock={toggleSceneLock}
                     onChangeSceneFilmType={(beatId, value) => setSceneFilmTypeByBeatId(prev => ({ ...prev, [beatId]: value }))}
+                    onChangeSceneModel={(beatId, value) => setSceneModelByBeatId(prev => ({ ...prev, [beatId]: value }))}
                     onChangeContinuationMode={(beatId, value) => setContinuationModeByBeatId(prev => ({ ...prev, [beatId]: value }))}
                     onChangeAnchorBeatId={(beatId, value) => setAnchorBeatIdByBeatId(prev => ({ ...prev, [beatId]: value }))}
                     onChangeAutoRegenThreshold={(beatId, value) => setAutoRegenThresholdByBeatId(prev => ({ ...prev, [beatId]: value }))}
@@ -1631,7 +1715,6 @@ export function ProjectStudio() {
                   <div className="rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
                     <p className="text-[11px] uppercase tracking-widest text-gray-500">Pipeline Health</p>
                     <p className={`text-xs ${selectedProject.polishedSynopsis ? 'text-emerald-300' : 'text-gray-500'}`}>Polished Synopsis {selectedProject.polishedSynopsis ? 'ready' : 'pending'}</p>
-                    <p className={`text-xs ${selectedProject.plotScript ? 'text-emerald-300' : 'text-gray-500'}`}>Plot Script {selectedProject.plotScript ? 'ready' : 'pending'}</p>
                     <p className={`text-xs ${screenplay.screenplay ? 'text-emerald-300' : 'text-gray-500'}`}>Hybrid Screenplay {screenplay.screenplay ? 'ready' : 'pending'}</p>
                     <p className={`text-xs ${styleBible.visualStyle || styleBible.cameraGrammar ? 'text-emerald-300' : 'text-gray-500'}`}>Style Bible {(styleBible.visualStyle || styleBible.cameraGrammar) ? 'seeded' : 'pending'}</p>
                     <p className={`text-xs ${scenesBible.overview ? 'text-emerald-300' : 'text-gray-500'}`}>Scenes Bible {scenesBible.overview ? 'ready' : 'pending'}</p>

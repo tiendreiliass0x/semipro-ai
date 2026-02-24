@@ -221,6 +221,7 @@ export interface SceneVideoJob {
   packageId: string;
   beatId: string;
   provider: string;
+  modelKey?: 'seedance' | 'kling' | 'veo3';
   prompt: string;
   sourceImageUrl: string;
   continuityScore?: number;
@@ -245,6 +246,7 @@ export interface ScenePromptLayer {
   cinematographerPrompt: string;
   mergedPrompt: string;
   filmType: string;
+  generationModel: 'seedance' | 'kling' | 'veo3';
   continuationMode: 'strict' | 'balanced' | 'loose';
   anchorBeatId: string;
   autoRegenerateThreshold: number;

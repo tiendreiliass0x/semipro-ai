@@ -176,9 +176,9 @@ export function AuthModal() {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-40 px-4 pt-4 md:px-6 md:pt-5 xl:pt-6 pointer-events-none">
-        <div className="max-w-[1560px] mx-auto pointer-events-auto">
-          <nav className="rounded-full border border-white/20 bg-black/35 backdrop-blur-md px-4 md:px-6 xl:px-8 py-2.5 xl:py-3 flex items-center justify-between gap-4 xl:gap-8 text-white">
+      <header className="sticky top-0 z-40 border-b border-white/15 bg-black/45 backdrop-blur-md">
+        <div className="w-full">
+          <nav className="w-full px-4 md:px-6 xl:px-8 py-2.5 xl:py-3 flex items-center justify-between gap-4 xl:gap-8 text-white">
             <button className="inline-flex items-center gap-2 text-sm md:text-base xl:text-lg font-semibold tracking-wide">
               <Clapperboard className="w-4 h-4" /> Semipro AI
             </button>

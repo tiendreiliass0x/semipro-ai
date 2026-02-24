@@ -9,7 +9,7 @@ import { createProjectsDb } from './db/projects';
 import { createStorylinesDb } from './db/storylines';
 import { createSubscribersDb } from './db/subscribers';
 import { generateHybridScreenplayWithLlm, generateProjectStoryboardWithLlm, generateScenesBibleWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
-import { buildCinematographerPrompt, buildDirectorSceneVideoPrompt, buildMergedScenePrompt, createFinalFilmFromClips, generateSceneVideoWithFal } from './lib/sceneVideo';
+import { buildCinematographerPrompt, buildDirectorSceneVideoPrompt, buildMergedScenePrompt, createFinalFilmFromClips, extractLastFrameFromVideo, generateSceneVideoWithFal } from './lib/sceneVideo';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
 import { handleAccountRoutes } from './routes/account';
 import { handleAuthRoutes } from './routes/auth';
@@ -226,6 +226,7 @@ db.exec(`
     packageId TEXT NOT NULL,
     beatId TEXT NOT NULL,
     provider TEXT DEFAULT 'local-ffmpeg',
+    modelKey TEXT DEFAULT 'seedance',
     prompt TEXT DEFAULT '',
     sourceImageUrl TEXT DEFAULT '',
     continuityScore REAL DEFAULT 0.75,
@@ -255,6 +256,7 @@ ensureSceneVideoColumn('continuityScore REAL DEFAULT 0.75');
 ensureSceneVideoColumn('continuityThreshold REAL DEFAULT 0.75');
 ensureSceneVideoColumn('recommendRegenerate INTEGER DEFAULT 0');
 ensureSceneVideoColumn("continuityReason TEXT DEFAULT ''");
+ensureSceneVideoColumn("modelKey TEXT DEFAULT 'seedance'");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS scene_prompt_layers (
@@ -266,6 +268,7 @@ db.exec(`
     cinematographerPrompt TEXT DEFAULT '',
     mergedPrompt TEXT DEFAULT '',
     filmType TEXT DEFAULT '',
+    generationModel TEXT DEFAULT 'seedance',
     continuationMode TEXT DEFAULT 'strict',
     anchorBeatId TEXT DEFAULT '',
     autoRegenerateThreshold REAL DEFAULT 0.75,
@@ -300,6 +303,7 @@ const ensureScenePromptLayerColumn = (columnSql: string) => {
 ensureScenePromptLayerColumn("continuationMode TEXT DEFAULT 'strict'");
 ensureScenePromptLayerColumn("anchorBeatId TEXT DEFAULT ''");
 ensureScenePromptLayerColumn('autoRegenerateThreshold REAL DEFAULT 0.75');
+ensureScenePromptLayerColumn("generationModel TEXT DEFAULT 'seedance'");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS project_final_films (
@@ -632,6 +636,7 @@ const processSceneVideoQueue = async () => {
           uploadsDir,
           sourceImageUrl: String(job.sourceImageUrl || ''),
           prompt: String(job.prompt || ''),
+          modelKey: String(job.modelKey || 'seedance'),
           durationSeconds: Number(job.durationSeconds || 5),
         });
 
@@ -950,6 +955,7 @@ serve({
       buildCinematographerPrompt,
       buildMergedScenePrompt,
       createFinalFilmFromClips,
+      extractLastFrameFromVideo,
       registerUploadOwnership,
       uploadsDir,
     });

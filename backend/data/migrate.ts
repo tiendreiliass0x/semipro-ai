@@ -197,6 +197,7 @@ db.exec(`
     packageId TEXT NOT NULL,
     beatId TEXT NOT NULL,
     provider TEXT DEFAULT 'local-ffmpeg',
+    modelKey TEXT DEFAULT 'seedance',
     prompt TEXT DEFAULT '',
     sourceImageUrl TEXT DEFAULT '',
     continuityScore REAL DEFAULT 0.75,
@@ -226,6 +227,7 @@ ensureSceneVideoColumn('continuityScore REAL DEFAULT 0.75');
 ensureSceneVideoColumn('continuityThreshold REAL DEFAULT 0.75');
 ensureSceneVideoColumn('recommendRegenerate INTEGER DEFAULT 0');
 ensureSceneVideoColumn("continuityReason TEXT DEFAULT ''");
+ensureSceneVideoColumn("modelKey TEXT DEFAULT 'seedance'");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS scene_prompt_layers (
@@ -237,6 +239,7 @@ db.exec(`
     cinematographerPrompt TEXT DEFAULT '',
     mergedPrompt TEXT DEFAULT '',
     filmType TEXT DEFAULT '',
+    generationModel TEXT DEFAULT 'seedance',
     continuationMode TEXT DEFAULT 'strict',
     anchorBeatId TEXT DEFAULT '',
     autoRegenerateThreshold REAL DEFAULT 0.75,
@@ -271,6 +274,7 @@ const ensureScenePromptLayerColumn = (columnSql: string) => {
 ensureScenePromptLayerColumn("continuationMode TEXT DEFAULT 'strict'");
 ensureScenePromptLayerColumn("anchorBeatId TEXT DEFAULT ''");
 ensureScenePromptLayerColumn('autoRegenerateThreshold REAL DEFAULT 0.75');
+ensureScenePromptLayerColumn("generationModel TEXT DEFAULT 'seedance'");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS project_final_films (

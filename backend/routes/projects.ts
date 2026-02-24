@@ -1,4 +1,5 @@
 import { evaluateSceneContinuation } from '../lib/sceneContinuation';
+import { resolveSceneAnchor } from '../lib/sceneAnchor';
 
 type ProjectsRouteArgs = {
   req: Request;
@@ -26,6 +27,7 @@ type ProjectsRouteArgs = {
     packageId: string;
     beatId: string;
     provider: string;
+    modelKey?: string;
     prompt: string;
     sourceImageUrl: string;
     continuityScore?: number;
@@ -44,6 +46,7 @@ type ProjectsRouteArgs = {
     cinematographerPrompt: string;
     mergedPrompt: string;
     filmType?: string;
+    generationModel?: string;
     continuationMode?: string;
     anchorBeatId?: string;
     autoRegenerateThreshold?: number;
@@ -68,11 +71,12 @@ type ProjectsRouteArgs = {
   generateScenesBibleWithLlm: (args: { title: string; synopsis: string; plotScript: string; screenplay: string; style?: string; styleBible?: any }) => Promise<any>;
   polishNotesIntoBeatsWithLlm: (args: { synopsis: string; notes: any[]; durationMinutes?: number; style?: string; styleBible?: any }) => Promise<any>;
   generateProjectStoryboardWithLlm: (args: { title: string; synopsis: string; beats: any[]; prompt?: string; style?: string; styleBible?: any; filmType?: string }) => Promise<any>;
-  generateStoryboardFrameWithLlm: (prompt: string) => Promise<string>;
+  generateStoryboardFrameWithLlm: (prompt: string, imageModelKey?: string) => Promise<string>;
   buildDirectorSceneVideoPrompt: (args: { projectTitle: string; synopsis: string; styleBible: any; scene: any; directorPrompt?: string }) => string;
   buildCinematographerPrompt: (args: { styleBible: any; scene: any; scenesBible?: any }) => string;
   buildMergedScenePrompt: (args: { directorPrompt: string; cinematographerPrompt: string; scenesBible?: any }) => string;
   createFinalFilmFromClips: (args: { uploadsDir: string; clipUrls: string[]; outputFilename: string }) => Promise<string>;
+  extractLastFrameFromVideo: (args: { uploadsDir: string; videoUrl: string; outputFilename: string }) => Promise<string>;
   registerUploadOwnership: (args: { filename: string; accountId: string }) => void;
   uploadsDir: string;
 };
@@ -144,6 +148,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     buildCinematographerPrompt,
     buildMergedScenePrompt,
     createFinalFilmFromClips,
+    extractLastFrameFromVideo,
     registerUploadOwnership,
     uploadsDir,
   } = args;
@@ -524,6 +529,9 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
     try {
       const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
+      const imageModelKey = ['fal', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
+        ? String(body.imageModelKey).trim().toLowerCase()
+        : 'fal';
       const result = await generateProjectStoryboardWithLlm({
         title: project.title,
         synopsis: project.polishedSynopsis || project.pseudoSynopsis,
@@ -540,7 +548,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
             const prompt = [filmType ? `Film type: ${filmType}` : '', scene.imagePrompt || `${scene.slugline}. ${scene.visualDirection}`]
               .filter(Boolean)
               .join('. ');
-            const imageUrl = await generateStoryboardFrameWithLlm(prompt);
+            const imageUrl = await generateStoryboardFrameWithLlm(prompt, imageModelKey);
             scene.imageUrl = imageUrl;
           } catch {
             scene.imageUrl = '';
@@ -603,6 +611,9 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const directorLayer = typeof body?.directorPrompt === 'string' ? body.directorPrompt.trim() : '';
     const cinematographerLayer = typeof body?.cinematographerPrompt === 'string' ? body.cinematographerPrompt.trim() : '';
     const activeFilmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
+    const modelKey = ['seedance', 'kling', 'veo3'].includes(String(body?.modelKey || '').trim().toLowerCase())
+      ? String(body.modelKey).trim().toLowerCase()
+      : 'seedance';
     const continuationMode = ['strict', 'balanced', 'loose'].includes(String(body?.continuationMode || '').trim())
       ? String(body.continuationMode).trim()
       : 'strict';
@@ -640,6 +651,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       cinematographerPrompt: cinematographerLayer,
       mergedPrompt,
       filmType: activeFilmType,
+      generationModel: modelKey,
       continuationMode,
       anchorBeatId,
       autoRegenerateThreshold,
@@ -745,6 +757,10 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const body = await req.json().catch(() => ({}));
     const promptOverride = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
     const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
+    const imageModelKey = ['fal', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
+      ? String(body.imageModelKey).trim().toLowerCase()
+      : 'fal';
+    const modelKeyInput = typeof body?.modelKey === 'string' ? body.modelKey.trim().toLowerCase() : '';
     const directorLayerInput = typeof body?.directorPrompt === 'string' ? body.directorPrompt.trim() : '';
     const cinematographerLayerInput = typeof body?.cinematographerPrompt === 'string' ? body.cinematographerPrompt.trim() : '';
     const continuationModeInput = ['strict', 'balanced', 'loose'].includes(String(body?.continuationMode || '').trim())
@@ -760,8 +776,8 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
           scene.imagePrompt || `${scene.slugline}. ${scene.visualDirection}`,
           promptOverride,
         ].filter(Boolean).join('. ');
-        const imageUrl = await generateStoryboardFrameWithLlm(imagePrompt);
-        scene.imageUrl = imageUrl;
+            const imageUrl = await generateStoryboardFrameWithLlm(imagePrompt, imageModelKey);
+            scene.imageUrl = imageUrl;
         latestPackage.payload.storyboard = latestPackage.payload.storyboard.map((item: any) => (
           String(item.beatId) === String(beatId) ? { ...item, imageUrl: scene.imageUrl } : item
         ));
@@ -777,6 +793,9 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const directorLayer = directorLayerInput || promptOverride || String(latestLayer?.directorPrompt || '').trim();
     const cinematographerLayer = cinematographerLayerInput || String(latestLayer?.cinematographerPrompt || '').trim();
     const activeFilmType = filmType || String(latestLayer?.filmType || '').trim();
+    const activeModelKey = (['seedance', 'kling', 'veo3'].includes(modelKeyInput)
+      ? modelKeyInput
+      : String(latestLayer?.generationModel || 'seedance').trim().toLowerCase()) || 'seedance';
     const activeContinuationMode = continuationModeInput || String(latestLayer?.continuationMode || 'strict').trim() || 'strict';
     const activeAnchorBeatId = anchorBeatIdInput || String(latestLayer?.anchorBeatId || '').trim();
     const activeAutoRegenerateThreshold = Number.isFinite(autoRegenerateThresholdInput)
@@ -786,11 +805,45 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const orderedStoryboard = latestPackage.payload.storyboard || [];
     const currentSceneIndex = orderedStoryboard.findIndex((item: any) => String(item.beatId) === String(beatId));
     const previousScene = currentSceneIndex > 0 ? orderedStoryboard[currentSceneIndex - 1] : null;
-    const anchorScene = activeAnchorBeatId
+    const manualAnchorScene = activeAnchorBeatId
       ? orderedStoryboard.find((item: any) => String(item.beatId) === String(activeAnchorBeatId))
       : null;
-    const resolvedAnchorScene = anchorScene || (activeContinuationMode === 'strict' ? previousScene : null);
-    const resolvedSourceImageUrl = String(resolvedAnchorScene?.imageUrl || scene.imageUrl || '').trim();
+
+    let previousClipLastFrameUrl = '';
+    if (!manualAnchorScene?.beatId && previousScene?.beatId) {
+      const previousClip = getLatestSceneVideo(projectId, String(previousScene.beatId));
+      const previousClipUrl = String(previousClip?.videoUrl || '').trim();
+      const previousClipIsReady = String(previousClip?.status || '') === 'completed';
+      if (previousClipIsReady && previousClipUrl) {
+        try {
+          const outputFilename = `anchor-last-frame-${projectId}-${beatId}-${Date.now()}.jpg`;
+          const extractedUrl = await extractLastFrameFromVideo({
+            uploadsDir,
+            videoUrl: previousClipUrl,
+            outputFilename,
+          });
+          previousClipLastFrameUrl = extractedUrl;
+          if (requestAccountId) {
+            registerUploadOwnership({ filename: outputFilename, accountId: String(requestAccountId) });
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'unknown extraction error';
+          console.warn(`[anchor] Failed to extract previous clip last frame for beat ${beatId}: ${message}`);
+        }
+      }
+    }
+
+    const anchorResolution = resolveSceneAnchor({
+      continuationMode: activeContinuationMode as 'strict' | 'balanced' | 'loose',
+      currentSceneImageUrl: String(scene.imageUrl || '').trim(),
+      previousSceneBeatId: String(previousScene?.beatId || ''),
+      previousSceneImageUrl: String(previousScene?.imageUrl || '').trim(),
+      previousClipLastFrameUrl,
+      manualAnchorBeatId: String(manualAnchorScene?.beatId || ''),
+      manualAnchorImageUrl: String(manualAnchorScene?.imageUrl || '').trim(),
+    });
+    const resolvedAnchorBeatId = String(anchorResolution.anchorBeatId || '').trim();
+    const resolvedSourceImageUrl = String(anchorResolution.sourceImageUrl || '').trim();
 
     const directorPrompt = buildDirectorSceneVideoPrompt({
       projectTitle: project.title,
@@ -800,7 +853,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       directorPrompt: [
         activeFilmType ? `Film type: ${activeFilmType}` : '',
         `Continuation mode: ${activeContinuationMode}`,
-        resolvedAnchorScene?.beatId ? `Anchor beat: ${resolvedAnchorScene.beatId}` : 'Anchor beat: current scene frame',
+        resolvedAnchorBeatId ? `Anchor beat: ${resolvedAnchorBeatId}` : 'Anchor beat: current scene frame',
         `Auto-regenerate threshold: ${activeAutoRegenerateThreshold}`,
         directorLayer,
       ].filter(Boolean).join('\n'),
@@ -830,6 +883,8 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         directorPrompt: previewText(directorLayerInput, 240),
         cinematographerPrompt: previewText(cinematographerLayerInput, 240),
         filmType,
+        imageModelKey,
+        modelKey: modelKeyInput || null,
         continuationMode: continuationModeInput || null,
         anchorBeatId: anchorBeatIdInput || null,
         autoRegenerateThreshold: Number.isFinite(autoRegenerateThresholdInput) ? autoRegenerateThresholdInput : null,
@@ -838,8 +893,12 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         directorLayerSource: directorLayerInput ? 'request.directorPrompt' : promptOverride ? 'request.prompt' : 'latestPromptLayer.directorPrompt',
         cinematographerLayerSource: cinematographerLayerInput ? 'request.cinematographerPrompt' : 'latestPromptLayer.cinematographerPrompt|auto-build',
         activeFilmType,
+        imageModelKey,
+        modelKey: activeModelKey,
         continuationMode: activeContinuationMode,
-        anchorBeatId: String(resolvedAnchorScene?.beatId || ''),
+        anchorBeatId: resolvedAnchorBeatId,
+        anchorSource: anchorResolution.anchorSource,
+        hasPreviousClipLastFrame: Boolean(previousClipLastFrameUrl),
         sourceImageUrl: previewText(resolvedSourceImageUrl, 220),
         autoRegenerateThreshold: activeAutoRegenerateThreshold,
       },
@@ -884,15 +943,16 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       cinematographerPrompt: cinematographerLayer,
       mergedPrompt: videoPrompt,
       filmType: activeFilmType,
+      generationModel: activeModelKey,
       continuationMode: activeContinuationMode,
-      anchorBeatId: String(resolvedAnchorScene?.beatId || ''),
+      anchorBeatId: resolvedAnchorBeatId,
       autoRegenerateThreshold: activeAutoRegenerateThreshold,
       source: 'video-generate',
     });
 
     const continuationEvaluation = evaluateSceneContinuation({
       continuationMode: activeContinuationMode as 'strict' | 'balanced' | 'loose',
-      hasAnchor: Boolean(resolvedAnchorScene?.beatId),
+      hasAnchor: Boolean(resolvedAnchorBeatId),
       directorLayer,
       cinematographerLayer,
       threshold: activeAutoRegenerateThreshold,
@@ -902,7 +962,8 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       projectId,
       packageId: latestPackage.id,
       beatId,
-      provider: 'fal-seedance',
+      provider: `fal-${activeModelKey}`,
+      modelKey: activeModelKey,
       prompt: videoPrompt,
       sourceImageUrl: resolvedSourceImageUrl,
       continuityScore: continuationEvaluation.score,

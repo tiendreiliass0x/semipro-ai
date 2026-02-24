@@ -1,9 +1,9 @@
 import { fal } from '@fal-ai/client';
 import { basename, join } from 'path';
 import { existsSync, mkdirSync, rmSync } from 'fs';
+import { resolveVideoModel } from './videoModel';
 
 const FAL_KEY = process.env.FAL_KEY || process.env.FAL_API_KEY || '';
-const FAL_VIDEO_MODEL = process.env.FAL_VIDEO_MODEL || 'fal-ai/bytedance/seedance/v1/lite/image-to-video';
 
 if (FAL_KEY) {
   fal.config({ credentials: FAL_KEY });
@@ -17,27 +17,44 @@ export const buildDirectorSceneVideoPrompt = (args: {
   directorPrompt?: string;
 }) => {
   const styleBible = args.styleBible || {};
-  const doList = Array.isArray(styleBible.doList) ? styleBible.doList.join(', ') : '';
-  const dontList = Array.isArray(styleBible.dontList) ? styleBible.dontList.join(', ') : '';
+  const scene = args.scene || {};
+
+  const line = (label: string, value: unknown) => {
+    const text = String(value || '').trim();
+    return text ? `${label}: ${text}` : '';
+  };
+  const listLine = (label: string, value: unknown) => {
+    const items = Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean) : [];
+    return items.length ? `${label}: ${items.join(', ')}` : '';
+  };
+
+  const sharedScenePacket = [
+    line('Project', args.projectTitle),
+    line('Synopsis', args.synopsis),
+    line('Scene slugline', scene.slugline),
+    line('Visual direction', scene.visualDirection),
+    line('Camera language', scene.camera),
+    line('Audio mood', scene.audio),
+    line('Voiceover intent', scene.voiceover),
+    line('On-screen text', scene.onScreenText),
+    line('Duration seconds', scene.durationSeconds || 5),
+    line('Style visual', styleBible.visualStyle),
+    line('Style camera grammar', styleBible.cameraGrammar),
+    listLine('Style do list', styleBible.doList),
+    listLine('Style dont list', styleBible.dontList),
+  ].filter(Boolean).join('\n');
 
   return [
-    `You are a world-class film director crafting a cinematic shot for project: ${args.projectTitle}.`,
-    `Scene slugline: ${args.scene?.slugline || 'UNKNOWN'}`,
-    `Scene visual direction: ${args.scene?.visualDirection || ''}`,
-    `Camera language: ${args.scene?.camera || ''}`,
-    `Audio mood: ${args.scene?.audio || ''}`,
-    `Voiceover intent: ${args.scene?.voiceover || ''}`,
-    `On-screen text guidance: ${args.scene?.onScreenText || ''}`,
-    `Scene timing: ${args.scene?.durationSeconds || 5} seconds`,
-    `Reference synopsis: ${args.synopsis || ''}`,
-    `Style bible visual style: ${styleBible.visualStyle || ''}`,
-    `Style bible camera grammar: ${styleBible.cameraGrammar || ''}`,
-    `Creative do list: ${doList}`,
-    `Creative don't list: ${dontList}`,
-    `Director override: ${args.directorPrompt || ''}`,
-    'Directorial objective: produce one coherent cinematic clip with clear subject focus, motivated camera movement, dramatic but realistic lighting, and emotionally legible action progression.',
-    'Aesthetic constraints: premium festival-grade composition, believable motion, no surreal artifacts, no random text overlays, no watermarks.',
-  ].join('\n');
+    'ROLE: Film director prompt layer for one coherent cinematic shot.',
+    'SHARED SCENE PACKET:',
+    sharedScenePacket,
+    'DIRECTOR LAYER OVERRIDE:',
+    String(args.directorPrompt || '').trim() || '(none)',
+    'DIRECTOR GOALS:',
+    '- Keep performance and emotional intent crystal clear.',
+    '- Preserve spatial continuity and believable action progression.',
+    '- Avoid surreal artifacts, random text overlays, and watermarks.',
+  ].filter(Boolean).join('\n');
 };
 
 export const buildCinematographerPrompt = (args: {
@@ -47,17 +64,38 @@ export const buildCinematographerPrompt = (args: {
 }) => {
   const styleBible = args.styleBible || {};
   const scenesBible = args.scenesBible || {};
+  const scene = args.scene || {};
+
+  const line = (label: string, value: unknown) => {
+    const text = String(value || '').trim();
+    return text ? `${label}: ${text}` : '';
+  };
+  const listLine = (label: string, value: unknown) => {
+    const items = Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean) : [];
+    return items.length ? `${label}: ${items.join(', ')}` : '';
+  };
+
+  const sharedScenePacket = [
+    line('Scene slugline', scene.slugline),
+    line('Visual direction', scene.visualDirection),
+    line('Camera language', scene.camera),
+    line('Duration seconds', scene.durationSeconds || 5),
+    line('Style camera grammar', styleBible.cameraGrammar),
+    line('Style visual', styleBible.visualStyle),
+    line('Scenes bible location canon', String(scenesBible.locationCanon || '').slice(0, 600)),
+    line('Scenes bible cinematic language', scenesBible.cinematicLanguage),
+    line('Scenes bible palette', scenesBible.paletteAndTexture),
+    listLine('Scenes bible continuity invariants', scenesBible.continuityInvariants),
+  ].filter(Boolean).join('\n');
+
   return [
-    `Cinematographer directives:`,
-    `Scene heading: ${args.scene?.slugline || 'UNKNOWN'}`,
-    `Shot design: ${args.scene?.camera || ''}`,
-    `Visual direction: ${args.scene?.visualDirection || ''}`,
-    `Lighting continuity: ${(scenesBible?.locationCanon || '').slice(0, 600)}`,
-    `Camera grammar lock: ${styleBible.cameraGrammar || ''}`,
-    `Palette and texture lock: ${scenesBible?.paletteAndTexture || ''}`,
-    `Cinematic language lock: ${scenesBible?.cinematicLanguage || ''}`,
-    `Continuity invariants: ${Array.isArray(scenesBible?.continuityInvariants) ? scenesBible.continuityInvariants.join(', ') : ''}`,
-    `Technical constraints: preserve axis consistency, avoid jumpy lens changes, maintain subject scale continuity, realistic motivated movement.`,
+    'ROLE: Cinematographer prompt layer (camera/lens/lighting continuity owner).',
+    'SHARED SCENE PACKET:',
+    sharedScenePacket,
+    'CINEMATOGRAPHY GOALS:',
+    '- Preserve axis consistency and subject scale continuity.',
+    '- Keep lens and camera movement choices motivated and coherent.',
+    '- Maintain realistic lighting continuity and avoid jumpy visual grammar.',
   ].join('\n');
 };
 
@@ -67,17 +105,34 @@ export const buildMergedScenePrompt = (args: {
   scenesBible?: any;
 }) => {
   const scenesBible = args.scenesBible || {};
+  const line = (label: string, value: unknown) => {
+    const text = String(value || '').trim();
+    return text ? `${label}: ${text}` : '';
+  };
+  const listLine = (label: string, value: unknown) => {
+    const items = Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean) : [];
+    return items.length ? `${label}: ${items.map(item => `- ${item}`).join('\n')}` : '';
+  };
+
+  const scenesBibleBlock = [
+    line('Overview', scenesBible.overview),
+    line('Character canon', scenesBible.characterCanon),
+    line('Location canon', scenesBible.locationCanon),
+    line('Cinematic language', scenesBible.cinematicLanguage),
+    line('Palette and texture', scenesBible.paletteAndTexture),
+    listLine('Continuity invariants', scenesBible.continuityInvariants),
+  ].filter(Boolean).join('\n');
+
   return [
-    'SCENES BIBLE (HARD CONSTRAINTS):',
-    scenesBible?.overview || '',
-    scenesBible?.characterCanon || '',
-    scenesBible?.locationCanon || '',
-    Array.isArray(scenesBible?.continuityInvariants) ? scenesBible.continuityInvariants.map((item: string) => `- ${item}`).join('\n') : '',
-    '',
-    'CINEMATOGRAPHER PROMPT (camera/lens/lighting priority):',
+    'PROMPT MERGE CONTRACT:',
+    '- Scenes Bible is a hard constraint layer.',
+    '- Cinematographer layer controls camera/lens/lighting continuity.',
+    '- Director layer controls performance, tone, and emotional intent.',
+    'SCENES BIBLE HARD CONSTRAINTS:',
+    scenesBibleBlock || '(none)',
+    'CINEMATOGRAPHER LAYER:',
     args.cinematographerPrompt,
-    '',
-    'DIRECTOR PROMPT (performance/emotion priority):',
+    'DIRECTOR LAYER:',
     args.directorPrompt,
   ].filter(Boolean).join('\n');
 };
@@ -113,21 +168,23 @@ export const generateSceneVideoWithFal = async (args: {
   uploadsDir: string;
   sourceImageUrl: string;
   prompt: string;
+  modelKey?: string;
   durationSeconds?: number;
 }) => {
   if (!FAL_KEY) {
     throw new Error('FAL_KEY is not configured');
   }
 
+  const model = resolveVideoModel(args.modelKey);
   const startedAt = Date.now();
-  console.log(`[video] FAL scene generation started (model: ${FAL_VIDEO_MODEL})`);
+  console.log(`[video] FAL scene generation started (model: ${model.key} -> ${model.modelId})`);
   const duration = Math.max(5, Math.min(10, Number(args.durationSeconds || 5)));
   const imageUrl = await resolveFalImageUrl({
     uploadsDir: args.uploadsDir,
     sourceImageUrl: args.sourceImageUrl,
   });
 
-  const result = await fal.subscribe(FAL_VIDEO_MODEL, {
+  const result = await fal.subscribe(model.modelId, {
     input: {
       image_url: imageUrl,
       prompt: args.prompt,
@@ -308,4 +365,43 @@ export const createFinalFilmFromClips = async (args: {
       rmSync(tempDir, { recursive: true, force: true });
     }
   }
+};
+
+export const extractLastFrameFromVideo = async (args: {
+  uploadsDir: string;
+  videoUrl: string;
+  outputFilename: string;
+}) => {
+  const source = String(args.videoUrl || '').trim();
+  if (!source) {
+    throw new Error('video URL is required for last-frame extraction');
+  }
+
+  const outputPath = join(args.uploadsDir, args.outputFilename);
+  const inputSource = source.startsWith('/uploads/')
+    ? join(args.uploadsDir, basename(source.split('?')[0]))
+    : source;
+
+  if (source.startsWith('/uploads/') && !existsSync(inputSource)) {
+    throw new Error(`video source not found: ${inputSource}`);
+  }
+
+  const extract = Bun.spawn([
+    'ffmpeg',
+    '-y',
+    '-loglevel', 'error',
+    '-sseof', '-0.05',
+    '-i', inputSource,
+    '-frames:v', '1',
+    '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p',
+    outputPath,
+  ], { stderr: 'pipe' });
+
+  const stderrText = extract.stderr ? await new Response(extract.stderr).text() : '';
+  const exitCode = await extract.exited;
+  if (exitCode !== 0) {
+    throw new Error(`failed to extract last frame: ${stderrText.trim()}`);
+  }
+
+  return `/uploads/${args.outputFilename}`;
 };

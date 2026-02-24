@@ -328,6 +328,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     packageId: string;
     beatId: string;
     provider: string;
+    modelKey?: string;
     prompt: string;
     sourceImageUrl: string;
     continuityScore?: number;
@@ -341,16 +342,17 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     const durationSeconds = Number(args.durationSeconds || 5);
     db.query(`
       INSERT INTO scene_videos (
-        id, projectId, packageId, beatId, provider, prompt, sourceImageUrl,
+        id, projectId, packageId, beatId, provider, modelKey, prompt, sourceImageUrl,
         continuityScore, continuityThreshold, recommendRegenerate, continuityReason,
         status, jobId, videoUrl, durationSeconds, error, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       args.projectId,
       args.packageId,
       args.beatId,
       args.provider || 'local-ffmpeg',
+      args.modelKey || 'seedance',
       args.prompt || '',
       args.sourceImageUrl || '',
       Math.max(0, Math.min(1, Number(args.continuityScore ?? 0.75))),
@@ -516,6 +518,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     cinematographerPrompt: string;
     mergedPrompt: string;
     filmType?: string;
+    generationModel?: string;
     continuationMode?: string;
     anchorBeatId?: string;
     autoRegenerateThreshold?: number;
@@ -528,9 +531,9 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     db.query(`
       INSERT INTO scene_prompt_layers (
         id, projectId, packageId, beatId, directorPrompt, cinematographerPrompt,
-        mergedPrompt, filmType, continuationMode, anchorBeatId, autoRegenerateThreshold,
+        mergedPrompt, filmType, generationModel, continuationMode, anchorBeatId, autoRegenerateThreshold,
         source, version, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       args.projectId,
@@ -540,6 +543,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
       args.cinematographerPrompt || '',
       args.mergedPrompt || '',
       args.filmType || '',
+      args.generationModel || 'seedance',
       args.continuationMode || 'strict',
       args.anchorBeatId || '',
       Number(args.autoRegenerateThreshold || 0.75),
