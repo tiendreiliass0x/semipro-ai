@@ -12,4 +12,11 @@ describe('video model resolver', () => {
     const result = resolveVideoModel('');
     expect(result.key).toBe('seedance');
   });
+
+  test('uses kling 2.5 turbo pro image-to-video default', () => {
+    const result = resolveVideoModel('kling');
+    expect(result.key).toBe('kling');
+    expect(result.modelId).toContain('kling-video');
+    expect(result.modelId).toContain('image-to-video');
+  });
 });

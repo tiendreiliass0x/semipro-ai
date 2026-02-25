@@ -184,23 +184,54 @@ export const generateSceneVideoWithFal = async (args: {
     sourceImageUrl: args.sourceImageUrl,
   });
 
-  const result = await fal.subscribe(model.modelId, {
-    input: {
-      image_url: imageUrl,
-      prompt: args.prompt,
-      resolution: '720p',
-      duration: String(duration),
-    },
-    logs: true,
-    onQueueUpdate: update => {
-      if (update.status === 'IN_PROGRESS') {
-        const messages = Array.isArray(update.logs) ? update.logs.map(log => log.message).filter(Boolean) : [];
-        if (messages.length > 0) {
-          console.log(`[video] ${messages.join(' | ')}`);
-        }
+  const baseInput: Record<string, unknown> = {
+    prompt: args.prompt,
+  };
+
+  const klingUsesStartImage = model.key === 'kling' && model.modelId.includes('/v3/');
+  if (klingUsesStartImage) {
+    baseInput.start_image_url = imageUrl;
+  } else {
+    baseInput.image_url = imageUrl;
+  }
+
+  const modelInput: Record<string, unknown> = {
+    ...baseInput,
+    ...(model.key === 'seedance' ? { resolution: '720p', duration: String(duration) } : {}),
+    ...(model.key === 'kling' ? { duration: String(duration), aspect_ratio: '16:9', negative_prompt: 'blur, distort, and low quality', cfg_scale: 0.5 } : {}),
+    ...(model.key === 'veo3' ? { duration: String(duration) } : {}),
+  };
+
+  const queueUpdateLogger = (update: any) => {
+    if (update.status === 'IN_PROGRESS') {
+      const messages = Array.isArray(update.logs) ? update.logs.map((log: any) => log.message).filter(Boolean) : [];
+      if (messages.length > 0) {
+        console.log(`[video] ${messages.join(' | ')}`);
       }
-    },
-  });
+    }
+  };
+
+  let result: any;
+  try {
+    result = await fal.subscribe(model.modelId, {
+      input: modelInput,
+      logs: true,
+      onQueueUpdate: queueUpdateLogger,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || 'Unknown FAL error');
+    const isUnprocessable = message.toLowerCase().includes('unprocessable');
+    if (isUnprocessable && model.key !== 'seedance') {
+      console.warn(`[video] ${model.key} rejected model-specific payload. Retrying with minimal input.`);
+      result = await fal.subscribe(model.modelId, {
+        input: baseInput,
+        logs: true,
+        onQueueUpdate: queueUpdateLogger,
+      });
+    } else {
+      throw new Error(`${model.label} generation failed: ${message}`);
+    }
+  }
 
   const videoUrl =
     (result as any)?.data?.video?.url
@@ -209,7 +240,7 @@ export const generateSceneVideoWithFal = async (args: {
     || '';
 
   if (!videoUrl) {
-    throw new Error('FAL video generation returned no video URL');
+    throw new Error(`${model.label} generation returned no video URL`);
   }
 
   console.log(`[video] FAL scene generation completed in ${Date.now() - startedAt}ms`);
