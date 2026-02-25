@@ -4,7 +4,7 @@ import heroVideo from '@/assets/kling-page1-v2-1-265.mp4';
 import heroPoster from '@/assets/hero-poster.svg';
 
 const openAuth = (mode: 'login' | 'register') => {
-  window.dispatchEvent(new CustomEvent('semipro:open-auth', { detail: { mode } }));
+  window.dispatchEvent(new CustomEvent('yenengalabs:open-auth', { detail: { mode } }));
 };
 
 export function HeroShowcase() {
@@ -48,7 +48,7 @@ export function HeroShowcase() {
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-5 md:gap-8 xl:gap-12">
               <div className="max-w-2xl xl:max-w-3xl">
                 <h1 className="font-hero-sans text-3xl sm:text-6xl lg:text-7xl xl:text-8xl leading-[0.98] text-white drop-shadow-[0_6px_25px_rgba(0,0,0,0.55)]">
-                  Semipro AI
+                  YenengaLabs
                 </h1>
                 <p className="mt-1.5 md:mt-2 xl:mt-3 text-xs sm:text-base xl:text-lg text-gray-100/90 max-w-xl xl:max-w-2xl line-clamp-2 sm:line-clamp-none">
                   A filmmaker-first AI studio for turning story beats into cinematic scenes, polished clips, and a final cut.

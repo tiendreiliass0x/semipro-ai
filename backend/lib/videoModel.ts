@@ -15,7 +15,7 @@ const MODEL_CONFIG: Record<VideoModelKey, ModelEntry> = {
   kling: {
     key: 'kling',
     label: 'Kling',
-    modelId: process.env.FAL_VIDEO_MODEL_KLING || 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
+    modelId: process.env.FAL_VIDEO_MODEL_KLING || 'fal-ai/kling-video/o3/pro/image-to-video',
   },
   veo3: {
     key: 'veo3',

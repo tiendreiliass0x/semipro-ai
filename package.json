@@ -1,7 +1,7 @@
 {
-  "name": "semipro-ai",
+  "name": "yenengalabs",
   "version": "1.0.0",
-  "description": "Semipro AI - Full Stack Application",
+  "description": "YenengaLabs - Full Stack Application",
   "scripts": {
     "build": "cd app && npm run build",
     "start": "cd backend && npm start",

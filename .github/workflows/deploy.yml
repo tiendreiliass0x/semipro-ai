@@ -1,4 +1,4 @@
-name: Deploy Semipro AI
+name: Deploy YenengaLabs
 
 on:
   push:

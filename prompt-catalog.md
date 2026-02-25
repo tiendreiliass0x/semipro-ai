@@ -1,4 +1,4 @@
-# Semipro AI Prompt Catalog
+# YenengaLabs Prompt Catalog
 
 This file captures the exact prompt instructions currently used across text/image/video generation.
 

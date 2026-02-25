@@ -9,10 +9,18 @@ const getBaseUrl = () => {
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 export const UPLOADS_BASE_URL = getBaseUrl();
 
-const AUTH_TOKEN_STORAGE = 'semipro_auth_token';
+const AUTH_TOKEN_STORAGE = 'yenengalabs_auth_token';
+const LEGACY_AUTH_TOKEN_STORAGE = 'semipro_auth_token';
 
 const getAuthToken = (): string | null => {
-  return localStorage.getItem(AUTH_TOKEN_STORAGE);
+  const current = localStorage.getItem(AUTH_TOKEN_STORAGE);
+  if (current) return current;
+  const legacy = localStorage.getItem(LEGACY_AUTH_TOKEN_STORAGE);
+  if (legacy) {
+    localStorage.setItem(AUTH_TOKEN_STORAGE, legacy);
+    return legacy;
+  }
+  return null;
 };
 
 class ApiError extends Error {

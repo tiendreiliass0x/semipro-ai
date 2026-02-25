@@ -10,6 +10,7 @@ import { createStorylinesDb } from './db/storylines';
 import { createSubscribersDb } from './db/subscribers';
 import { generateHybridScreenplayWithLlm, generateProjectStoryboardWithLlm, generateScenesBibleWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
 import { buildCinematographerPrompt, buildDirectorSceneVideoPrompt, buildMergedScenePrompt, createFinalFilmFromClips, extractLastFrameFromVideo, generateSceneVideoWithFal } from './lib/sceneVideo';
+import { resolveVideoModel } from './lib/videoModel';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
 import { handleAccountRoutes } from './routes/account';
 import { handleAuthRoutes } from './routes/auth';
@@ -1014,4 +1015,14 @@ console.log(`Server running on port ${PORT}`);
 console.log(`Admin key configured: ${ADMIN_ACCESS_KEY ? 'yes' : 'no'}`);
 console.log(`LLM model: ${OPENAI_MODEL}`);
 console.log(`Image model: ${OPENAI_IMAGE_MODEL}`);
+const resolveVideoModelLog = (key: 'seedance' | 'kling' | 'veo3') => {
+  try {
+    const model = resolveVideoModel(key);
+    return `${model.key} -> ${model.modelId}`;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'not configured';
+    return `${key} -> unavailable (${message})`;
+  }
+};
+console.log(`Video models: ${resolveVideoModelLog('seedance')} | ${resolveVideoModelLog('kling')} | ${resolveVideoModelLog('veo3')}`);
 console.log(`Database: ${DB_PATH}`);

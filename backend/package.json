@@ -1,7 +1,7 @@
 {
-  "name": "semipro-ai-backend",
+  "name": "yenengalabs-backend",
   "version": "1.0.0",
-  "description": "Backend API for Semipro AI",
+  "description": "Backend API for YenengaLabs",
   "main": "server.ts",
   "scripts": {
     "start": "bun server.ts",

@@ -57,8 +57,10 @@ export function AuthModal() {
       setAuthOpen(true);
     };
 
+    window.addEventListener('yenengalabs:open-auth', handleOpenAuth as EventListener);
     window.addEventListener('semipro:open-auth', handleOpenAuth as EventListener);
     return () => {
+      window.removeEventListener('yenengalabs:open-auth', handleOpenAuth as EventListener);
       window.removeEventListener('semipro:open-auth', handleOpenAuth as EventListener);
     };
   }, []);
@@ -180,7 +182,7 @@ export function AuthModal() {
         <div className="w-full">
           <nav className="w-full px-4 md:px-6 xl:px-8 py-2.5 xl:py-3 flex items-center justify-between gap-4 xl:gap-8 text-white">
             <button className="inline-flex items-center gap-2 text-sm md:text-base xl:text-lg font-semibold tracking-wide">
-              <Clapperboard className="w-4 h-4" /> Semipro AI
+              <Clapperboard className="w-4 h-4" /> YenengaLabs
             </button>
 
             {!isAuthenticated && (
@@ -235,7 +237,7 @@ export function AuthModal() {
             <div className="flex items-center justify-between gap-2 mb-4">
               <div>
                 <h3 className="text-lg font-semibold text-white">{actionLabel}</h3>
-                <p className="text-xs text-gray-500">Semipro AI Workspace Access</p>
+                <p className="text-xs text-gray-500">YenengaLabs Workspace Access</p>
               </div>
               <button onClick={() => setAuthOpen(false)} className="p-1 rounded border border-gray-700 text-gray-300">
                 <X className="w-4 h-4" />
@@ -279,7 +281,7 @@ export function AuthModal() {
             </button>
 
             {canUseGoogle && (
-              <div className="mt-4 pt-4 border-t border-gray-800 space-y-2">
+              <div className="flex-col align-middle justify-center mt-4 pt-4 border-t border-gray-800 space-y-2">
                 <p className="text-[11px] uppercase tracking-widest text-gray-500">Or continue with Google</p>
                 <div ref={googleButtonRef} className="min-h-[44px]" />
               </div>

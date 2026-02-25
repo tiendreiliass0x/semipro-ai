@@ -1111,7 +1111,7 @@ export function ProjectStudio() {
       <div className="pointer-events-none absolute top-1/3 -right-24 w-96 h-96 bg-amber-500/10 blur-3xl rounded-full" />
       <div className="w-full">
         <div className="hidden xl:block fixed left-0 top-28 z-30">
-          <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-[#07131f]/90 to-black/85 p-2 shadow-xl shadow-cyan-950/20 flex items-start gap-2">
+          <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-[#07131f]/90 to-black/85 p-2 shadow-xl shadow-cyan-950/20 flex items-start gap-2 pr-1">
             <div className="w-14 rounded-xl border border-cyan-500/20 bg-black/35 p-1.5 flex flex-col gap-2">
               <button
                 onClick={() => setLeftSidebarPane(prev => prev === 'misc' ? null : 'misc')}
