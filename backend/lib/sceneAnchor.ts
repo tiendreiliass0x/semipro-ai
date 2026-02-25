@@ -1,4 +1,4 @@
-export type AnchorMode = 'strict' | 'balanced' | 'loose';
+export type AnchorMode = 'off' | 'strict' | 'balanced' | 'loose';
 
 export const resolveSceneAnchor = (args: {
   continuationMode: AnchorMode;
@@ -15,6 +15,14 @@ export const resolveSceneAnchor = (args: {
   const previousSceneImageUrl = String(args.previousSceneImageUrl || '').trim();
   const previousSceneBeatId = String(args.previousSceneBeatId || '').trim();
   const currentSceneImageUrl = String(args.currentSceneImageUrl || '').trim();
+
+  if (args.continuationMode === 'off') {
+    return {
+      anchorBeatId: '',
+      sourceImageUrl: currentSceneImageUrl,
+      anchorSource: 'continuation-off-current-scene-frame',
+    } as const;
+  }
 
   if (manualAnchorBeatId && manualAnchorImageUrl) {
     return {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, Film, Loader2, PlayCircle, RefreshCcw, Video } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Film, Loader2, MoveHorizontal, PlayCircle, RefreshCcw, Video } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { ProjectFinalFilm, ScenePromptLayer, SceneVideoJob, SceneVideoPromptTrace, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
 
@@ -35,7 +35,7 @@ type ScenesWorkspaceProps = {
   isSavingPromptLayerByBeatId: Record<string, boolean>;
   sceneFilmTypeByBeatId: Record<string, string>;
   sceneModelByBeatId: Record<string, 'seedance' | 'kling' | 'veo3'>;
-  continuationModeByBeatId: Record<string, 'strict' | 'balanced' | 'loose'>;
+  continuationModeByBeatId: Record<string, 'off' | 'strict' | 'balanced' | 'loose'>;
   anchorBeatIdByBeatId: Record<string, string>;
   autoRegenThresholdByBeatId: Record<string, number>;
   filmType: string;
@@ -55,7 +55,7 @@ type ScenesWorkspaceProps = {
   onToggleSceneLock: (beatId: string, locked: boolean) => void;
   onChangeSceneFilmType: (beatId: string, filmType: string) => void;
   onChangeSceneModel: (beatId: string, value: 'seedance' | 'kling' | 'veo3') => void;
-  onChangeContinuationMode: (beatId: string, value: 'strict' | 'balanced' | 'loose') => void;
+  onChangeContinuationMode: (beatId: string, value: 'off' | 'strict' | 'balanced' | 'loose') => void;
   onChangeAnchorBeatId: (beatId: string, value: string) => void;
   onChangeAutoRegenThreshold: (beatId: string, value: number) => void;
   onChangeVideoPrompt: (beatId: string, prompt: string) => void;
@@ -295,8 +295,16 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
 
       <h4 className="text-xl text-white font-semibold">{generatedPackage.writeup.headline}</h4>
       <p className="text-sm text-gray-400 mt-1">{generatedPackage.writeup.deck}</p>
-      <div className="mt-4 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-        <div className="flex gap-3 min-w-max pr-2">
+      <div className="mt-4">
+        <div className="mb-2 inline-flex items-center gap-2 text-[11px] uppercase tracking-widest text-gray-500">
+          <MoveHorizontal className="w-3.5 h-3.5" />
+          Horizontal Scroll
+        </div>
+        <div className="relative">
+          <div className="pointer-events-none absolute left-0 top-0 z-10 h-full w-8 bg-gradient-to-r from-[#070b12] to-transparent" />
+          <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-8 bg-gradient-to-l from-[#070b12] to-transparent" />
+          <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="flex gap-3 min-w-max px-1 pr-2">
           {generatedPackage.storyboard.map((scene, beatIndex) => (
             <div
               key={`${scene.sceneNumber}-${scene.beatId}`}
@@ -370,9 +378,10 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
                     <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Scene Continuation Mode</p>
                     <select
                       value={continuationModeByBeatId[scene.beatId] || 'strict'}
-                      onChange={event => onChangeContinuationMode(scene.beatId, event.target.value as 'strict' | 'balanced' | 'loose')}
+                      onChange={event => onChangeContinuationMode(scene.beatId, event.target.value as 'off' | 'strict' | 'balanced' | 'loose')}
                       className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200"
                     >
+                      <option value="off">off</option>
                       <option value="strict">strict</option>
                       <option value="balanced">balanced</option>
                       <option value="loose">loose</option>
@@ -523,6 +532,8 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
               <p className="text-[11px] text-gray-500 line-clamp-2">{scene.imagePrompt || scene.visualDirection}</p>
             </div>
           ))}
+            </div>
+          </div>
         </div>
       </div>
 

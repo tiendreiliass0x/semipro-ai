@@ -2,6 +2,19 @@ import { describe, expect, test } from 'bun:test';
 import { resolveSceneAnchor } from './sceneAnchor';
 
 describe('scene anchor resolver', () => {
+  test('uses current scene frame when continuation is off', () => {
+    const result = resolveSceneAnchor({
+      continuationMode: 'off',
+      currentSceneImageUrl: '/uploads/current.png',
+      previousSceneBeatId: 'beat-1',
+      previousClipLastFrameUrl: '/uploads/prev-last-frame.jpg',
+    });
+
+    expect(result.anchorSource).toBe('continuation-off-current-scene-frame');
+    expect(result.anchorBeatId).toBe('');
+    expect(result.sourceImageUrl).toBe('/uploads/current.png');
+  });
+
   test('uses previous clip last frame for non-first scene', () => {
     const result = resolveSceneAnchor({
       continuationMode: 'strict',

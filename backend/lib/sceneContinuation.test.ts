@@ -2,6 +2,19 @@ import { describe, expect, test } from 'bun:test';
 import { evaluateSceneContinuation } from './sceneContinuation';
 
 describe('scene continuation evaluator', () => {
+  test('disables regeneration recommendations when continuation mode is off', () => {
+    const result = evaluateSceneContinuation({
+      continuationMode: 'off',
+      hasAnchor: false,
+      directorLayer: '',
+      cinematographerLayer: '',
+      threshold: 0.9,
+    });
+
+    expect(result.score).toBe(1);
+    expect(result.recommendRegenerate).toBe(false);
+  });
+
   test('recommends regeneration when strict mode has no anchor and weak prompts', () => {
     const result = evaluateSceneContinuation({
       continuationMode: 'strict',

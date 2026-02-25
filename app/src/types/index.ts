@@ -247,7 +247,7 @@ export interface ScenePromptLayer {
   mergedPrompt: string;
   filmType: string;
   generationModel: 'seedance' | 'kling' | 'veo3';
-  continuationMode: 'strict' | 'balanced' | 'loose';
+  continuationMode: 'off' | 'strict' | 'balanced' | 'loose';
   anchorBeatId: string;
   autoRegenerateThreshold: number;
   source: string;

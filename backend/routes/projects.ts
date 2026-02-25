@@ -614,7 +614,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const modelKey = ['seedance', 'kling', 'veo3'].includes(String(body?.modelKey || '').trim().toLowerCase())
       ? String(body.modelKey).trim().toLowerCase()
       : 'seedance';
-    const continuationMode = ['strict', 'balanced', 'loose'].includes(String(body?.continuationMode || '').trim())
+    const continuationMode = ['off', 'strict', 'balanced', 'loose'].includes(String(body?.continuationMode || '').trim())
       ? String(body.continuationMode).trim()
       : 'strict';
     const anchorBeatId = typeof body?.anchorBeatId === 'string' ? body.anchorBeatId.trim() : '';
@@ -763,7 +763,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const modelKeyInput = typeof body?.modelKey === 'string' ? body.modelKey.trim().toLowerCase() : '';
     const directorLayerInput = typeof body?.directorPrompt === 'string' ? body.directorPrompt.trim() : '';
     const cinematographerLayerInput = typeof body?.cinematographerPrompt === 'string' ? body.cinematographerPrompt.trim() : '';
-    const continuationModeInput = ['strict', 'balanced', 'loose'].includes(String(body?.continuationMode || '').trim())
+    const continuationModeInput = ['off', 'strict', 'balanced', 'loose'].includes(String(body?.continuationMode || '').trim())
       ? String(body.continuationMode).trim()
       : '';
     const anchorBeatIdInput = typeof body?.anchorBeatId === 'string' ? body.anchorBeatId.trim() : '';
@@ -834,7 +834,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     }
 
     const anchorResolution = resolveSceneAnchor({
-      continuationMode: activeContinuationMode as 'strict' | 'balanced' | 'loose',
+      continuationMode: activeContinuationMode as 'off' | 'strict' | 'balanced' | 'loose',
       currentSceneImageUrl: String(scene.imageUrl || '').trim(),
       previousSceneBeatId: String(previousScene?.beatId || ''),
       previousSceneImageUrl: String(previousScene?.imageUrl || '').trim(),
@@ -951,7 +951,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     });
 
     const continuationEvaluation = evaluateSceneContinuation({
-      continuationMode: activeContinuationMode as 'strict' | 'balanced' | 'loose',
+      continuationMode: activeContinuationMode as 'off' | 'strict' | 'balanced' | 'loose',
       hasAnchor: Boolean(resolvedAnchorBeatId),
       directorLayer,
       cinematographerLayer,

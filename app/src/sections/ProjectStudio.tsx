@@ -52,7 +52,7 @@ export function ProjectStudio() {
   const [storyboardImageModel, setStoryboardImageModel] = useState<'fal' | 'grok'>('fal');
   const [sceneFilmTypeByBeatId, setSceneFilmTypeByBeatId] = useState<Record<string, string>>({});
   const [sceneModelByBeatId, setSceneModelByBeatId] = useState<Record<string, 'seedance' | 'kling' | 'veo3'>>({});
-  const [continuationModeByBeatId, setContinuationModeByBeatId] = useState<Record<string, 'strict' | 'balanced' | 'loose'>>({});
+  const [continuationModeByBeatId, setContinuationModeByBeatId] = useState<Record<string, 'off' | 'strict' | 'balanced' | 'loose'>>({});
   const [anchorBeatIdByBeatId, setAnchorBeatIdByBeatId] = useState<Record<string, string>>({});
   const [autoRegenThresholdByBeatId, setAutoRegenThresholdByBeatId] = useState<Record<string, number>>({});
   const [synopsisTab, setSynopsisTab] = useState<'pseudo' | 'polished' | 'screenplay' | 'scenesBible'>('pseudo');
@@ -63,7 +63,7 @@ export function ProjectStudio() {
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isSavingProjectDetails, setIsSavingProjectDetails] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
-  const [showRightProjectSettings, setShowRightProjectSettings] = useState(false);
+  const [leftSidebarPane, setLeftSidebarPane] = useState<'misc' | 'settings' | null>('misc');
   const [isRefiningSynopsis, setIsRefiningSynopsis] = useState(false);
   const [isSavingStyleBible, setIsSavingStyleBible] = useState(false);
   const [isGeneratingScreenplay, setIsGeneratingScreenplay] = useState(false);
@@ -272,7 +272,7 @@ export function ProjectStudio() {
       const cinematographerByBeat: Record<string, string> = {};
       const filmTypeByBeat: Record<string, string> = {};
       const modelByBeat: Record<string, 'seedance' | 'kling' | 'veo3'> = {};
-      const continuationModeByBeat: Record<string, 'strict' | 'balanced' | 'loose'> = {};
+      const continuationModeByBeat: Record<string, 'off' | 'strict' | 'balanced' | 'loose'> = {};
       const anchorByBeat: Record<string, string> = {};
       const thresholdByBeat: Record<string, number> = {};
       const versionByBeat: Record<string, number> = {};
@@ -286,7 +286,7 @@ export function ProjectStudio() {
         if (item.generationModel === 'seedance' || item.generationModel === 'kling' || item.generationModel === 'veo3') {
           modelByBeat[item.beatId] = item.generationModel;
         }
-        if (item.continuationMode === 'strict' || item.continuationMode === 'balanced' || item.continuationMode === 'loose') {
+        if (item.continuationMode === 'off' || item.continuationMode === 'strict' || item.continuationMode === 'balanced' || item.continuationMode === 'loose') {
           continuationModeByBeat[item.beatId] = item.continuationMode;
         }
         if (String(item.anchorBeatId || '').trim()) {
@@ -351,7 +351,7 @@ export function ProjectStudio() {
     if (layer.generationModel === 'seedance' || layer.generationModel === 'kling' || layer.generationModel === 'veo3') {
       setSceneModelByBeatId(prev => ({ ...prev, [beatId]: layer.generationModel }));
     }
-    if (layer.continuationMode === 'strict' || layer.continuationMode === 'balanced' || layer.continuationMode === 'loose') {
+    if (layer.continuationMode === 'off' || layer.continuationMode === 'strict' || layer.continuationMode === 'balanced' || layer.continuationMode === 'loose') {
       setContinuationModeByBeatId(prev => ({ ...prev, [beatId]: layer.continuationMode }));
     }
     setAnchorBeatIdByBeatId(prev => ({ ...prev, [beatId]: String(layer.anchorBeatId || '') }));
@@ -365,7 +365,7 @@ export function ProjectStudio() {
     setEditingProjectTitle(selectedProject.title || '');
     setEditingProjectPseudoSynopsis(selectedProject.pseudoSynopsis || '');
     setIsEditingProjectDetails(false);
-    setShowRightProjectSettings(false);
+    setLeftSidebarPane('misc');
     setScreenplayInlineError(null);
     setScenesBibleInlineError(null);
   }, [selectedProject?.id]);
@@ -1106,18 +1106,75 @@ export function ProjectStudio() {
 
   return (
     <>
-    <section id="project-studio" className="relative min-h-screen py-20 px-4 overflow-hidden lg:px-10 xl:px-16">
+    <section id="project-studio" className="relative min-h-screen py-20 overflow-hidden">
       <div className="pointer-events-none absolute -top-24 -left-20 w-80 h-80 bg-cyan-500/15 blur-3xl rounded-full" />
       <div className="pointer-events-none absolute top-1/3 -right-24 w-96 h-96 bg-amber-500/10 blur-3xl rounded-full" />
-      <div className="w-full max-w-[1500px] mx-auto">
-        <div className="text-center mb-10 mt-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 text-xs uppercase tracking-widest mb-4">
-            <Compass className="w-3.5 h-3.5" /> Workflow
+      <div className="w-full">
+        <div className="hidden xl:block fixed left-0 top-28 z-30">
+          <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-[#07131f]/90 to-black/85 p-2 shadow-xl shadow-cyan-950/20 flex items-start gap-2">
+            <div className="w-14 rounded-xl border border-cyan-500/20 bg-black/35 p-1.5 flex flex-col gap-2">
+              <button
+                onClick={() => setLeftSidebarPane(prev => prev === 'misc' ? null : 'misc')}
+                className={`w-full rounded-lg px-1 py-2 text-[10px] flex flex-col items-center gap-1 ${leftSidebarPane === 'misc' ? 'bg-cyan-500/15 text-cyan-100 border border-cyan-400/40' : 'text-gray-400 border border-transparent hover:text-gray-200'}`}
+              >
+                <Compass className="w-4 h-4" /> Misc
+              </button>
+              <button
+                onClick={() => setLeftSidebarPane(prev => prev === 'settings' ? null : 'settings')}
+                className={`w-full rounded-lg px-1 py-2 text-[10px] flex flex-col items-center gap-1 ${leftSidebarPane === 'settings' ? 'bg-rose-500/15 text-rose-100 border border-rose-400/40' : 'text-gray-400 border border-transparent hover:text-gray-200'}`}
+              >
+                <Palette className="w-4 h-4" /> Settings
+              </button>
+            </div>
+
+            <div className={`transition-all duration-200 ease-out overflow-hidden ${leftSidebarPane ? 'w-[270px] opacity-100' : 'w-0 opacity-0 pointer-events-none'}`}>
+              <div className="max-h-[calc(100vh-9rem)] rounded-xl border border-cyan-500/20 bg-black/30 p-3 overflow-auto">
+                {!selectedProject ? (
+                  <p className="text-xs text-gray-500">Select or create a project to see project panes.</p>
+                ) : leftSidebarPane === 'misc' ? (
+                  <div className="space-y-3">
+                    <p className="text-xs uppercase tracking-widest text-gray-500">Project Misc</p>
+                    <div className="rounded-lg border border-gray-800 bg-black/30 p-3">
+                      <p className="text-[11px] uppercase tracking-widest text-gray-500">Project</p>
+                      <p className="text-sm text-gray-100 mt-1 break-words">{selectedProject.title}</p>
+                      <p className="text-[11px] text-gray-500 mt-2">{selectedProject.durationMinutes} min · {selectedProject.style}</p>
+                    </div>
+                    <div className="rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
+                      <p className="text-[11px] uppercase tracking-widest text-gray-500">Live Stats</p>
+                      <p className="text-xs text-gray-300">Notes: {miscStats.notes}</p>
+                      <p className="text-xs text-gray-300">AI Starters: {miscStats.aiStarters}</p>
+                      <p className="text-xs text-gray-300">Beat Scenes: {miscStats.beats}</p>
+                      <p className="text-xs text-gray-300">Storyboard Scenes: {miscStats.scenes}</p>
+                      <p className="text-xs text-gray-300">Videos Completed: {miscStats.completedVideos}</p>
+                    </div>
+                    <div className="rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
+                      <p className="text-[11px] uppercase tracking-widest text-gray-500">Pipeline Health</p>
+                      <p className={`text-xs ${selectedProject.polishedSynopsis ? 'text-emerald-300' : 'text-gray-500'}`}>Polished Synopsis {selectedProject.polishedSynopsis ? 'ready' : 'pending'}</p>
+                      <p className={`text-xs ${screenplay.screenplay ? 'text-emerald-300' : 'text-gray-500'}`}>Hybrid Screenplay {screenplay.screenplay ? 'ready' : 'pending'}</p>
+                      <p className={`text-xs ${styleBible.visualStyle || styleBible.cameraGrammar ? 'text-emerald-300' : 'text-gray-500'}`}>Style Bible {(styleBible.visualStyle || styleBible.cameraGrammar) ? 'seeded' : 'pending'}</p>
+                      <p className={`text-xs ${scenesBible.overview ? 'text-emerald-300' : 'text-gray-500'}`}>Scenes Bible {scenesBible.overview ? 'ready' : 'pending'}</p>
+                      <p className={`text-xs ${finalFilm?.status === 'completed' ? 'text-emerald-300' : finalFilm?.status === 'failed' ? 'text-rose-300' : 'text-gray-500'}`}>Final Film {finalFilm?.status || 'not started'}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs uppercase tracking-widest text-rose-200">Project Settings</p>
+                    <p className="text-[11px] text-rose-100/80">Delete removes this project from active views while preserving data in the database.</p>
+                    <button
+                      onClick={() => setShowDeleteConfirmModal(true)}
+                      className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded border border-rose-400/40 text-rose-100 text-sm"
+                    >
+                      Delete Project
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-          
         </div>
 
-        <div className="grid lg:grid-cols-[minmax(0,1fr)_300px] gap-6 items-start">
+        <div className="grid xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 items-start xl:pl-20">
+
           <div className="space-y-6 min-w-0">
             {!selectedProject && (
               <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-black/70 to-[#111827]/60 p-6 text-gray-300 space-y-4">
@@ -1569,182 +1626,131 @@ export function ProjectStudio() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-orange-500/20 bg-gradient-to-br from-[#1d1206]/70 to-black/60 p-5">
-                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">Director Prompt</p>
-                  <textarea value={directorPrompt} onChange={event => setDirectorPrompt(event.target.value)} className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-16" />
-                  <div className="mt-3">
-                    <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Film Type</p>
-                    <select
-                      value={filmType}
-                      onChange={event => setFilmType(event.target.value)}
-                      className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm text-gray-200"
-                    >
-                      {filmTypeOptions.map(option => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="mt-3">
-                    <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Storyboard Image Model</p>
-                    <select
-                      value={storyboardImageModel}
-                      onChange={event => setStoryboardImageModel(event.target.value as 'fal' | 'grok')}
-                      className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm text-gray-200"
-                    >
-                      {storyboardImageModelOptions.map(option => (
-                        <option key={option.key} value={option.key}>{option.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <button onClick={generateStoryboard} disabled={!isAuthenticated || isGeneratingStoryboard} className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
-                    {isGeneratingStoryboard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clapperboard className="w-4 h-4" />} {isGeneratingStoryboard ? 'Generating...' : 'Generate Storyboard'}
-                  </button>
-
-                  {generatedPackage?.storyboard?.length ? (
-                    <div className="mt-3 rounded-xl border border-white/25 bg-black/25 p-2.5">
-                      <div
-                        className="grid gap-2"
-                        style={{ gridTemplateColumns: `repeat(${Math.max(generatedPackage.storyboard.length, 1)}, minmax(0, 1fr))` }}
-                      >
-                        {generatedPackage.storyboard.map(scene => (
-                          <div
-                            key={`storyboard-top-strip-${scene.beatId}`}
-                            className={`w-full h-12 md:h-14 rounded-md overflow-hidden border-2 ${getStoryboardThumbBorder(scene.beatId)} bg-black/40`}
-                            title={`Scene ${scene.sceneNumber}`}
-                          >
-                            <img
-                              src={getSceneFrameUrl(scene)}
-                              alt={`Scene ${scene.sceneNumber}`}
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-
-                {isGeneratingStoryboard && (
-                  <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4 text-sm text-cyan-100 inline-flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Creating scenes and rendering frame images in the background...
-                  </div>
-                )}
-
-                {generatedPackage && (
-                  <ScenesWorkspace
-                    generatedPackage={generatedPackage}
-                    latestPackage={latestPackage}
-                    sceneVideosByBeatId={sceneVideosByBeatId}
-                    videoStats={videoStats}
-                    finalFilm={finalFilm}
-                    isAuthenticated={isAuthenticated}
-                    isRefreshingVideos={isRefreshingVideos}
-                    isGeneratingAllVideos={isGeneratingAllVideos}
-                    isGeneratingFinalFilm={isGeneratingFinalFilm}
-                    isGeneratingVideoBeatId={isGeneratingVideoBeatId}
-                    videoPromptByBeatId={videoPromptByBeatId}
-                    cinematographerPromptByBeatId={cinematographerPromptByBeatId}
-                    promptLayerVersionByBeatId={promptLayerVersionByBeatId}
-                    promptLayerHistoryByBeatId={promptLayerHistoryByBeatId}
-                    activePromptHistoryBeatId={activePromptHistoryBeatId}
-                    isLoadingPromptHistory={isLoadingPromptHistory}
-                    traceHistoryByBeatId={traceHistoryByBeatId}
-                    activeTraceBeatId={activeTraceBeatId}
-                    isLoadingTraceHistory={isLoadingTraceHistory}
-                    isSavingPromptLayerByBeatId={isSavingPromptLayerByBeatId}
-                    sceneFilmTypeByBeatId={sceneFilmTypeByBeatId}
-                    sceneModelByBeatId={sceneModelByBeatId}
-                    continuationModeByBeatId={continuationModeByBeatId}
-                    anchorBeatIdByBeatId={anchorBeatIdByBeatId}
-                    autoRegenThresholdByBeatId={autoRegenThresholdByBeatId}
-                    filmType={filmType}
-                    filmTypeOptions={filmTypeOptions}
-                    videoModelOptions={videoModelOptions}
-                    cameraMoves={cameraMoves}
-                    onRefreshSceneVideos={refreshSceneVideoStatuses}
-                    onGenerateAllSceneVideos={generateAllSceneVideos}
-                    onGenerateFinalFilm={generateFinalFilm}
-                    onGenerateSceneVideo={generateSceneVideo}
-                    onSaveScenePromptLayer={beatId => saveScenePromptLayer(beatId)}
-                    onOpenPromptLayerHistory={openPromptLayerHistory}
-                    onClosePromptLayerHistory={() => setActivePromptHistoryBeatId(null)}
-                    onOpenSceneVideoTraceHistory={openSceneVideoTraceHistory}
-                    onCloseSceneVideoTraceHistory={() => setActiveTraceBeatId(null)}
-                    onRestoreScenePromptLayer={restoreScenePromptLayer}
-                    onToggleSceneLock={toggleSceneLock}
-                    onChangeSceneFilmType={(beatId, value) => setSceneFilmTypeByBeatId(prev => ({ ...prev, [beatId]: value }))}
-                    onChangeSceneModel={(beatId, value) => setSceneModelByBeatId(prev => ({ ...prev, [beatId]: value }))}
-                    onChangeContinuationMode={(beatId, value) => setContinuationModeByBeatId(prev => ({ ...prev, [beatId]: value }))}
-                    onChangeAnchorBeatId={(beatId, value) => setAnchorBeatIdByBeatId(prev => ({ ...prev, [beatId]: value }))}
-                    onChangeAutoRegenThreshold={(beatId, value) => setAutoRegenThresholdByBeatId(prev => ({ ...prev, [beatId]: value }))}
-                    onChangeVideoPrompt={(beatId, prompt) => setVideoPromptByBeatId(prev => ({ ...prev, [beatId]: prompt }))}
-                    onChangeCinematographerPrompt={(beatId, prompt) => setCinematographerPromptByBeatId(prev => ({ ...prev, [beatId]: prompt }))}
-                    onAppendCameraMove={appendCameraMoveToPrompt}
-                    getSceneFrameUrl={getSceneFrameUrl}
-                    getSceneVideoUrl={getSceneVideoUrl}
-                  />
-                )}
               </>
             )}
           </div>
 
-          <aside className="hidden lg:block sticky top-24 self-start">
-            <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-[#07131f]/80 to-black/80 p-4 h-[calc(100vh-8rem)] overflow-auto shadow-xl shadow-cyan-950/20">
-              <p className="text-xs uppercase tracking-widest text-gray-500 mb-3">Current Project Misc</p>
-
-              {!selectedProject ? (
-                <p className="text-xs text-gray-500">Select or create a project to see details and live production stats.</p>
-              ) : (
-                <div className="space-y-3">
-                  <div className="rounded-lg border border-gray-800 bg-black/30 p-3">
-                    <p className="text-[11px] uppercase tracking-widest text-gray-500">Project</p>
-                    <p className="text-sm text-gray-100 mt-1 break-words">{selectedProject.title}</p>
-                    <p className="text-[11px] text-gray-500 mt-2">{selectedProject.durationMinutes} min · {selectedProject.style}</p>
-                  </div>
-
-                  <div className="rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
-                    <p className="text-[11px] uppercase tracking-widest text-gray-500">Live Stats</p>
-                    <p className="text-xs text-gray-300">Notes: {miscStats.notes}</p>
-                    <p className="text-xs text-gray-300">AI Starters: {miscStats.aiStarters}</p>
-                    <p className="text-xs text-gray-300">Beat Scenes: {miscStats.beats}</p>
-                    <p className="text-xs text-gray-300">Storyboard Scenes: {miscStats.scenes}</p>
-                    <p className="text-xs text-gray-300">Videos Completed: {miscStats.completedVideos}</p>
-                  </div>
-
-                  <div className="rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2">
-                    <p className="text-[11px] uppercase tracking-widest text-gray-500">Pipeline Health</p>
-                    <p className={`text-xs ${selectedProject.polishedSynopsis ? 'text-emerald-300' : 'text-gray-500'}`}>Polished Synopsis {selectedProject.polishedSynopsis ? 'ready' : 'pending'}</p>
-                    <p className={`text-xs ${screenplay.screenplay ? 'text-emerald-300' : 'text-gray-500'}`}>Hybrid Screenplay {screenplay.screenplay ? 'ready' : 'pending'}</p>
-                    <p className={`text-xs ${styleBible.visualStyle || styleBible.cameraGrammar ? 'text-emerald-300' : 'text-gray-500'}`}>Style Bible {(styleBible.visualStyle || styleBible.cameraGrammar) ? 'seeded' : 'pending'}</p>
-                    <p className={`text-xs ${scenesBible.overview ? 'text-emerald-300' : 'text-gray-500'}`}>Scenes Bible {scenesBible.overview ? 'ready' : 'pending'}</p>
-                    <p className={`text-xs ${finalFilm?.status === 'completed' ? 'text-emerald-300' : finalFilm?.status === 'failed' ? 'text-rose-300' : 'text-gray-500'}`}>Final Film {finalFilm?.status || 'not started'}</p>
-                  </div>
-
-                  <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-3 space-y-2">
-                    <button
-                      onClick={() => setShowRightProjectSettings(prev => !prev)}
-                      className="w-full inline-flex items-center justify-between gap-2"
-                    >
-                      <span className="text-[11px] uppercase tracking-widest text-rose-200">Project Settings</span>
-                      <ChevronDown className={`w-4 h-4 text-rose-200 transition-transform ${showRightProjectSettings ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {showRightProjectSettings && (
-                      <>
-                        <p className="text-[11px] text-rose-100/80">Soft delete removes this project from active views while preserving data in the database.</p>
-                        <button
-                          onClick={() => setShowDeleteConfirmModal(true)}
-                          className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded border border-rose-400/40 text-rose-100 text-sm"
-                        >
-                          Delete Project
-                        </button>
-                      </>
-                    )}
-                  </div>
+          <aside className="space-y-6 min-w-0 self-start">
+            {selectedProject && (
+              <div className="rounded-2xl border border-orange-500/20 bg-gradient-to-br from-[#1d1206]/70 to-black/60 p-5">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <p className="text-xs uppercase tracking-widest text-gray-500">Storyboard</p>
+                  <button onClick={generateStoryboard} disabled={!isAuthenticated || isGeneratingStoryboard} className="inline-flex items-center gap-2 px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
+                    {isGeneratingStoryboard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clapperboard className="w-4 h-4" />} {isGeneratingStoryboard ? 'Generating...' : 'Generate Storyboard'}
+                  </button>
                 </div>
-              )}
-            </div>
+                <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-2">Director Prompt</p>
+                <textarea value={directorPrompt} onChange={event => setDirectorPrompt(event.target.value)} className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-16" />
+                <div className="mt-3">
+                  <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Film Type</p>
+                  <select
+                    value={filmType}
+                    onChange={event => setFilmType(event.target.value)}
+                    className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm text-gray-200"
+                  >
+                    {filmTypeOptions.map(option => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mt-3">
+                  <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Storyboard Image Model</p>
+                  <select
+                    value={storyboardImageModel}
+                    onChange={event => setStoryboardImageModel(event.target.value as 'fal' | 'grok')}
+                    className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm text-gray-200"
+                  >
+                    {storyboardImageModelOptions.map(option => (
+                      <option key={option.key} value={option.key}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {generatedPackage?.storyboard?.length ? (
+                  <div className="mt-3 rounded-xl border border-white/25 bg-black/25 p-2.5">
+                    <div
+                      className="grid gap-2"
+                      style={{ gridTemplateColumns: `repeat(${Math.max(generatedPackage.storyboard.length, 1)}, minmax(0, 1fr))` }}
+                    >
+                      {generatedPackage.storyboard.map(scene => (
+                        <div
+                          key={`storyboard-top-strip-${scene.beatId}`}
+                          className={`w-full h-12 md:h-14 rounded-md overflow-hidden border-2 ${getStoryboardThumbBorder(scene.beatId)} bg-black/40`}
+                          title={`Scene ${scene.sceneNumber}`}
+                        >
+                          <img
+                            src={getSceneFrameUrl(scene)}
+                            alt={`Scene ${scene.sceneNumber}`}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {isGeneratingStoryboard && (
+              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4 text-sm text-cyan-100 inline-flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Creating scenes and rendering frame images in the background...
+              </div>
+            )}
+
+            {generatedPackage && (
+              <ScenesWorkspace
+                generatedPackage={generatedPackage}
+                latestPackage={latestPackage}
+                sceneVideosByBeatId={sceneVideosByBeatId}
+                videoStats={videoStats}
+                finalFilm={finalFilm}
+                isAuthenticated={isAuthenticated}
+                isRefreshingVideos={isRefreshingVideos}
+                isGeneratingAllVideos={isGeneratingAllVideos}
+                isGeneratingFinalFilm={isGeneratingFinalFilm}
+                isGeneratingVideoBeatId={isGeneratingVideoBeatId}
+                videoPromptByBeatId={videoPromptByBeatId}
+                cinematographerPromptByBeatId={cinematographerPromptByBeatId}
+                promptLayerVersionByBeatId={promptLayerVersionByBeatId}
+                promptLayerHistoryByBeatId={promptLayerHistoryByBeatId}
+                activePromptHistoryBeatId={activePromptHistoryBeatId}
+                isLoadingPromptHistory={isLoadingPromptHistory}
+                traceHistoryByBeatId={traceHistoryByBeatId}
+                activeTraceBeatId={activeTraceBeatId}
+                isLoadingTraceHistory={isLoadingTraceHistory}
+                isSavingPromptLayerByBeatId={isSavingPromptLayerByBeatId}
+                sceneFilmTypeByBeatId={sceneFilmTypeByBeatId}
+                sceneModelByBeatId={sceneModelByBeatId}
+                continuationModeByBeatId={continuationModeByBeatId}
+                anchorBeatIdByBeatId={anchorBeatIdByBeatId}
+                autoRegenThresholdByBeatId={autoRegenThresholdByBeatId}
+                filmType={filmType}
+                filmTypeOptions={filmTypeOptions}
+                videoModelOptions={videoModelOptions}
+                cameraMoves={cameraMoves}
+                onRefreshSceneVideos={refreshSceneVideoStatuses}
+                onGenerateAllSceneVideos={generateAllSceneVideos}
+                onGenerateFinalFilm={generateFinalFilm}
+                onGenerateSceneVideo={generateSceneVideo}
+                onSaveScenePromptLayer={beatId => saveScenePromptLayer(beatId)}
+                onOpenPromptLayerHistory={openPromptLayerHistory}
+                onClosePromptLayerHistory={() => setActivePromptHistoryBeatId(null)}
+                onOpenSceneVideoTraceHistory={openSceneVideoTraceHistory}
+                onCloseSceneVideoTraceHistory={() => setActiveTraceBeatId(null)}
+                onRestoreScenePromptLayer={restoreScenePromptLayer}
+                onToggleSceneLock={toggleSceneLock}
+                onChangeSceneFilmType={(beatId, value) => setSceneFilmTypeByBeatId(prev => ({ ...prev, [beatId]: value }))}
+                onChangeSceneModel={(beatId, value) => setSceneModelByBeatId(prev => ({ ...prev, [beatId]: value }))}
+                onChangeContinuationMode={(beatId, value) => setContinuationModeByBeatId(prev => ({ ...prev, [beatId]: value }))}
+                onChangeAnchorBeatId={(beatId, value) => setAnchorBeatIdByBeatId(prev => ({ ...prev, [beatId]: value }))}
+                onChangeAutoRegenThreshold={(beatId, value) => setAutoRegenThresholdByBeatId(prev => ({ ...prev, [beatId]: value }))}
+                onChangeVideoPrompt={(beatId, prompt) => setVideoPromptByBeatId(prev => ({ ...prev, [beatId]: prompt }))}
+                onChangeCinematographerPrompt={(beatId, prompt) => setCinematographerPromptByBeatId(prev => ({ ...prev, [beatId]: prompt }))}
+                onAppendCameraMove={appendCameraMoveToPrompt}
+                getSceneFrameUrl={getSceneFrameUrl}
+                getSceneVideoUrl={getSceneVideoUrl}
+              />
+            )}
           </aside>
         </div>
 

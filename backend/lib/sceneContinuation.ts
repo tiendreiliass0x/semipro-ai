@@ -1,4 +1,4 @@
-export type ContinuationMode = 'strict' | 'balanced' | 'loose';
+export type ContinuationMode = 'off' | 'strict' | 'balanced' | 'loose';
 
 export type ContinuationEvaluationInput = {
   continuationMode: ContinuationMode;
@@ -16,6 +16,14 @@ export type ContinuationEvaluation = {
 
 export const evaluateSceneContinuation = (args: ContinuationEvaluationInput): ContinuationEvaluation => {
   const mode = args.continuationMode || 'strict';
+  if (mode === 'off') {
+    const score = 1;
+    return {
+      score,
+      recommendRegenerate: false,
+      reason: 'Continuation mode is off. Regeneration is user-directed.',
+    };
+  }
   let score = mode === 'strict' ? 0.62 : mode === 'balanced' ? 0.72 : 0.8;
   if (args.hasAnchor) score += 0.18;
   if (String(args.directorLayer || '').trim().length > 24) score += 0.05;
