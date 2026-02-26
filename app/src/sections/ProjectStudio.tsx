@@ -63,7 +63,7 @@ export function ProjectStudio() {
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isSavingProjectDetails, setIsSavingProjectDetails] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
-  const [leftSidebarPane, setLeftSidebarPane] = useState<'projects' | 'misc' | 'settings' | null>('projects');
+  const [leftSidebarPane, setLeftSidebarPane] = useState<'projects' | 'misc' | 'settings' | null>(null);
   const [isRefiningSynopsis, setIsRefiningSynopsis] = useState(false);
   const [isSavingStyleBible, setIsSavingStyleBible] = useState(false);
   const [isGeneratingScreenplay, setIsGeneratingScreenplay] = useState(false);
@@ -369,7 +369,7 @@ export function ProjectStudio() {
     setEditingProjectPseudoSynopsis(selectedProject.pseudoSynopsis || '');
     setFilmType(String(selectedProject.filmType || '').trim() || 'cinematic live-action');
     setIsEditingProjectDetails(false);
-    setLeftSidebarPane('projects');
+    setLeftSidebarPane(null);
     setScreenplayInlineError(null);
     setScenesBibleInlineError(null);
   }, [selectedProject?.id]);
