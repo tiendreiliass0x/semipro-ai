@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, LogOut, Settings, X } from 'lucide-react';
+import { Loader2, LogOut, PlayCircle, Settings, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 declare global {
@@ -202,7 +202,7 @@ export function AuthModal() {
                   }}
                   className="hidden md:inline-flex px-4 xl:px-5 py-1.5 xl:py-2 rounded-full border border-white/45 text-xs md:text-sm xl:text-base text-white bg-white/5 hover:bg-white/10 transition"
                 >
-                  Sign In
+                  <PlayCircle className="w-4 h-4" /> Sign In
                 </button>
                 <button
                   onClick={() => {

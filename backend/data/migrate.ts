@@ -131,6 +131,7 @@ db.exec(`
     polishedSynopsis TEXT DEFAULT '',
     plotScript TEXT DEFAULT '',
     style TEXT DEFAULT 'cinematic',
+    filmType TEXT DEFAULT 'cinematic live-action',
     durationMinutes INTEGER DEFAULT 1,
     status TEXT DEFAULT 'draft',
     deletedAt INTEGER,
@@ -138,6 +139,16 @@ db.exec(`
     updatedAt INTEGER NOT NULL
   )
 `);
+
+const ensureProjectColumn = (columnSql: string) => {
+  try {
+    db.exec(`ALTER TABLE projects ADD COLUMN ${columnSql}`);
+  } catch {
+    // no-op when column already exists
+  }
+};
+
+ensureProjectColumn("filmType TEXT DEFAULT 'cinematic live-action'");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS story_notes (

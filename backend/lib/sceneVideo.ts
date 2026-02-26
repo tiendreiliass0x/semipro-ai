@@ -251,8 +251,37 @@ export const generateSceneVideoWithFal = async (args: {
     modelKey: model.key,
   });
 
+  const compactPromptForModel = (prompt: string, modelKey: string) => {
+    const raw = String(prompt || '').trim();
+    if (!raw) return raw;
+    if (modelKey !== 'veo3') return raw;
+
+    const lines = raw.split('\n').map(line => line.trim()).filter(Boolean);
+    const priority = lines.filter(line => {
+      const lower = line.toLowerCase();
+      return (
+        lower.startsWith('scene slugline:')
+        || lower.startsWith('visual direction:')
+        || lower.startsWith('camera language:')
+        || lower.startsWith('duration seconds:')
+        || lower.startsWith('film type:')
+        || lower.startsWith('continuation mode:')
+        || lower.startsWith('anchor beat:')
+        || lower.startsWith('director goals:')
+        || lower.startsWith('cinematography goals:')
+        || lower.startsWith('- ')
+      );
+    });
+
+    const candidate = (priority.length ? priority : lines).join('\n');
+    const max = 1400;
+    return candidate.length <= max ? candidate : `${candidate.slice(0, max)}...`;
+  };
+
+  const basePrompt = compactPromptForModel(args.prompt, model.key);
+
   const baseInput: Record<string, unknown> = {
-    prompt: args.prompt,
+    prompt: basePrompt,
   };
 
   const klingUsesStartImage = model.key === 'kling' && model.modelId.includes('/v3/');
@@ -266,7 +295,7 @@ export const generateSceneVideoWithFal = async (args: {
     ...baseInput,
     ...(model.key === 'seedance' ? { resolution: '720p', duration: String(duration) } : {}),
     ...(model.key === 'kling' ? { duration: String(duration), aspect_ratio: '16:9', negative_prompt: 'blur, distort, and low quality', cfg_scale: 0.5 } : {}),
-    ...(model.key === 'veo3' ? { duration: String(duration) } : {}),
+    ...(model.key === 'veo3' ? { duration: `${duration}s` } : {}),
   };
 
   const queueUpdateLogger = (update: any) => {
@@ -290,8 +319,12 @@ export const generateSceneVideoWithFal = async (args: {
     const isUnprocessable = message.toLowerCase().includes('unprocessable');
     if (isUnprocessable && model.key !== 'seedance') {
       console.warn(`[video] ${model.key} rejected model-specific payload. Retrying with minimal input.`);
+      const retryInput = {
+        ...baseInput,
+        ...(model.key === 'veo3' ? { prompt: compactPromptForModel(basePrompt, 'veo3') } : {}),
+      };
       result = await fal.subscribe(model.modelId, {
-        input: baseInput,
+        input: retryInput,
         logs: true,
         onQueueUpdate: queueUpdateLogger,
       });

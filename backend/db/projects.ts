@@ -16,7 +16,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
   const listProjects = (accountId?: string) => {
     if (accountId) {
       return db.query(`
-        SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
+        SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, filmType, durationMinutes, status, deletedAt, createdAt, updatedAt
         FROM projects
         WHERE deletedAt IS NULL AND accountId = ?
         ORDER BY updatedAt DESC
@@ -24,7 +24,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     }
 
     return db.query(`
-      SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
+      SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, filmType, durationMinutes, status, deletedAt, createdAt, updatedAt
       FROM projects
       WHERE deletedAt IS NULL
       ORDER BY updatedAt DESC
@@ -34,14 +34,14 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
   const getProjectById = (id: string, accountId?: string) => {
     if (accountId) {
       return db.query(`
-        SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
+        SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, filmType, durationMinutes, status, deletedAt, createdAt, updatedAt
         FROM projects
         WHERE id = ? AND accountId = ? AND deletedAt IS NULL
       `).get(id, accountId) as any;
     }
 
     return db.query(`
-      SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt
+      SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, filmType, durationMinutes, status, deletedAt, createdAt, updatedAt
       FROM projects
       WHERE id = ? AND deletedAt IS NULL
     `).get(id) as any;
@@ -53,10 +53,11 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return Number(result?.changes || 0) > 0;
   };
 
-  const createProject = (input: { accountId?: string; title?: string; pseudoSynopsis: string; style?: string; durationMinutes?: number }) => {
+  const createProject = (input: { accountId?: string; title?: string; pseudoSynopsis: string; style?: string; filmType?: string; durationMinutes?: number }) => {
     const now = Date.now();
     const id = generateId();
     const style = (input.style || 'cinematic').toLowerCase();
+    const filmType = String(input.filmType || 'cinematic live-action').trim() || 'cinematic live-action';
     const durationMinutes = Number(input.durationMinutes || 1);
     const synopsis = String(input.pseudoSynopsis || '').trim();
     const explicitTitle = String(input.title || '').trim();
@@ -66,9 +67,9 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     const title = explicitTitle || fallbackTitle;
 
     db.query(`
-      INSERT INTO projects (id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, durationMinutes, status, deletedAt, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, input.accountId || null, title, synopsis, '', '', style, durationMinutes, 'draft', null, now, now);
+      INSERT INTO projects (id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, filmType, durationMinutes, status, deletedAt, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, input.accountId || null, title, synopsis, '', '', style, filmType, durationMinutes, 'draft', null, now, now);
     db.query(`
       INSERT INTO project_style_bibles (projectId, payload, createdAt, updatedAt)
       VALUES (?, ?, ?, ?)
@@ -150,7 +151,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return getProjectById(id);
   };
 
-  const updateProjectBasics = (id: string, input: { title?: string; pseudoSynopsis?: string }) => {
+  const updateProjectBasics = (id: string, input: { title?: string; pseudoSynopsis?: string; filmType?: string }) => {
     const now = Date.now();
     const existing = getProjectById(id);
     if (!existing) return null;
@@ -161,8 +162,11 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     const nextPseudoSynopsis = typeof input.pseudoSynopsis === 'string' && input.pseudoSynopsis.trim()
       ? input.pseudoSynopsis.trim()
       : String(existing.pseudoSynopsis || '').trim();
+    const nextFilmType = typeof input.filmType === 'string' && input.filmType.trim()
+      ? input.filmType.trim()
+      : String(existing.filmType || '').trim() || 'cinematic live-action';
 
-    db.query('UPDATE projects SET title = ?, pseudoSynopsis = ?, updatedAt = ? WHERE id = ?').run(nextTitle, nextPseudoSynopsis, now, id);
+    db.query('UPDATE projects SET title = ?, pseudoSynopsis = ?, filmType = ?, updatedAt = ? WHERE id = ?').run(nextTitle, nextPseudoSynopsis, nextFilmType, now, id);
     return getProjectById(id);
   };
 

@@ -211,14 +211,14 @@ export const api = {
   // Projects (movie studio)
   getProjects: () => fetchApi<MovieProject[]>('/projects'),
 
-  createProject: (payload: { title?: string; pseudoSynopsis: string; style?: 'cinematic' | 'mainstream' | 'festival'; durationMinutes?: number }) =>
+  createProject: (payload: { title?: string; pseudoSynopsis: string; style?: 'cinematic' | 'mainstream' | 'festival'; filmType?: string; durationMinutes?: number }) =>
     fetchApi<MovieProject>('/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }),
 
-  updateProject: (projectId: string, payload: { title?: string; pseudoSynopsis?: string }) =>
+  updateProject: (projectId: string, payload: { title?: string; pseudoSynopsis?: string; filmType?: string }) =>
     fetchApi<{ success: boolean; item: MovieProject }>(`/projects/${projectId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

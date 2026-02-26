@@ -63,7 +63,7 @@ export function ProjectStudio() {
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isSavingProjectDetails, setIsSavingProjectDetails] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
-  const [leftSidebarPane, setLeftSidebarPane] = useState<'misc' | 'settings' | null>('misc');
+  const [leftSidebarPane, setLeftSidebarPane] = useState<'projects' | 'misc' | 'settings' | null>('projects');
   const [isRefiningSynopsis, setIsRefiningSynopsis] = useState(false);
   const [isSavingStyleBible, setIsSavingStyleBible] = useState(false);
   const [isGeneratingScreenplay, setIsGeneratingScreenplay] = useState(false);
@@ -367,8 +367,9 @@ export function ProjectStudio() {
     if (!selectedProject) return;
     setEditingProjectTitle(selectedProject.title || '');
     setEditingProjectPseudoSynopsis(selectedProject.pseudoSynopsis || '');
+    setFilmType(String(selectedProject.filmType || '').trim() || 'cinematic live-action');
     setIsEditingProjectDetails(false);
-    setLeftSidebarPane('misc');
+    setLeftSidebarPane('projects');
     setScreenplayInlineError(null);
     setScenesBibleInlineError(null);
   }, [selectedProject?.id]);
@@ -499,10 +500,12 @@ export function ProjectStudio() {
         title: (input.title || '').trim() || undefined,
         pseudoSynopsis: input.pseudoSynopsis.trim(),
         style: 'cinematic',
+        filmType,
         durationMinutes: 1,
       });
       setProjects(prev => [created, ...prev]);
       setSelectedProjectId(created.id);
+      setFilmType(String(created.filmType || '').trim() || filmType);
       setProjectIdeaInput('');
       setBusyMessage('Project created.');
     } catch (error) {
@@ -516,6 +519,19 @@ export function ProjectStudio() {
     await createProjectFromInput({
       pseudoSynopsis: projectIdeaInput,
     });
+  };
+
+  const handleFilmTypeChange = async (nextFilmTypeRaw: string) => {
+    const nextFilmType = String(nextFilmTypeRaw || '').trim();
+    setFilmType(nextFilmType);
+    if (!selectedProject || !isAuthenticated || !nextFilmType) return;
+    if (String(selectedProject.filmType || '').trim() === nextFilmType) return;
+    try {
+      const response = await api.updateProject(selectedProject.id, { filmType: nextFilmType });
+      setProjects(prev => prev.map(project => (project.id === selectedProject.id ? response.item : project)));
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to save film style');
+    }
   };
 
   const startNoteRecording = () => {
@@ -1135,6 +1151,7 @@ export function ProjectStudio() {
       const response = await api.updateProject(selectedProject.id, {
         title: editingProjectTitle.trim(),
         pseudoSynopsis: editingProjectPseudoSynopsis.trim(),
+        filmType,
       });
       setProjects(prev => prev.map(project => project.id === selectedProject.id ? response.item : project));
       setIsEditingProjectDetails(false);
@@ -1167,9 +1184,15 @@ export function ProjectStudio() {
       <div className="pointer-events-none absolute -top-24 -left-20 w-80 h-80 bg-cyan-500/15 blur-3xl rounded-full" />
       <div className="pointer-events-none absolute top-1/3 -right-24 w-96 h-96 bg-amber-500/10 blur-3xl rounded-full" />
       <div className="w-full">
-        <div className="hidden xl:block fixed left-0 top-28 z-30">
-          <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-[#07131f]/90 to-black/85 p-2 shadow-xl shadow-cyan-950/20 flex items-start gap-2 pr-1">
+        <div className="hidden xl:block fixed left-0 top-24 bottom-0 z-30 pb-3">
+          <div className="h-full rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-[#07131f]/90 to-black/85 p-2 shadow-xl shadow-cyan-950/20 flex items-start gap-2 pr-1">
             <div className="w-14 rounded-xl border border-cyan-500/20 bg-black/35 p-1.5 flex flex-col gap-2">
+              <button
+                onClick={() => setLeftSidebarPane(prev => prev === 'projects' ? null : 'projects')}
+                className={`w-full rounded-lg px-1 py-2 text-[10px] flex flex-col items-center gap-1 ${leftSidebarPane === 'projects' ? 'bg-emerald-500/15 text-emerald-100 border border-emerald-400/40' : 'text-gray-400 border border-transparent hover:text-gray-200'}`}
+              >
+                <Film className="w-4 h-4" /> Projects
+              </button>
               <button
                 onClick={() => setLeftSidebarPane(prev => prev === 'misc' ? null : 'misc')}
                 className={`w-full rounded-lg px-1 py-2 text-[10px] flex flex-col items-center gap-1 ${leftSidebarPane === 'misc' ? 'bg-cyan-500/15 text-cyan-100 border border-cyan-400/40' : 'text-gray-400 border border-transparent hover:text-gray-200'}`}
@@ -1184,10 +1207,30 @@ export function ProjectStudio() {
               </button>
             </div>
 
-            <div className={`transition-all duration-200 ease-out overflow-hidden ${leftSidebarPane ? 'w-[270px] opacity-100' : 'w-0 opacity-0 pointer-events-none'}`}>
-              <div className="max-h-[calc(100vh-9rem)] rounded-xl border border-cyan-500/20 bg-black/30 p-3 overflow-auto">
-                {!selectedProject ? (
-                  <p className="text-xs text-gray-500">Select or create a project to see project panes.</p>
+            <div className={`h-full transition-all duration-200 ease-out overflow-hidden ${leftSidebarPane ? 'w-[270px] opacity-100' : 'w-0 opacity-0 pointer-events-none'}`}>
+              <div className="h-full rounded-xl border border-cyan-500/20 bg-black/30 p-3 overflow-auto">
+                {leftSidebarPane === 'projects' ? (
+                  <div className="space-y-3">
+                    <p className="text-xs uppercase tracking-widest text-gray-500">All Projects</p>
+                    {projects.length === 0 ? (
+                      <p className="text-xs text-gray-500">No projects yet. Create one from your idea box.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {projects.map(project => (
+                          <button
+                            key={`sidebar-project-${project.id}`}
+                            onClick={() => setSelectedProjectId(project.id)}
+                            className={`w-full text-left rounded-lg border px-2.5 py-2 ${selectedProjectId === project.id ? 'border-emerald-400/40 bg-emerald-500/10' : 'border-gray-800 bg-black/30 hover:border-gray-700'}`}
+                          >
+                            <p className="text-sm text-gray-100 truncate">{project.title}</p>
+                            <p className="text-[11px] text-gray-500 mt-1">{project.durationMinutes} min · {project.style}</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : !selectedProject ? (
+                  <p className="text-xs text-gray-500">Select or create a project to see this pane.</p>
                 ) : leftSidebarPane === 'misc' ? (
                   <div className="space-y-3">
                     <p className="text-xs uppercase tracking-widest text-gray-500">Project Misc</p>
@@ -1274,6 +1317,19 @@ export function ProjectStudio() {
                     </button>
                   </div>
                 </div>
+                <div className="rounded-xl border border-gray-800 bg-black/30 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Film Style</p>
+                  <select
+                    value={filmType}
+                    onChange={event => { void handleFilmTypeChange(event.target.value); }}
+                    className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm text-gray-200"
+                    disabled={!isAuthenticated || isCreatingProject}
+                  >
+                    {filmTypeOptions.map(option => (
+                      <option key={`idea-film-type-${option}`} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
                 <p className="text-[11px] text-gray-500">Press Enter to submit. Use Shift+Enter for a new line.</p>
               </div>
             )}
@@ -1320,6 +1376,19 @@ export function ProjectStudio() {
                         {tab.label}
                       </button>
                     ))}
+                  </div>
+
+                  <div className="mb-3 max-w-sm">
+                    <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Film Style</p>
+                    <select
+                      value={filmType}
+                      onChange={event => { void handleFilmTypeChange(event.target.value); }}
+                      className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200"
+                    >
+                      {filmTypeOptions.map(option => (
+                        <option key={`project-film-type-${option}`} value={option}>{option}</option>
+                      ))}
+                    </select>
                   </div>
 
                   {synopsisTab === 'pseudo' && (
@@ -1442,9 +1511,9 @@ export function ProjectStudio() {
                     <button
                       onClick={refineSynopsis}
                       disabled={!isAuthenticated || isRefiningSynopsis || isSavingProjectDetails}
-                      className="inline-flex items-center gap-2 px-3 py-2 rounded border border-gray-700 text-sm text-gray-200 hover:text-cyan-200 disabled:opacity-50"
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50"
                     >
-                      {isRefiningSynopsis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} {isRefiningSynopsis ? 'Polishing...' : 'Polish Synopsis'}
+                      {isRefiningSynopsis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} {isRefiningSynopsis ? 'Polishing...' : 'Create Polished Synopsis'}
                     </button>
                     {(isEditingProjectDetails || hasProjectDetailChanges) && (
                       <>
@@ -1708,18 +1777,6 @@ export function ProjectStudio() {
                 </div>
                 <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-2">Director Prompt</p>
                 <textarea value={directorPrompt} onChange={event => setDirectorPrompt(event.target.value)} className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-16" />
-                <div className="mt-3">
-                  <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Film Type</p>
-                  <select
-                    value={filmType}
-                    onChange={event => setFilmType(event.target.value)}
-                    className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm text-gray-200"
-                  >
-                    {filmTypeOptions.map(option => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
-                </div>
                 <div className="mt-3">
                   <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Storyboard Image Model</p>
                   <select

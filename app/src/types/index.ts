@@ -155,6 +155,7 @@ export interface MovieProject {
   polishedSynopsis: string;
   plotScript: string;
   style: 'cinematic' | 'mainstream' | 'festival';
+  filmType: string;
   durationMinutes: number;
   status: 'draft' | 'active' | 'locked';
   deletedAt: number | null;
