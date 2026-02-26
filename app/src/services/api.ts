@@ -325,6 +325,20 @@ export const api = {
       body: JSON.stringify({ prompt: prompt || '', filmType: filmType || '', imageModelKey: imageModelKey || 'fal' }),
     }),
 
+  regenerateStoryboardImage: (projectId: string, beatId: string, payload?: { imageModelKey?: 'fal' | 'grok'; filmType?: string }) =>
+    fetchApi<{ success: boolean; item: StorylinePackageRecord }>(`/projects/${projectId}/storyboard/${beatId}/image/regenerate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageModelKey: payload?.imageModelKey || 'fal', filmType: payload?.filmType || '' }),
+    }),
+
+  regenerateAllStoryboardImages: (projectId: string, payload?: { imageModelKey?: 'fal' | 'grok'; filmType?: string }) =>
+    fetchApi<{ success: boolean; item: StorylinePackageRecord; refreshedCount: number; failedCount: number }>(`/projects/${projectId}/storyboard/images/regenerate-all`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageModelKey: payload?.imageModelKey || 'fal', filmType: payload?.filmType || '' }),
+    }),
+
   getLatestProjectStoryboard: (projectId: string) =>
     fetchApi<{ item: StorylinePackageRecord | null }>(`/projects/${projectId}/storyboard`),
 

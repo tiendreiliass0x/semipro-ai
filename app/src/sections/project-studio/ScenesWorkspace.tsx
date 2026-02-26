@@ -310,6 +310,14 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
               key={`${scene.sceneNumber}-${scene.beatId}`}
               className="w-[320px] md:w-[360px] shrink-0 rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2"
             >
+              <div className="rounded-md overflow-hidden border border-gray-800 bg-black/40 aspect-video">
+                <img
+                  src={getSceneFrameUrl(scene)}
+                  alt={`Scene ${scene.sceneNumber} concept frame`}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              </div>
               {sceneVideosByBeatId[scene.beatId]?.status === 'completed' && sceneVideosByBeatId[scene.beatId]?.videoUrl ? (
                 <div className="rounded-md overflow-hidden border border-gray-800 bg-black/40 aspect-video">
                   <video
@@ -321,14 +329,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
                   />
                 </div>
               ) : null}
-              <div className="rounded-md overflow-hidden border border-gray-800 bg-black/40 aspect-video">
-                <img
-                  src={getSceneFrameUrl(scene)}
-                  alt={`Scene ${scene.sceneNumber} concept frame`}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              </div>
+              
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm text-gray-100">Scene {scene.sceneNumber} · Beat {beatIndex + 1}</p>
                 <div className="flex items-center gap-2">

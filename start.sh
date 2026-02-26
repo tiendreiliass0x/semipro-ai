@@ -5,7 +5,7 @@
 
 set -e
 
-echo "🎬 Starting Afrobeats Seattle Documentary..."
+echo "🎬 Starting YenengaLabs..."
 echo ""
 
 # Colors

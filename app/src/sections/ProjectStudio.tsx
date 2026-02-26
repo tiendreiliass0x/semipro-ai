@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clapperboard, Compass, Lock, Mic, Palette, Plus, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowUpRight } from 'lucide-react';
+import { Clapperboard, Compass, Lock, Mic, Palette, Plus, RefreshCcw, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
 import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectScenesBible, ProjectScreenplay, ProjectStyleBible, ScenePromptLayer, SceneVideoJob, SceneVideoPromptTrace, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
@@ -77,6 +77,9 @@ export function ProjectStudio() {
   const [isGeneratingMoreStarterBeats, setIsGeneratingMoreStarterBeats] = useState(false);
   const [isBeatCaptureInputOpen, setIsBeatCaptureInputOpen] = useState(true);
   const [isGeneratingStoryboard, setIsGeneratingStoryboard] = useState(false);
+  const [isRegeneratingAllStoryboardImages, setIsRegeneratingAllStoryboardImages] = useState(false);
+  const [isRegeneratingStoryboardImageBeatId, setIsRegeneratingStoryboardImageBeatId] = useState<string | null>(null);
+  const [showStoryboardPromptByBeatId, setShowStoryboardPromptByBeatId] = useState<Record<string, boolean>>({});
   const [isCheckingContinuity, setIsCheckingContinuity] = useState(false);
   const [isPreviewingFix, setIsPreviewingFix] = useState<'timeline' | 'intensity' | 'all' | null>(null);
   const [isApplyingFix, setIsApplyingFix] = useState(false);
@@ -848,6 +851,17 @@ export function ProjectStudio() {
     return 'border-gray-700';
   };
 
+  const getStoryboardImagePromptText = (scene: any) => {
+    return [
+      filmType ? `Film type: ${filmType}` : '',
+      String(scene?.imagePrompt || '').trim(),
+      String(scene?.slugline || '').trim(),
+      String(scene?.visualDirection || '').trim(),
+      String(scene?.camera || '').trim() ? `Camera: ${String(scene.camera).trim()}` : '',
+      String(scene?.audio || '').trim() ? `Audio mood: ${String(scene.audio).trim()}` : '',
+    ].filter(Boolean).join('\n');
+  };
+
   const generateStoryboard = async () => {
     if (!selectedProject || !isAuthenticated) return;
     setIsGeneratingStoryboard(true);
@@ -861,6 +875,48 @@ export function ProjectStudio() {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to generate storyboard');
     } finally {
       setIsGeneratingStoryboard(false);
+    }
+  };
+
+  const regenerateStoryboardImage = async (beatId: string) => {
+    if (!selectedProject?.id || !isAuthenticated || !beatId) return;
+    setIsRegeneratingStoryboardImageBeatId(beatId);
+    setBusyMessage('Regenerating storyboard image...');
+    try {
+      const response = await api.regenerateStoryboardImage(selectedProject.id, beatId, {
+        imageModelKey: storyboardImageModel,
+        filmType,
+      });
+      if (response.item?.payload) {
+        setLatestPackage(response.item);
+        setGeneratedPackage(response.item.payload);
+      }
+      setBusyMessage('Storyboard image regenerated.');
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to regenerate storyboard image');
+    } finally {
+      setIsRegeneratingStoryboardImageBeatId(null);
+    }
+  };
+
+  const regenerateAllStoryboardImages = async () => {
+    if (!selectedProject?.id || !isAuthenticated) return;
+    setIsRegeneratingAllStoryboardImages(true);
+    setBusyMessage('Regenerating all storyboard images...');
+    try {
+      const response = await api.regenerateAllStoryboardImages(selectedProject.id, {
+        imageModelKey: storyboardImageModel,
+        filmType,
+      });
+      if (response.item?.payload) {
+        setLatestPackage(response.item);
+        setGeneratedPackage(response.item.payload);
+      }
+      setBusyMessage(`Storyboard images refreshed: ${response.refreshedCount} updated, ${response.failedCount} failed.`);
+    } catch (error) {
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to regenerate storyboard images');
+    } finally {
+      setIsRegeneratingAllStoryboardImages(false);
     }
   };
 
@@ -1046,6 +1102,7 @@ export function ProjectStudio() {
       setContinuationModeByBeatId({});
       setAnchorBeatIdByBeatId({});
       setAutoRegenThresholdByBeatId({});
+      setShowStoryboardPromptByBeatId({});
       setScreenplay({ title: '', format: 'hybrid', screenplay: '', scenes: [] });
       setScenesBible({
         overview: '',
@@ -1635,9 +1692,19 @@ export function ProjectStudio() {
               <div className="rounded-2xl border border-orange-500/20 bg-gradient-to-br from-[#1d1206]/70 to-black/60 p-5">
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <p className="text-xs uppercase tracking-widest text-gray-500">Storyboard</p>
-                  <button onClick={generateStoryboard} disabled={!isAuthenticated || isGeneratingStoryboard} className="inline-flex items-center gap-2 px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
-                    {isGeneratingStoryboard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clapperboard className="w-4 h-4" />} {isGeneratingStoryboard ? 'Generating...' : 'Generate Storyboard'}
-                  </button>
+                  <div className="inline-flex items-center gap-2">
+                    <button
+                      onClick={regenerateAllStoryboardImages}
+                      disabled={!isAuthenticated || isRegeneratingAllStoryboardImages || !generatedPackage?.storyboard?.length}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded border border-cyan-400/40 text-cyan-100 text-xs font-semibold disabled:opacity-50"
+                    >
+                      {isRegeneratingAllStoryboardImages ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+                      {isRegeneratingAllStoryboardImages ? 'Refreshing...' : 'Regenerate All Images'}
+                    </button>
+                    <button onClick={generateStoryboard} disabled={!isAuthenticated || isGeneratingStoryboard} className="inline-flex items-center gap-2 px-4 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
+                      {isGeneratingStoryboard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clapperboard className="w-4 h-4" />} {isGeneratingStoryboard ? 'Generating...' : 'Generate Storyboard'}
+                    </button>
+                  </div>
                 </div>
                 <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-2">Director Prompt</p>
                 <textarea value={directorPrompt} onChange={event => setDirectorPrompt(event.target.value)} className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm min-h-16" />
@@ -1674,7 +1741,7 @@ export function ProjectStudio() {
                       {generatedPackage.storyboard.map(scene => (
                         <div
                           key={`storyboard-top-strip-${scene.beatId}`}
-                          className={`w-full h-12 md:h-14 rounded-md overflow-hidden border-2 ${getStoryboardThumbBorder(scene.beatId)} bg-black/40`}
+                          className={`relative w-full h-12 md:h-14 rounded-md overflow-hidden border-2 ${getStoryboardThumbBorder(scene.beatId)} bg-black/40`}
                           title={`Scene ${scene.sceneNumber}`}
                         >
                           <img
@@ -1688,6 +1755,48 @@ export function ProjectStudio() {
                     </div>
                   </div>
                 ) : null}
+                <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <div className="flex gap-3 min-w-max px-1 pr-2 mt-4">
+                {generatedPackage?.storyboard.map( scene => (
+                  <div
+                    key={`${scene.sceneNumber}-${scene.beatId}`}
+                    className="w-[320px] md:w-[360px] shrink-0 rounded-lg border border-gray-800 bg-black/30 p-3 space-y-2"
+                  >
+                    <div className="relative rounded-md overflow-hidden border border-gray-800 bg-black/40 aspect-video">
+                      {showStoryboardPromptByBeatId[scene.beatId] ? (
+                        <div className="w-full h-full bg-black/70 px-3 py-2 overflow-auto">
+                          <p className="text-[10px] uppercase tracking-widest text-cyan-200 mb-1">Storyboard Image Prompt</p>
+                          <p className="text-[11px] text-gray-200 whitespace-pre-wrap">{getStoryboardImagePromptText(scene) || '(No prompt available)'}</p>
+                        </div>
+                      ) : (
+                        <img
+                          src={getSceneFrameUrl(scene)}
+                          alt={`Scene ${scene.sceneNumber} concept frame`}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      )}
+                      <button
+                        onClick={() => setShowStoryboardPromptByBeatId(prev => ({ ...prev, [scene.beatId]: !prev[scene.beatId] }))}
+                        className="absolute z-10 left-1 top-1 inline-flex items-center justify-center px-2 h-5 rounded-full border border-black/30 bg-black/55 text-white text-[10px]"
+                        title={showStoryboardPromptByBeatId[scene.beatId] ? 'Flip to image' : 'Flip to prompt'}
+                      >
+                        {showStoryboardPromptByBeatId[scene.beatId] ? 'Image' : 'Prompt'}
+                      </button>
+                      <button
+                        onClick={() => regenerateStoryboardImage(scene.beatId)}
+                        disabled={!isAuthenticated || isRegeneratingStoryboardImageBeatId === scene.beatId}
+                        className="absolute z-10 right-1 top-1 inline-flex items-center justify-center w-5 h-5 rounded-full border border-black/30 bg-black/55 text-white disabled:opacity-50"
+                        title="Regenerate scene image"
+                      >
+                        {isRegeneratingStoryboardImageBeatId === scene.beatId ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-gray-500 line-clamp-2">{scene.imagePrompt || scene.visualDirection}</p>
+                  </div>)
+                )}
+                </div>
+                </div>
               </div>
             )}
 
@@ -1756,7 +1865,7 @@ export function ProjectStudio() {
 
         {busyMessage && (
           <p className="text-sm text-gray-400 mt-6 flex items-center justify-center gap-2 text-center">
-            {(isCreatingProject || isSavingProjectDetails || isRefiningSynopsis || isSavingStyleBible || isGeneratingScreenplay || isSavingScreenplay || isGeneratingScenesBible || isSavingScenesBible || isAddingNote || isPolishingBeats || isGeneratingMoreStarterBeats || isGeneratingStoryboard || isCheckingContinuity || isPreviewingFix !== null || isApplyingFix || isGeneratingAllVideos || isRefreshingVideos || isGeneratingFinalFilm)
+            {(isCreatingProject || isSavingProjectDetails || isRefiningSynopsis || isSavingStyleBible || isGeneratingScreenplay || isSavingScreenplay || isGeneratingScenesBible || isSavingScenesBible || isAddingNote || isPolishingBeats || isGeneratingMoreStarterBeats || isGeneratingStoryboard || isRegeneratingAllStoryboardImages || isRegeneratingStoryboardImageBeatId !== null || isCheckingContinuity || isPreviewingFix !== null || isApplyingFix || isGeneratingAllVideos || isRefreshingVideos || isGeneratingFinalFilm)
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : null}
             {busyMessage}

@@ -10,7 +10,10 @@ export function Footer() {
 
         <div className="grid md:grid-cols-[1.4fr_1fr_1fr_1fr] gap-12">
           <div>
-            <h2 className="font-hero-sans font-extrabold text-4xl text-white mb-3">YENENGALABS</h2>
+            <div className="inline-flex items-center gap-2 mb-3">
+              <img src="/yenengalabs-logo.png" alt="YenengaLabs logo" className="w-9 h-9 rounded object-cover" />
+              <h2 className="font-hero-sans font-extrabold text-4xl text-white">YENENGALABS</h2>
+            </div>
             <p className="text-sm text-gray-400 max-w-sm">
               AI-first filmmaking workspace for directors, creators, and ambitious amateurs.
             </p>

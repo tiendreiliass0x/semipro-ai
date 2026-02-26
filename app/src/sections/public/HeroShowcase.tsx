@@ -47,6 +47,10 @@ export function HeroShowcase() {
           <div className="max-w-[92vw] md:max-w-none rounded-xl md:rounded-2xl xl:rounded-3xl backdrop-blur-0 md:backdrop-blur-[2px] p-3 md:p-6 xl:p-8">
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-5 md:gap-8 xl:gap-12">
               <div className="max-w-2xl xl:max-w-3xl">
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/30 bg-black/35 px-2.5 py-1">
+                  <img src="/yenengalabs-logo.png" alt="YenengaLabs logo" className="w-6 h-6 rounded object-cover" />
+                  <span className="text-[11px] uppercase tracking-widest text-white/85">YenengaLabs</span>
+                </div>
                 <h1 className="font-hero-sans text-3xl sm:text-6xl lg:text-7xl xl:text-8xl leading-[0.98] text-white drop-shadow-[0_6px_25px_rgba(0,0,0,0.55)]">
                   YenengaLabs
                 </h1>

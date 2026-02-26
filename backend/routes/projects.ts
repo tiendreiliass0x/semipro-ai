@@ -98,6 +98,32 @@ const safeJson = (value: unknown) => {
   }
 };
 
+const buildStoryboardImagePrompt = (args: {
+  scene: any;
+  filmType?: string;
+  projectTitle?: string;
+  synopsis?: string;
+}) => {
+  const parts = [
+    args.filmType ? `Film type: ${String(args.filmType).trim()}` : '',
+    String(args.scene?.imagePrompt || '').trim(),
+    String(args.scene?.slugline || '').trim(),
+    String(args.scene?.visualDirection || '').trim(),
+    String(args.scene?.camera || '').trim(),
+    String(args.scene?.audio || '').trim() ? `Audio mood: ${String(args.scene?.audio).trim()}` : '',
+  ].filter(Boolean);
+
+  if (!parts.length) {
+    return [
+      `Cinematic storyboard frame for ${String(args.projectTitle || 'film project').trim() || 'film project'}`,
+      String(args.synopsis || '').trim(),
+      'High-quality, coherent composition, realistic lighting, no text overlay, no watermark.',
+    ].filter(Boolean).join('. ');
+  }
+
+  return parts.join('. ');
+};
+
 export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Response | null> => {
   const {
     req,
@@ -545,9 +571,12 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       if (Array.isArray(result?.storyboard)) {
         for (const scene of result.storyboard) {
           try {
-            const prompt = [filmType ? `Film type: ${filmType}` : '', scene.imagePrompt || `${scene.slugline}. ${scene.visualDirection}`]
-              .filter(Boolean)
-              .join('. ');
+            const prompt = buildStoryboardImagePrompt({
+              scene,
+              filmType,
+              projectTitle: project.title,
+              synopsis: project.polishedSynopsis || project.pseudoSynopsis,
+            });
             const imageUrl = await generateStoryboardFrameWithLlm(prompt, imageModelKey);
             scene.imageUrl = imageUrl;
           } catch {
@@ -738,6 +767,101 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const beatId = pathname.split('/')[5];
     const item = getLatestSceneVideo(projectId, beatId);
     return new Response(JSON.stringify({ item }), { headers: jsonHeaders(corsHeaders) });
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/image\/regenerate$/) && method === 'POST') {
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const projectId = pathname.split('/')[3];
+    const beatId = pathname.split('/')[5];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+
+    const latestPackage = getLatestProjectPackage(projectId);
+    if (!latestPackage?.payload?.storyboard || !Array.isArray(latestPackage.payload.storyboard)) {
+      return new Response(JSON.stringify({ error: 'No storyboard package found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const imageModelKey = ['fal', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
+      ? String(body.imageModelKey).trim().toLowerCase()
+      : 'fal';
+    const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
+
+    const targetScene = latestPackage.payload.storyboard.find((item: any) => String(item.beatId) === String(beatId));
+    if (!targetScene) {
+      return new Response(JSON.stringify({ error: 'Scene not found for beat' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    }
+
+    try {
+      const imagePrompt = buildStoryboardImagePrompt({
+        scene: targetScene,
+        filmType,
+        projectTitle: project.title,
+        synopsis: project.polishedSynopsis || project.pseudoSynopsis,
+      });
+      const imageUrl = await generateStoryboardFrameWithLlm(imagePrompt, imageModelKey);
+      const updatedPayload = {
+        ...latestPackage.payload,
+        storyboard: latestPackage.payload.storyboard.map((scene: any) => (
+          String(scene.beatId) === String(beatId)
+            ? { ...scene, imageUrl }
+            : scene
+        )),
+      };
+
+      const item = saveProjectPackage(projectId, updatedPayload, latestPackage.prompt || 'regenerate-storyboard-image');
+      return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to regenerate storyboard image';
+      return new Response(JSON.stringify({ error: message }), { status: 502, headers: jsonHeaders(corsHeaders) });
+    }
+  }
+
+  if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/images\/regenerate-all$/) && method === 'POST') {
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const projectId = pathname.split('/')[3];
+    const project = getScopedProject(projectId);
+    if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+
+    const latestPackage = getLatestProjectPackage(projectId);
+    if (!latestPackage?.payload?.storyboard || !Array.isArray(latestPackage.payload.storyboard)) {
+      return new Response(JSON.stringify({ error: 'No storyboard package found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const imageModelKey = ['fal', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
+      ? String(body.imageModelKey).trim().toLowerCase()
+      : 'fal';
+    const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
+
+    const storyboard = latestPackage.payload.storyboard as any[];
+    const refreshedStoryboard: any[] = [];
+    let refreshedCount = 0;
+    let failedCount = 0;
+
+    for (const scene of storyboard) {
+      try {
+        const imagePrompt = buildStoryboardImagePrompt({
+          scene,
+          filmType,
+          projectTitle: project.title,
+          synopsis: project.polishedSynopsis || project.pseudoSynopsis,
+        });
+        const imageUrl = await generateStoryboardFrameWithLlm(imagePrompt, imageModelKey);
+        refreshedStoryboard.push({ ...scene, imageUrl });
+        refreshedCount += 1;
+      } catch {
+        refreshedStoryboard.push({ ...scene });
+        failedCount += 1;
+      }
+    }
+
+    const updatedPayload = {
+      ...latestPackage.payload,
+      storyboard: refreshedStoryboard,
+    };
+    const item = saveProjectPackage(projectId, updatedPayload, latestPackage.prompt || 'regenerate-all-storyboard-images');
+    return new Response(JSON.stringify({ success: true, item, refreshedCount, failedCount }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/video$/) && method === 'POST') {

@@ -1,5 +1,5 @@
 import { fal } from '@fal-ai/client';
-import { basename, join } from 'path';
+import { basename, extname, join } from 'path';
 import { existsSync, mkdirSync, rmSync } from 'fs';
 import { resolveVideoModel } from './videoModel';
 
@@ -140,28 +140,94 @@ export const buildMergedScenePrompt = (args: {
 const resolveFalImageUrl = async (args: {
   uploadsDir: string;
   sourceImageUrl: string;
+  modelKey?: string;
 }) => {
   const source = String(args.sourceImageUrl || '').trim();
   if (!source) throw new Error('source image URL is missing');
 
-  if (source.startsWith('http://') || source.startsWith('https://')) {
+  const isKling = String(args.modelKey || '').trim().toLowerCase() === 'kling';
+
+  const uploadFileToFal = async (localPath: string) => {
+    const sourceFile = Bun.file(localPath);
+    const buffer = await sourceFile.arrayBuffer();
+    const file = new File([buffer], basename(localPath), { type: sourceFile.type || 'image/jpeg' });
+    const uploadedUrl = await fal.storage.upload(file);
+    return uploadedUrl;
+  };
+
+  const normalizeToKlingFrame = async (inputPath: string) => {
+    const outputPath = join(args.uploadsDir, `kling-anchor-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
+    const process = Bun.spawn([
+      'ffmpeg',
+      '-y',
+      '-loglevel', 'error',
+      '-i', inputPath,
+      '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p',
+      '-frames:v', '1',
+      outputPath,
+    ], { stderr: 'pipe' });
+
+    const stderrText = process.stderr ? await new Response(process.stderr).text() : '';
+    const exitCode = await process.exited;
+    if (exitCode !== 0) {
+      throw new Error(`failed to normalize Kling source frame: ${stderrText.trim()}`);
+    }
+
+    return outputPath;
+  };
+
+  const downloadRemoteImage = async (url: string) => {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`failed to download source image (${response.status})`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const extension = extname(url.split('?')[0] || '') || '.jpg';
+    const localPath = join(args.uploadsDir, `remote-source-${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`);
+    await Bun.write(localPath, Buffer.from(arrayBuffer));
+    return localPath;
+  };
+
+  if (!isKling && (source.startsWith('http://') || source.startsWith('https://'))) {
     return source;
   }
 
-  if (!source.startsWith('/uploads/')) {
+  if (!source.startsWith('/uploads/') && !source.startsWith('http://') && !source.startsWith('https://')) {
     throw new Error(`unsupported source image URL format: ${source}`);
   }
 
-  const sourcePath = join(args.uploadsDir, basename(source.split('?')[0]));
-  if (!existsSync(sourcePath)) {
-    throw new Error(`source image not found: ${sourcePath}`);
-  }
+  const tempPaths: string[] = [];
+  try {
+    const sourcePath = source.startsWith('/uploads/')
+      ? join(args.uploadsDir, basename(source.split('?')[0]))
+      : await downloadRemoteImage(source);
 
-  const sourceFile = Bun.file(sourcePath);
-  const buffer = await sourceFile.arrayBuffer();
-  const file = new File([buffer], basename(sourcePath), { type: sourceFile.type || 'image/png' });
-  const uploadedUrl = await fal.storage.upload(file);
-  return uploadedUrl;
+    if (!existsSync(sourcePath)) {
+      throw new Error(`source image not found: ${sourcePath}`);
+    }
+
+    if (source.startsWith('http://') || source.startsWith('https://')) {
+      tempPaths.push(sourcePath);
+    }
+
+    if (isKling) {
+      const normalizedPath = await normalizeToKlingFrame(sourcePath);
+      tempPaths.push(normalizedPath);
+      const uploadedUrl = await uploadFileToFal(normalizedPath);
+      return uploadedUrl;
+    }
+
+    const uploadedUrl = await uploadFileToFal(sourcePath);
+    return uploadedUrl;
+  } finally {
+    tempPaths.forEach(path => {
+      try {
+        if (existsSync(path)) rmSync(path, { force: true });
+      } catch {
+        // ignore cleanup errors
+      }
+    });
+  }
 };
 
 export const generateSceneVideoWithFal = async (args: {
@@ -182,6 +248,7 @@ export const generateSceneVideoWithFal = async (args: {
   const imageUrl = await resolveFalImageUrl({
     uploadsDir: args.uploadsDir,
     sourceImageUrl: args.sourceImageUrl,
+    modelKey: model.key,
   });
 
   const baseInput: Record<string, unknown> = {
