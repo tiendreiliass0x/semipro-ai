@@ -23,6 +23,20 @@ YenengaLabs is a React + Bun application for story-first film development:
 ./start.sh
 ```
 
+### Optional: Redis for BullMQ queues
+If you want queue processing through BullMQ (instead of in-process polling), start Redis:
+
+```bash
+docker compose up -d
+```
+
+Then set in `backend/.env`:
+
+```env
+QUEUE_PROVIDER=bullmq
+REDIS_URL=redis://127.0.0.1:6379
+```
+
 ### Manual start
 Backend:
 ```bash

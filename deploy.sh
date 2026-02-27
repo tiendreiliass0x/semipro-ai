@@ -44,6 +44,29 @@ fi
 
 echo -e "${GREEN}✓ Bun version: $(bun --version)${NC}"
 
+read_env_value() {
+    local file="$1"
+    local key="$2"
+    local line=""
+
+    if [ ! -f "$file" ]; then
+        return 1
+    fi
+
+    line="$(grep -E "^${key}=" "$file" | tail -n 1 || true)"
+    if [ -z "$line" ]; then
+        return 1
+    fi
+
+    line="${line#*=}"
+    line="${line%$'\r'}"
+    line="${line%\"}"
+    line="${line#\"}"
+    line="${line%\'}"
+    line="${line#\'}"
+    printf "%s" "$line"
+}
+
 # Build frontend
 echo ""
 echo "📦 Building frontend..."
@@ -64,6 +87,52 @@ echo -e "${GREEN}✓ Frontend built successfully${NC}"
 echo ""
 echo "🔧 Checking backend..."
 cd "$PROJECT_DIR/backend"
+
+# Start local docker services when queue settings indicate local BullMQ/Redis.
+ENV_FILE="$PROJECT_DIR/backend/.env"
+QUEUE_PROVIDER_VALUE="${QUEUE_PROVIDER:-}"
+REDIS_URL_VALUE="${REDIS_URL:-}"
+
+if [ -z "$QUEUE_PROVIDER_VALUE" ]; then
+    QUEUE_PROVIDER_VALUE="$(read_env_value "$ENV_FILE" "QUEUE_PROVIDER" || true)"
+fi
+if [ -z "$QUEUE_PROVIDER_VALUE" ]; then
+    QUEUE_PROVIDER_VALUE="auto"
+fi
+if [ -z "$REDIS_URL_VALUE" ]; then
+    REDIS_URL_VALUE="$(read_env_value "$ENV_FILE" "REDIS_URL" || true)"
+fi
+
+SHOULD_START_DOCKER_SERVICES="false"
+if [ "$QUEUE_PROVIDER_VALUE" = "bullmq" ]; then
+    SHOULD_START_DOCKER_SERVICES="true"
+elif [ "$QUEUE_PROVIDER_VALUE" = "auto" ]; then
+    if [[ "$REDIS_URL_VALUE" == redis://127.0.0.1:* || "$REDIS_URL_VALUE" == redis://localhost:* ]]; then
+        SHOULD_START_DOCKER_SERVICES="true"
+    fi
+fi
+
+if [ "$SHOULD_START_DOCKER_SERVICES" = "true" ]; then
+    if [ ! -f "$PROJECT_DIR/docker-compose.yml" ]; then
+        echo -e "${YELLOW}⚠ docker-compose.yml not found; skipping local service startup${NC}"
+    elif ! command -v docker &> /dev/null; then
+        if [ "$QUEUE_PROVIDER_VALUE" = "bullmq" ]; then
+            echo -e "${RED}❌ Docker is required for QUEUE_PROVIDER=bullmq and was not found${NC}"
+            exit 1
+        fi
+        echo -e "${YELLOW}⚠ Docker not found; skipping local service startup${NC}"
+    elif ! docker compose version > /dev/null 2>&1; then
+        if [ "$QUEUE_PROVIDER_VALUE" = "bullmq" ]; then
+            echo -e "${RED}❌ docker compose is required for QUEUE_PROVIDER=bullmq and is not available${NC}"
+            exit 1
+        fi
+        echo -e "${YELLOW}⚠ docker compose not available; skipping local service startup${NC}"
+    else
+        echo "🐳 Starting local docker services..."
+        (cd "$PROJECT_DIR" && docker compose up -d)
+        echo -e "${GREEN}✓ Docker services are running${NC}"
+    fi
+fi
 
 # Create data files if they don't exist
 if [ ! -f "data/anecdotes.json" ]; then
