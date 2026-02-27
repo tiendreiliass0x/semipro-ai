@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, LogOut, Pencil, PlayCircle, Settings, X } from 'lucide-react';
+import { Loader2, LogOut, Pencil, PlayCircle, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 type GoogleCredentialResponse = {
@@ -33,17 +33,11 @@ declare global {
   }
 }
 
-const truncate = (value: string, max = 24) => {
-  if (value.length <= max) return value;
-  return `${value.slice(0, max - 1)}…`;
-};
-
 export function AuthModal() {
   const {
     isAuthenticated,
     isVerifying,
     error,
-    user,
     account,
     memberships,
     login,
@@ -144,6 +138,15 @@ export function AuthModal() {
   }, [authOpen, canUseGoogle, googleClientId, accountName, loginWithGoogle, mode]);
 
   const actionLabel = useMemo(() => mode === 'login' ? 'Sign In' : 'Create Account', [mode]);
+  const workspaceLabel = account?.name || account?.slug || 'Workspace';
+  const workspaceInitial = (workspaceLabel.trim().charAt(0) || 'W').toUpperCase();
+  const workspaceBadgeTones = [
+    'from-amber-300 to-orange-500',
+    'from-cyan-300 to-blue-500',
+    'from-lime-300 to-emerald-500',
+    'from-pink-300 to-rose-500',
+  ] as const;
+  const workspaceBadgeTone = workspaceBadgeTones[(workspaceLabel.charCodeAt(0) || 0) % workspaceBadgeTones.length];
 
   const submitAuth = async () => {
     setLocalError(null);
@@ -277,14 +280,12 @@ export function AuthModal() {
               <button
                 onClick={openSettingsPanel}
                 ref={settingsTriggerRef}
-                className="inline-flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-white/30 bg-black/40 max-w-[300px]"
-                title="Open account settings"
+                className="inline-flex items-center justify-center p-1 rounded-full border border-white/30 bg-black/40"
+                title={`Open account settings for ${workspaceLabel}`}
               >
-                <div className="text-right leading-tight min-w-0">
-                  <p className="text-xs text-gray-100 truncate">{truncate(account?.name || account?.slug || 'Workspace')}</p>
-                  <p className="text-[10px] text-gray-400 truncate">{truncate(user?.email || user?.name || '')}</p>
+                <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full bg-gradient-to-br ${workspaceBadgeTone} text-black font-semibold text-sm md:text-base flex items-center justify-center`}>
+                  {workspaceInitial}
                 </div>
-                <Settings className="w-4 h-4 text-gray-300" />
               </button>
             )}
           </nav>
