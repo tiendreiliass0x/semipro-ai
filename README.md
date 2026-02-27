@@ -84,6 +84,11 @@ Key backend variables include:
 - `QUEUE_PROVIDER` (`auto`, `bullmq`, or `polling`)
 - `REDIS_URL` (required when `QUEUE_PROVIDER=bullmq`)
 
+Queue monitoring (admin key required):
+- Bull Board (dark mode): `http://localhost:3010/admin/queues/board?adminKey=YOUR_ADMIN_ACCESS_KEY`
+- HTML dashboard: `/api/admin/queues?adminKey=YOUR_ADMIN_ACCESS_KEY`
+- JSON snapshot: `/api/admin/queues?format=json&adminKey=YOUR_ADMIN_ACCESS_KEY`
+
 ## Auth Model
 
 The app uses bearer session tokens. Write operations require authentication. Upload/media access is account-scoped.

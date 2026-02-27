@@ -36,6 +36,7 @@ type ProjectsRouteArgs = {
     continuityReason?: string;
     durationSeconds?: number;
   }) => any;
+  updateSceneVideoJob: (id: string, patch: { status?: string; jobId?: string; videoUrl?: string; error?: string; sourceImageUrl?: string }) => any;
   getLatestSceneVideo: (projectId: string, beatId: string) => any;
   listLatestSceneVideos: (projectId: string) => any[];
   createScenePromptLayer: (args: {
@@ -207,6 +208,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     getLatestProjectPackage,
     setStoryboardSceneLocked,
     createSceneVideoJob,
+    updateSceneVideoJob,
     getLatestSceneVideo,
     listLatestSceneVideos,
     createScenePromptLayer,

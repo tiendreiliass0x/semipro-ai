@@ -8,9 +8,10 @@ import { createAuthDb } from './db/auth';
 import { createProjectsDb } from './db/projects';
 import { createStorylinesDb } from './db/storylines';
 import { createSubscribersDb } from './db/subscribers';
+import { startBullBoard } from './lib/bullBoard';
 import { generateHybridScreenplayWithLlm, generateProjectStoryboardWithLlm, generateScenesBibleWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
 import { buildCinematographerPrompt, buildDirectorSceneVideoPrompt, buildMergedScenePrompt, createFinalFilmFromClips, extractLastFrameFromVideo, generateSceneVideoWithFal } from './lib/sceneVideo';
-import { enqueueFinalFilmQueueRun as enqueueFinalFilmQueueRunBull, enqueueSceneVideoQueueRun as enqueueSceneVideoQueueRunBull, getQueueBackend, startQueueWorkers } from './lib/queueWorker';
+import { enqueueFinalFilmQueueRun as enqueueFinalFilmQueueRunBull, enqueueSceneVideoQueueRun as enqueueSceneVideoQueueRunBull, getBullMqQueues, getQueueBackend, getQueueDashboardData, startQueueWorkers } from './lib/queueWorker';
 import { resolveVideoModel } from './lib/videoModel';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
 import { handleAccountRoutes } from './routes/account';
@@ -841,6 +842,19 @@ if (bullStarted) {
   startPollingQueueWorkers();
 }
 
+const bullBoardEnabled = String(process.env.BULL_BOARD_ENABLED || 'true').trim().toLowerCase() !== 'false';
+if (bullStarted && bullBoardEnabled) {
+  const bullBoardPort = Number(process.env.BULL_BOARD_PORT || '3010');
+  const bullBoardBasePath = String(process.env.BULL_BOARD_BASE_PATH || '/admin/queues/board');
+  startBullBoard({
+    adminAccessKey: ADMIN_ACCESS_KEY,
+    port: Number.isFinite(bullBoardPort) ? bullBoardPort : 3010,
+    basePath: bullBoardBasePath,
+    queues: getBullMqQueues(),
+    onLog: message => console.log(message),
+  });
+}
+
 const buildStorylineContext = (storyline: any) => ({
   id: storyline.id,
   title: storyline.title,
@@ -1040,6 +1054,86 @@ const getDbStats = () => {
   };
 };
 
+const escapeHtml = (value: unknown) => String(value ?? '')
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#39;');
+
+const formatTime = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return '-';
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return '-';
+  }
+};
+
+const renderQueueDashboardHtml = (data: Awaited<ReturnType<typeof getQueueDashboardData>>) => {
+  const queueCards = data.queues.map(queue => {
+    const failedRows = queue.recentFailed.length
+      ? queue.recentFailed.map(item => `
+          <tr>
+            <td>${escapeHtml(item.id)}</td>
+            <td>${escapeHtml(item.name)}</td>
+            <td>${escapeHtml(item.failedReason)}</td>
+            <td>${escapeHtml(formatTime(item.timestamp))}</td>
+          </tr>
+        `).join('')
+      : '<tr><td colspan="4">No failed jobs</td></tr>';
+
+    return `
+      <section class="card">
+        <h2>${escapeHtml(queue.name)}</h2>
+        <div class="counts">
+          <span>waiting: <strong>${queue.counts.waiting}</strong></span>
+          <span>active: <strong>${queue.counts.active}</strong></span>
+          <span>completed: <strong>${queue.counts.completed}</strong></span>
+          <span>failed: <strong>${queue.counts.failed}</strong></span>
+          <span>delayed: <strong>${queue.counts.delayed}</strong></span>
+          <span>paused: <strong>${queue.counts.paused}</strong></span>
+        </div>
+        <h3>Recent failed jobs</h3>
+        <table>
+          <thead>
+            <tr><th>Id</th><th>Name</th><th>Reason</th><th>Created</th></tr>
+          </thead>
+          <tbody>${failedRows}</tbody>
+        </table>
+      </section>
+    `;
+  }).join('');
+
+  const body = data.queues.length
+    ? queueCards
+    : '<p>No BullMQ queues active. Current backend is polling mode.</p>';
+
+  return `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>Queue Dashboard</title>
+      <style>
+        body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; color: #111; background: #f6f7fb; }
+        h1 { margin: 0 0 8px; }
+        .meta { color: #444; margin-bottom: 20px; }
+        .card { background: #fff; border: 1px solid #dbe1ec; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+        .counts { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 14px; }
+        table { width: 100%; border-collapse: collapse; background: #fff; }
+        th, td { text-align: left; border-top: 1px solid #eef1f7; padding: 8px 10px; font-size: 13px; vertical-align: top; }
+        th { border-top: 0; font-size: 12px; color: #4c5a70; text-transform: uppercase; letter-spacing: .03em; }
+      </style>
+    </head>
+    <body>
+      <h1>Queue Dashboard</h1>
+      <div class="meta">Backend: <strong>${escapeHtml(data.backend)}</strong> | Updated: ${escapeHtml(formatTime(data.timestamp))}</div>
+      ${body}
+    </body>
+  </html>`;
+};
+
 serve({
   port: PORT,
   async fetch(req) {
@@ -1071,6 +1165,20 @@ serve({
     if (pathname === '/api/admin/db-stats' && method === 'GET') {
       if (!verifyAdminKey(req)) return new Response(JSON.stringify({ error: 'Admin key required' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       return new Response(JSON.stringify(getDbStats()), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (pathname === '/api/admin/queues' && method === 'GET') {
+      if (!verifyAdminKey(req)) return new Response(JSON.stringify({ error: 'Admin key required' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      try {
+        const data = await getQueueDashboardData();
+        if (url.searchParams.get('format') === 'json') {
+          return new Response(JSON.stringify(data), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        return new Response(renderQueueDashboardHtml(data), { headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' } });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to load queue dashboard';
+        return new Response(JSON.stringify({ error: message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     const authResponse = await handleAuthRoutes({
@@ -1124,6 +1232,7 @@ serve({
       getLatestProjectPackage,
       setStoryboardSceneLocked,
       createSceneVideoJob,
+      updateSceneVideoJob,
       getLatestSceneVideo,
       listLatestSceneVideos,
       createScenePromptLayer,

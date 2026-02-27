@@ -15,8 +15,17 @@ const QUEUE_NAME = String(process.env.QUEUE_NAME || 'yenengalabs:jobs').trim() |
 const QUEUE_PREFIX = String(process.env.BULLMQ_PREFIX || '').trim();
 const QUEUE_CONCURRENCY = Math.max(1, Math.floor(Number(process.env.QUEUE_CONCURRENCY || '1')));
 
-const SCENE_VIDEO_QUEUE = `${QUEUE_NAME}:scene-video`;
-const FINAL_FILM_QUEUE = `${QUEUE_NAME}:final-film`;
+const sanitizeQueueToken = (value: string) => {
+  const normalized = value
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'queue';
+};
+
+const QUEUE_NAME_SAFE = sanitizeQueueToken(QUEUE_NAME);
+const SCENE_VIDEO_QUEUE = `${QUEUE_NAME_SAFE}-scene-video`;
+const FINAL_FILM_QUEUE = `${QUEUE_NAME_SAFE}-final-film`;
 
 const resolveQueueBackend = (): QueueBackend => {
   if (QUEUE_PROVIDER === 'polling' || QUEUE_PROVIDER === 'sqlite') return 'polling';
@@ -33,6 +42,34 @@ let producerConnection: IORedis | null = null;
 let consumerConnection: IORedis | null = null;
 let sceneQueue: Queue<{ jobId: string; enqueuedAt: number }> | null = null;
 let finalFilmQueue: Queue<{ jobId: string; enqueuedAt: number }> | null = null;
+
+type QueueCounts = {
+  waiting: number;
+  active: number;
+  completed: number;
+  failed: number;
+  delayed: number;
+  paused: number;
+};
+
+type QueueSnapshot = {
+  name: string;
+  counts: QueueCounts;
+  recentFailed: Array<{
+    id: string;
+    name: string;
+    failedReason: string;
+    timestamp: number;
+  }>;
+};
+
+export type QueueDashboardData = {
+  backend: QueueBackend;
+  timestamp: number;
+  queues: QueueSnapshot[];
+};
+
+export type BullMqQueueHandle = Queue<{ jobId: string; enqueuedAt: number }>;
 
 const queueOptions = (connection: IORedis) => ({
   connection,
@@ -105,6 +142,11 @@ const getFinalFilmQueue = () => {
   return finalFilmQueue;
 };
 
+export const getBullMqQueues = (): BullMqQueueHandle[] => {
+  if (queueBackend !== 'bullmq') return [];
+  return [getSceneQueue(), getFinalFilmQueue()];
+};
+
 export const getQueueBackend = () => queueBackend;
 export const queueWorkersConfigured = () => queueBackend === 'bullmq';
 
@@ -130,6 +172,14 @@ export const startQueueWorkers = (args: StartQueueWorkersArgs) => {
   const workerSceneConnection = ensureConsumerConnection().duplicate();
   const workerFinalFilmConnection = ensureConsumerConnection().duplicate();
   const log = (message: string) => args.onLog?.(message);
+  workerSceneConnection.on('error', error => {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    log(`[queue] BullMQ scene worker connection error: ${message}`);
+  });
+  workerFinalFilmConnection.on('error', error => {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    log(`[queue] BullMQ final film worker connection error: ${message}`);
+  });
 
   const sceneWorker = new Worker(
     SCENE_VIDEO_QUEUE,
@@ -166,4 +216,47 @@ export const startQueueWorkers = (args: StartQueueWorkersArgs) => {
   };
 
   return { close };
+};
+
+const buildQueueSnapshot = async (queue: Queue<{ jobId: string; enqueuedAt: number }>): Promise<QueueSnapshot> => {
+  const countsRaw = await queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed', 'paused');
+  const failedJobs = await queue.getJobs(['failed'], 0, 9, false);
+  return {
+    name: queue.name,
+    counts: {
+      waiting: Number(countsRaw.waiting || 0),
+      active: Number(countsRaw.active || 0),
+      completed: Number(countsRaw.completed || 0),
+      failed: Number(countsRaw.failed || 0),
+      delayed: Number(countsRaw.delayed || 0),
+      paused: Number(countsRaw.paused || 0),
+    },
+    recentFailed: failedJobs.map(job => ({
+      id: String(job.id || ''),
+      name: String(job.name || ''),
+      failedReason: String(job.failedReason || ''),
+      timestamp: Number(job.timestamp || 0),
+    })),
+  };
+};
+
+export const getQueueDashboardData = async (): Promise<QueueDashboardData> => {
+  if (queueBackend !== 'bullmq') {
+    return {
+      backend: queueBackend,
+      timestamp: Date.now(),
+      queues: [],
+    };
+  }
+
+  const [scene, finalFilm] = await Promise.all([
+    buildQueueSnapshot(getSceneQueue()),
+    buildQueueSnapshot(getFinalFilmQueue()),
+  ]);
+
+  return {
+    backend: queueBackend,
+    timestamp: Date.now(),
+    queues: [scene, finalFilm],
+  };
 };
