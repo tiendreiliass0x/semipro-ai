@@ -246,6 +246,23 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS storyboard_image_jobs (
+    id TEXT PRIMARY KEY,
+    projectId TEXT NOT NULL,
+    packageId TEXT NOT NULL,
+    beatId TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    imageModelKey TEXT DEFAULT 'fal',
+    status TEXT DEFAULT 'queued',
+    imageUrl TEXT DEFAULT '',
+    error TEXT DEFAULT '',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
 const ensureSceneVideoColumn = (columnSql: string) => {
   try {
     db.exec(`ALTER TABLE scene_videos ADD COLUMN ${columnSql}`);

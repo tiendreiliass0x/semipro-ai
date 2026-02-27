@@ -11,7 +11,7 @@ import { createSubscribersDb } from './db/subscribers';
 import { startBullBoard } from './lib/bullBoard';
 import { generateHybridScreenplayWithLlm, generateProjectStoryboardWithLlm, generateScenesBibleWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
 import { buildCinematographerPrompt, buildDirectorSceneVideoPrompt, buildMergedScenePrompt, createFinalFilmFromClips, extractLastFrameFromVideo, generateSceneVideoWithFal } from './lib/sceneVideo';
-import { enqueueFinalFilmQueueRun as enqueueFinalFilmQueueRunBull, enqueueSceneVideoQueueRun as enqueueSceneVideoQueueRunBull, getBullMqQueues, getQueueBackend, getQueueDashboardData, startQueueWorkers } from './lib/queueWorker';
+import { enqueueFinalFilmQueueRun as enqueueFinalFilmQueueRunBull, enqueueSceneVideoQueueRun as enqueueSceneVideoQueueRunBull, enqueueStoryboardImageQueueRun as enqueueStoryboardImageQueueRunBull, getBullMqQueues, getQueueBackend, getQueueDashboardData, startQueueWorkers } from './lib/queueWorker';
 import { resolveVideoModel } from './lib/videoModel';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
 import { handleAccountRoutes } from './routes/account';
@@ -271,6 +271,23 @@ db.exec(`
     jobId TEXT DEFAULT '',
     videoUrl TEXT DEFAULT '',
     durationSeconds INTEGER DEFAULT 5,
+    error TEXT DEFAULT '',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS storyboard_image_jobs (
+    id TEXT PRIMARY KEY,
+    projectId TEXT NOT NULL,
+    packageId TEXT NOT NULL,
+    beatId TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    imageModelKey TEXT DEFAULT 'fal',
+    status TEXT DEFAULT 'queued',
+    imageUrl TEXT DEFAULT '',
     error TEXT DEFAULT '',
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL,
@@ -631,7 +648,11 @@ const {
   setBeatLocked,
   saveProjectPackage,
   getLatestProjectPackage,
+  getProjectPackageById,
+  updateProjectPackagePayload,
   setStoryboardSceneLocked,
+  createStoryboardImageJob,
+  updateStoryboardImageJob,
   createSceneVideoJob,
   updateSceneVideoJob,
   getLatestSceneVideo,
@@ -640,8 +661,13 @@ const {
   updateProjectFinalFilm,
   getLatestProjectFinalFilm,
   claimNextQueuedProjectFinalFilm,
+  claimProjectFinalFilmById,
   requeueStaleProcessingProjectFinalFilms,
+  claimNextQueuedStoryboardImageJob,
+  claimStoryboardImageJobById,
+  requeueStaleProcessingStoryboardImageJobs,
   claimNextQueuedSceneVideo,
+  claimSceneVideoJobById,
   requeueStaleProcessingSceneVideos,
   createScenePromptLayer,
   getLatestScenePromptLayer,
@@ -657,41 +683,123 @@ const {
   updateProjectScenesBible,
 } = createProjectsDb({ db, generateId });
 
+let storyboardImageWorkerActive = false;
+const processStoryboardImageJob = async (job: any) => {
+  try {
+    const projectId = String(job.projectId || '');
+    const packageId = String(job.packageId || '');
+    const beatId = String(job.beatId || '');
+    console.log(`[queue][bullmq] Processing storyboard image job ${job.id} (project: ${projectId}, beat: ${beatId})`);
+    const imageUrl = await generateStoryboardFrameWithLlm(
+      String(job.prompt || ''),
+      String(job.imageModelKey || 'fal').trim().toLowerCase() || 'fal'
+    );
+
+    const projectPackage = getProjectPackageById(packageId);
+    if (!projectPackage) {
+      updateStoryboardImageJob(job.id, { status: 'failed', error: `Storyboard package not found: ${packageId}` });
+      return;
+    }
+
+    const storyboard = Array.isArray(projectPackage?.payload?.storyboard) ? projectPackage.payload.storyboard : [];
+    if (!storyboard.length) {
+      updateStoryboardImageJob(job.id, { status: 'failed', error: 'Storyboard package has no scenes' });
+      return;
+    }
+
+    const hasTargetScene = storyboard.some((scene: any) => String(scene?.beatId) === beatId);
+    if (!hasTargetScene) {
+      updateStoryboardImageJob(job.id, { status: 'failed', error: `Scene beat not found in storyboard: ${beatId}` });
+      return;
+    }
+
+    const updatedPayload = {
+      ...projectPackage.payload,
+      storyboard: storyboard.map((scene: any) => (
+        String(scene?.beatId) === beatId
+          ? { ...scene, imageUrl }
+          : scene
+      )),
+    };
+    updateProjectPackagePayload(packageId, updatedPayload);
+    updateStoryboardImageJob(job.id, { status: 'completed', imageUrl, error: '' });
+    console.log(`[queue][bullmq] Completed storyboard image job ${job.id}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to generate storyboard image';
+    updateStoryboardImageJob(job.id, { status: 'failed', error: message });
+    console.error(`[queue][bullmq] Failed storyboard image job ${job.id}: ${message}`);
+  }
+};
+
+const processStoryboardImageQueue = async (triggerJobId?: string) => {
+  if (storyboardImageWorkerActive) return;
+  storyboardImageWorkerActive = true;
+
+  try {
+    const normalizedTriggerJobId = String(triggerJobId || '').trim();
+    if (normalizedTriggerJobId && normalizedTriggerJobId !== 'startup-drain') {
+      const targetedJob = claimStoryboardImageJobById(normalizedTriggerJobId);
+      if (!targetedJob) return;
+      await processStoryboardImageJob(targetedJob);
+      return;
+    }
+
+    while (true) {
+      const job = claimNextQueuedStoryboardImageJob();
+      if (!job) break;
+      await processStoryboardImageJob(job);
+    }
+  } finally {
+    storyboardImageWorkerActive = false;
+  }
+};
+
 let sceneVideoWorkerActive = false;
-const processSceneVideoQueue = async () => {
+const processSceneVideoJob = async (job: any) => {
+  try {
+    console.log(`[queue][bullmq] Processing scene video job ${job.id} (project: ${job.projectId}, beat: ${job.beatId})`);
+    const videoUrl = await generateSceneVideoWithFal({
+      uploadsDir,
+      sourceImageUrl: String(job.sourceImageUrl || ''),
+      prompt: String(job.prompt || ''),
+      modelKey: String(job.modelKey || 'seedance'),
+      durationSeconds: Number(job.durationSeconds || 5),
+    });
+
+    const project = getProjectById(String(job.projectId || ''));
+    if (project?.accountId) {
+      const filename = getUploadFilenameFromUrl(String(videoUrl || ''));
+      if (filename) {
+        registerUploadOwnership({ filename, accountId: String(project.accountId) });
+      }
+    }
+
+    updateSceneVideoJob(job.id, { status: 'completed', videoUrl, error: '' });
+    console.log(`[queue][bullmq] Completed scene video job ${job.id}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to generate scene video';
+    updateSceneVideoJob(job.id, { status: 'failed', error: message });
+    console.error(`[queue][bullmq] Failed scene video job ${job.id}: ${message}`);
+  }
+};
+
+const processSceneVideoQueue = async (triggerJobId?: string) => {
   if (sceneVideoWorkerActive) return;
   sceneVideoWorkerActive = true;
 
   try {
+    const normalizedTriggerJobId = String(triggerJobId || '').trim();
+    if (normalizedTriggerJobId && normalizedTriggerJobId !== 'startup-drain') {
+      const targetedJob = claimSceneVideoJobById(normalizedTriggerJobId);
+      if (!targetedJob) return;
+      await processSceneVideoJob(targetedJob);
+      return;
+    }
+
     while (true) {
       const job = claimNextQueuedSceneVideo();
       if (!job) break;
-
-      try {
-        console.log(`[queue] Processing scene video job ${job.id} (project: ${job.projectId}, beat: ${job.beatId})`);
-        const videoUrl = await generateSceneVideoWithFal({
-          uploadsDir,
-          sourceImageUrl: String(job.sourceImageUrl || ''),
-          prompt: String(job.prompt || ''),
-          modelKey: String(job.modelKey || 'seedance'),
-          durationSeconds: Number(job.durationSeconds || 5),
-        });
-
-        const project = getProjectById(String(job.projectId || ''));
-        if (project?.accountId) {
-          const filename = getUploadFilenameFromUrl(String(videoUrl || ''));
-          if (filename) {
-            registerUploadOwnership({ filename, accountId: String(project.accountId) });
-          }
-        }
-
-        updateSceneVideoJob(job.id, { status: 'completed', videoUrl, error: '' });
-        console.log(`[queue] Completed scene video job ${job.id}`);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to generate scene video';
-        updateSceneVideoJob(job.id, { status: 'failed', error: message });
-        console.error(`[queue] Failed scene video job ${job.id}: ${message}`);
-      }
+      await processSceneVideoJob(job);
     }
   } finally {
     sceneVideoWorkerActive = false;
@@ -699,72 +807,83 @@ const processSceneVideoQueue = async () => {
 };
 
 let finalFilmWorkerActive = false;
-const processFinalFilmQueue = async () => {
+const processFinalFilmJob = async (filmJob: any) => {
+  try {
+    const projectId = String(filmJob.projectId || '');
+    console.log(`[queue][bullmq] Processing final film job ${filmJob.id} (project: ${projectId})`);
+
+    const project = getProjectById(projectId);
+    if (!project) {
+      updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'Project not found' });
+      return;
+    }
+
+    const latestPackage = getLatestProjectPackage(projectId);
+    const storyboard = Array.isArray(latestPackage?.payload?.storyboard) ? latestPackage.payload.storyboard : [];
+    if (!storyboard.length) {
+      updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'No storyboard found. Generate scenes first.' });
+      return;
+    }
+
+    const sceneVideos = listLatestSceneVideos(projectId);
+    const completedByBeatId = new Map<string, any>();
+    sceneVideos.forEach(item => {
+      if (String(item?.status) === 'completed' && String(item?.videoUrl || '').trim()) {
+        completedByBeatId.set(String(item.beatId), item);
+      }
+    });
+
+    const clipUrls = storyboard
+      .map((scene: any) => completedByBeatId.get(String(scene.beatId))?.videoUrl)
+      .filter((url: any) => typeof url === 'string' && url.trim().length > 0);
+
+    if (!clipUrls.length) {
+      updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'No completed scene videos found to compile.' });
+      return;
+    }
+
+    const outputFilename = `final-film-${projectId}-${Date.now()}.mp4`;
+    const videoUrl = await createFinalFilmFromClips({
+      uploadsDir,
+      clipUrls,
+      outputFilename,
+    });
+
+    if (project?.accountId) {
+      registerUploadOwnership({ filename: outputFilename, accountId: String(project.accountId) });
+    }
+
+    updateProjectFinalFilm(filmJob.id, {
+      status: 'completed',
+      sourceCount: clipUrls.length,
+      videoUrl,
+      error: '',
+    });
+    console.log(`[queue][bullmq] Completed final film job ${filmJob.id}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to build final film';
+    updateProjectFinalFilm(filmJob.id, { status: 'failed', error: message });
+    console.error(`[queue][bullmq] Failed final film job ${filmJob.id}: ${message}`);
+  }
+};
+
+const processFinalFilmQueue = async (triggerJobId?: string) => {
   if (finalFilmWorkerActive) return;
   finalFilmWorkerActive = true;
 
   try {
+    const normalizedTriggerJobId = String(triggerJobId || '').trim();
+    if (normalizedTriggerJobId && normalizedTriggerJobId !== 'startup-drain') {
+      const targetedJob = claimProjectFinalFilmById(normalizedTriggerJobId);
+      if (!targetedJob) return;
+      await processFinalFilmJob(targetedJob);
+      return;
+    }
+
     while (true) {
       const filmJob = claimNextQueuedProjectFinalFilm();
       if (!filmJob) break;
-
-      try {
-        const projectId = String(filmJob.projectId || '');
-        console.log(`[queue] Processing final film job ${filmJob.id} (project: ${projectId})`);
-
-        const project = getProjectById(projectId);
-        if (!project) {
-          updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'Project not found' });
-          continue;
-        }
-
-        const latestPackage = getLatestProjectPackage(projectId);
-        const storyboard = Array.isArray(latestPackage?.payload?.storyboard) ? latestPackage.payload.storyboard : [];
-        if (!storyboard.length) {
-          updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'No storyboard found. Generate scenes first.' });
-          continue;
-        }
-
-        const sceneVideos = listLatestSceneVideos(projectId);
-        const completedByBeatId = new Map<string, any>();
-        sceneVideos.forEach(item => {
-          if (String(item?.status) === 'completed' && String(item?.videoUrl || '').trim()) {
-            completedByBeatId.set(String(item.beatId), item);
-          }
-        });
-
-        const clipUrls = storyboard
-          .map((scene: any) => completedByBeatId.get(String(scene.beatId))?.videoUrl)
-          .filter((url: any) => typeof url === 'string' && url.trim().length > 0);
-
-        if (!clipUrls.length) {
-          updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'No completed scene videos found to compile.' });
-          continue;
-        }
-
-        const outputFilename = `final-film-${projectId}-${Date.now()}.mp4`;
-        const videoUrl = await createFinalFilmFromClips({
-          uploadsDir,
-          clipUrls,
-          outputFilename,
-        });
-
-        if (project?.accountId) {
-          registerUploadOwnership({ filename: outputFilename, accountId: String(project.accountId) });
-        }
-
-        updateProjectFinalFilm(filmJob.id, {
-          status: 'completed',
-          sourceCount: clipUrls.length,
-          videoUrl,
-          error: '',
-        });
-        console.log(`[queue] Completed final film job ${filmJob.id}`);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to build final film';
-        updateProjectFinalFilm(filmJob.id, { status: 'failed', error: message });
-        console.error(`[queue] Failed final film job ${filmJob.id}: ${message}`);
-      }
+      await processFinalFilmJob(filmJob);
     }
   } finally {
     finalFilmWorkerActive = false;
@@ -772,49 +891,65 @@ const processFinalFilmQueue = async () => {
 };
 
 const queueBackend = getQueueBackend();
-let enqueueSceneVideoQueueRun = async (_jobId: string) => {
-  processSceneVideoQueue().catch(() => null);
+let enqueueStoryboardImageQueueRun = async (jobId: string) => {
+  if (queueBackend === 'polling') {
+    processStoryboardImageQueue().catch(() => null);
+    return;
+  }
+  throw new Error(`[queue] BullMQ enqueue handler not initialized for storyboard image job ${jobId}`);
 };
-let enqueueFinalFilmQueueRun = async (_jobId: string) => {
-  processFinalFilmQueue().catch(() => null);
+let enqueueSceneVideoQueueRun = async (jobId: string) => {
+  if (queueBackend === 'polling') {
+    processSceneVideoQueue().catch(() => null);
+    return;
+  }
+  throw new Error(`[queue] BullMQ enqueue handler not initialized for scene video job ${jobId}`);
+};
+let enqueueFinalFilmQueueRun = async (jobId: string) => {
+  if (queueBackend === 'polling') {
+    processFinalFilmQueue().catch(() => null);
+    return;
+  }
+  throw new Error(`[queue] BullMQ enqueue handler not initialized for final film job ${jobId}`);
 };
 
 const startPollingQueueWorkers = () => {
   console.log('[queue] Running in polling mode');
+  setInterval(() => {
+    processStoryboardImageQueue().catch(() => null);
+  }, 2500);
   setInterval(() => {
     processSceneVideoQueue().catch(() => null);
   }, 2500);
   setInterval(() => {
     processFinalFilmQueue().catch(() => null);
   }, 2500);
+  processStoryboardImageQueue().catch(() => null);
   processSceneVideoQueue().catch(() => null);
   processFinalFilmQueue().catch(() => null);
 };
 
 const startBullMqQueueWorkers = () => {
-  if (queueBackend !== 'bullmq') return false;
+  if (queueBackend !== 'bullmq') return;
 
-  try {
-    startQueueWorkers({
-      processSceneVideoQueue,
-      processFinalFilmQueue,
-      onLog: message => console.log(message),
-    });
+  startQueueWorkers({
+    processStoryboardImageQueue,
+    processSceneVideoQueue,
+    processFinalFilmQueue,
+    onLog: message => console.log(message),
+  });
 
-    enqueueSceneVideoQueueRun = async (jobId: string) => {
-      await enqueueSceneVideoQueueRunBull(jobId);
-    };
-    enqueueFinalFilmQueueRun = async (jobId: string) => {
-      await enqueueFinalFilmQueueRunBull(jobId);
-    };
+  enqueueStoryboardImageQueueRun = async (jobId: string) => {
+    await enqueueStoryboardImageQueueRunBull(jobId);
+  };
+  enqueueSceneVideoQueueRun = async (jobId: string) => {
+    await enqueueSceneVideoQueueRunBull(jobId);
+  };
+  enqueueFinalFilmQueueRun = async (jobId: string) => {
+    await enqueueFinalFilmQueueRunBull(jobId);
+  };
 
-    console.log('[queue] Running in BullMQ mode');
-    return true;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'unknown error';
-    console.warn(`[queue] Failed to start BullMQ workers (${message}). Falling back to polling mode.`);
-    return false;
-  }
+  console.log('[queue] Running in BullMQ mode');
 };
 
 setInterval(() => {
@@ -834,16 +969,31 @@ if (requeuedFinalFilmCount > 0) {
   console.log(`[queue] Re-queued ${requeuedFinalFilmCount} stale processing final film job(s)`);
 }
 
-const bullStarted = startBullMqQueueWorkers();
-if (bullStarted) {
-  enqueueSceneVideoQueueRun('startup-drain').catch(() => null);
-  enqueueFinalFilmQueueRun('startup-drain').catch(() => null);
+const requeuedStoryboardImageCount = requeueStaleProcessingStoryboardImageJobs();
+if (requeuedStoryboardImageCount > 0) {
+  console.log(`[queue] Re-queued ${requeuedStoryboardImageCount} stale processing storyboard image job(s)`);
+}
+
+if (queueBackend === 'bullmq') {
+  startBullMqQueueWorkers();
+  enqueueStoryboardImageQueueRun('startup-drain').catch(error => {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    console.error(`[queue] Failed startup-drain enqueue for storyboard image queue: ${message}`);
+  });
+  enqueueSceneVideoQueueRun('startup-drain').catch(error => {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    console.error(`[queue] Failed startup-drain enqueue for scene video queue: ${message}`);
+  });
+  enqueueFinalFilmQueueRun('startup-drain').catch(error => {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    console.error(`[queue] Failed startup-drain enqueue for final film queue: ${message}`);
+  });
 } else {
   startPollingQueueWorkers();
 }
 
 const bullBoardEnabled = String(process.env.BULL_BOARD_ENABLED || 'true').trim().toLowerCase() !== 'false';
-if (bullStarted && bullBoardEnabled) {
+if (queueBackend === 'bullmq' && bullBoardEnabled) {
   const bullBoardPort = Number(process.env.BULL_BOARD_PORT || '3010');
   const bullBoardBasePath = String(process.env.BULL_BOARD_BASE_PATH || '/admin/queues/board');
   startBullBoard({
@@ -1230,6 +1380,8 @@ serve({
       setBeatLocked,
       saveProjectPackage,
       getLatestProjectPackage,
+      createStoryboardImageJob,
+      updateStoryboardImageJob,
       setStoryboardSceneLocked,
       createSceneVideoJob,
       updateSceneVideoJob,
@@ -1244,6 +1396,7 @@ serve({
       createProjectFinalFilm,
       updateProjectFinalFilm,
       getLatestProjectFinalFilm,
+      enqueueStoryboardImageQueueRun,
       enqueueSceneVideoQueueRun,
       enqueueFinalFilmQueueRun,
       getProjectStyleBible,

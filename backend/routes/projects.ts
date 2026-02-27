@@ -22,6 +22,14 @@ type ProjectsRouteArgs = {
   saveProjectPackage: (projectId: string, payload: any, prompt: string) => any;
   getLatestProjectPackage: (projectId: string) => any;
   setStoryboardSceneLocked: (projectId: string, beatId: string, locked: boolean) => any;
+  createStoryboardImageJob: (args: {
+    projectId: string;
+    packageId: string;
+    beatId: string;
+    prompt: string;
+    imageModelKey?: string;
+  }) => any;
+  updateStoryboardImageJob: (id: string, patch: { status?: string; imageUrl?: string; error?: string }) => any;
   createSceneVideoJob: (args: {
     projectId: string;
     packageId: string;
@@ -61,6 +69,7 @@ type ProjectsRouteArgs = {
   createProjectFinalFilm: (args: { projectId: string; sourceCount: number }) => any;
   updateProjectFinalFilm: (id: string, patch: { status?: string; sourceCount?: number; videoUrl?: string; error?: string }) => any;
   getLatestProjectFinalFilm: (projectId: string) => any;
+  enqueueStoryboardImageQueueRun: (jobId: string) => Promise<void>;
   enqueueSceneVideoQueueRun: (jobId: string) => Promise<void>;
   enqueueFinalFilmQueueRun: (jobId: string) => Promise<void>;
   getProjectStyleBible: (projectId: string) => any;
@@ -207,6 +216,8 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     saveProjectPackage,
     getLatestProjectPackage,
     setStoryboardSceneLocked,
+    createStoryboardImageJob,
+    updateStoryboardImageJob,
     createSceneVideoJob,
     updateSceneVideoJob,
     getLatestSceneVideo,
@@ -220,6 +231,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     createProjectFinalFilm,
     updateProjectFinalFilm,
     getLatestProjectFinalFilm,
+    enqueueStoryboardImageQueueRun,
     enqueueSceneVideoQueueRun,
     enqueueFinalFilmQueueRun,
     getProjectStyleBible,
@@ -634,25 +646,48 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         filmType,
       });
 
-      if (Array.isArray(result?.storyboard)) {
-        for (const scene of result.storyboard) {
-          try {
-            const prompt = buildStoryboardImagePrompt({
-              scene,
-              filmType,
-              projectTitle: project.title,
-              synopsis: project.polishedSynopsis || project.pseudoSynopsis,
-            });
-            const imageUrl = await generateStoryboardFrameWithLlm(prompt, imageModelKey);
-            scene.imageUrl = imageUrl;
-          } catch {
-            scene.imageUrl = '';
-          }
+      const saved = saveProjectPackage(projectId, result, typeof body?.prompt === 'string' ? body.prompt : '');
+      const storyboard = Array.isArray(saved?.payload?.storyboard) ? saved.payload.storyboard : [];
+      let queuedImageJobs = 0;
+      let failedToQueue = 0;
+
+      for (const scene of storyboard) {
+        const imagePrompt = buildStoryboardImagePrompt({
+          scene,
+          filmType,
+          projectTitle: project.title,
+          synopsis: project.polishedSynopsis || project.pseudoSynopsis,
+        });
+        const job = createStoryboardImageJob({
+          projectId,
+          packageId: String(saved.id),
+          beatId: String(scene?.beatId || ''),
+          prompt: imagePrompt,
+          imageModelKey,
+        });
+        try {
+          await enqueueStoryboardImageQueueRun(String(job.id));
+          queuedImageJobs += 1;
+        } catch (error) {
+          failedToQueue += 1;
+          const message = error instanceof Error ? error.message : 'Failed to enqueue storyboard image job';
+          updateStoryboardImageJob(String(job.id), { status: 'failed', error: message });
         }
       }
 
-      const saved = saveProjectPackage(projectId, result, typeof body?.prompt === 'string' ? body.prompt : '');
-      return new Response(JSON.stringify({ success: true, result, package: saved }), { headers: jsonHeaders(corsHeaders) });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          result: saved.payload || result,
+          package: saved,
+          queuedImageJobs,
+          failedToQueue,
+          message: queuedImageJobs > 0
+            ? `Storyboard generated and ${queuedImageJobs} image job(s) queued.`
+            : 'Storyboard generated. No storyboard image jobs queued.',
+        }),
+        { status: queuedImageJobs > 0 ? 202 : 200, headers: jsonHeaders(corsHeaders) }
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate storyboard';
       return new Response(JSON.stringify({ error: message }), { status: 502, headers: jsonHeaders(corsHeaders) });
@@ -850,27 +885,33 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       return new Response(JSON.stringify({ error: 'Scene not found for beat' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
 
+    const imagePrompt = buildStoryboardImagePrompt({
+      scene: targetScene,
+      filmType,
+      projectTitle: project.title,
+      synopsis: project.polishedSynopsis || project.pseudoSynopsis,
+    });
+    const imageJob = createStoryboardImageJob({
+      projectId,
+      packageId: String(latestPackage.id),
+      beatId: String(beatId),
+      prompt: imagePrompt,
+      imageModelKey,
+    });
     try {
-      const imagePrompt = buildStoryboardImagePrompt({
-        scene: targetScene,
-        filmType,
-        projectTitle: project.title,
-        synopsis: project.polishedSynopsis || project.pseudoSynopsis,
-      });
-      const imageUrl = await generateStoryboardFrameWithLlm(imagePrompt, imageModelKey);
-      const updatedPayload = {
-        ...latestPackage.payload,
-        storyboard: latestPackage.payload.storyboard.map((scene: any) => (
-          String(scene.beatId) === String(beatId)
-            ? { ...scene, imageUrl }
-            : scene
-        )),
-      };
-
-      const item = saveProjectPackage(projectId, updatedPayload, latestPackage.prompt || 'regenerate-storyboard-image');
-      return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
+      await enqueueStoryboardImageQueueRun(String(imageJob.id));
+      return new Response(
+        JSON.stringify({
+          success: true,
+          item: latestPackage,
+          job: imageJob,
+          message: 'Storyboard image job queued.',
+        }),
+        { status: 202, headers: jsonHeaders(corsHeaders) }
+      );
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to regenerate storyboard image';
+      const message = error instanceof Error ? error.message : 'Failed to enqueue storyboard image job';
+      updateStoryboardImageJob(String(imageJob.id), { status: 'failed', error: message });
       return new Response(JSON.stringify({ error: message }), { status: 502, headers: jsonHeaders(corsHeaders) });
     }
   }
@@ -893,33 +934,45 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
 
     const storyboard = latestPackage.payload.storyboard as any[];
-    const refreshedStoryboard: any[] = [];
     let refreshedCount = 0;
     let failedCount = 0;
 
     for (const scene of storyboard) {
+      const imagePrompt = buildStoryboardImagePrompt({
+        scene,
+        filmType,
+        projectTitle: project.title,
+        synopsis: project.polishedSynopsis || project.pseudoSynopsis,
+      });
+      const job = createStoryboardImageJob({
+        projectId,
+        packageId: String(latestPackage.id),
+        beatId: String(scene?.beatId || ''),
+        prompt: imagePrompt,
+        imageModelKey,
+      });
       try {
-        const imagePrompt = buildStoryboardImagePrompt({
-          scene,
-          filmType,
-          projectTitle: project.title,
-          synopsis: project.polishedSynopsis || project.pseudoSynopsis,
-        });
-        const imageUrl = await generateStoryboardFrameWithLlm(imagePrompt, imageModelKey);
-        refreshedStoryboard.push({ ...scene, imageUrl });
+        await enqueueStoryboardImageQueueRun(String(job.id));
         refreshedCount += 1;
-      } catch {
-        refreshedStoryboard.push({ ...scene });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to enqueue storyboard image job';
+        updateStoryboardImageJob(String(job.id), { status: 'failed', error: message });
         failedCount += 1;
       }
     }
 
-    const updatedPayload = {
-      ...latestPackage.payload,
-      storyboard: refreshedStoryboard,
-    };
-    const item = saveProjectPackage(projectId, updatedPayload, latestPackage.prompt || 'regenerate-all-storyboard-images');
-    return new Response(JSON.stringify({ success: true, item, refreshedCount, failedCount }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        item: latestPackage,
+        refreshedCount,
+        failedCount,
+        message: refreshedCount > 0
+          ? `Queued ${refreshedCount} storyboard image job(s).`
+          : 'No storyboard image jobs queued.',
+      }),
+      { status: refreshedCount > 0 ? 202 : 200, headers: jsonHeaders(corsHeaders) }
+    );
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/video$/) && method === 'POST') {

@@ -6,6 +6,15 @@ type CreateProjectsDbArgs = {
 };
 
 export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
+  const parseJsonObject = (value: unknown, fallback: any = {}) => {
+    try {
+      const parsed = JSON.parse(String(value || '{}'));
+      return parsed && typeof parsed === 'object' ? parsed : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
   const DEFAULT_STYLE_BIBLE = {
     visualStyle: 'Grounded cinematic realism with expressive close-ups and motivated camera movement.',
     cameraGrammar: 'Use intentional composition, practical coverage, and transitions that preserve orientation.',
@@ -311,6 +320,25 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return { ...row, payload: JSON.parse(row.payload) };
   };
 
+  const getProjectPackageById = (packageId: string) => {
+    const row = db.query(`
+      SELECT id, projectId, payload, prompt, status, version, createdAt, updatedAt
+      FROM project_packages
+      WHERE id = ?
+      LIMIT 1
+    `).get(packageId) as any;
+    if (!row) return null;
+    return { ...row, payload: parseJsonObject(row.payload, {}) };
+  };
+
+  const updateProjectPackagePayload = (packageId: string, payload: any) => {
+    const now = Date.now();
+    db.query('UPDATE project_packages SET payload = ?, updatedAt = ? WHERE id = ?').run(JSON.stringify(payload || {}), now, packageId);
+    const updated = getProjectPackageById(packageId);
+    if (!updated) return null;
+    return { ...updated, updatedAt: now };
+  };
+
   const setStoryboardSceneLocked = (projectId: string, beatId: string, locked: boolean) => {
     const latest = getLatestProjectPackage(projectId);
     if (!latest?.payload?.storyboard || !Array.isArray(latest.payload.storyboard)) return null;
@@ -372,6 +400,106 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
       now
     );
     return db.query('SELECT * FROM scene_videos WHERE id = ?').get(id) as any;
+  };
+
+  const createStoryboardImageJob = (args: {
+    projectId: string;
+    packageId: string;
+    beatId: string;
+    prompt: string;
+    imageModelKey?: string;
+  }) => {
+    const id = generateId();
+    const now = Date.now();
+    db.query(`
+      INSERT INTO storyboard_image_jobs (
+        id, projectId, packageId, beatId, prompt, imageModelKey,
+        status, imageUrl, error, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      args.projectId,
+      args.packageId,
+      args.beatId,
+      String(args.prompt || ''),
+      String(args.imageModelKey || 'fal').trim().toLowerCase() || 'fal',
+      'queued',
+      '',
+      '',
+      now,
+      now
+    );
+    return db.query('SELECT * FROM storyboard_image_jobs WHERE id = ?').get(id) as any;
+  };
+
+  const updateStoryboardImageJob = (id: string, patch: Partial<{
+    status: string;
+    imageUrl: string;
+    error: string;
+  }>) => {
+    const now = Date.now();
+    const row = db.query('SELECT * FROM storyboard_image_jobs WHERE id = ?').get(id) as any;
+    if (!row) return null;
+    db.query(`
+      UPDATE storyboard_image_jobs SET
+        status = ?,
+        imageUrl = ?,
+        error = ?,
+        updatedAt = ?
+      WHERE id = ?
+    `).run(
+      patch.status ?? row.status,
+      patch.imageUrl ?? row.imageUrl,
+      patch.error ?? row.error,
+      now,
+      id
+    );
+    return db.query('SELECT * FROM storyboard_image_jobs WHERE id = ?').get(id) as any;
+  };
+
+  const claimNextQueuedStoryboardImageJob = () => {
+    const candidate = db.query(`
+      SELECT id
+      FROM storyboard_image_jobs
+      WHERE status = 'queued'
+      ORDER BY createdAt ASC
+      LIMIT 1
+    `).get() as { id?: string } | null;
+
+    if (!candidate?.id) return null;
+
+    const now = Date.now();
+    const result = db.query(`
+      UPDATE storyboard_image_jobs
+      SET status = 'processing', updatedAt = ?
+      WHERE id = ? AND status = 'queued'
+    `).run(now, candidate.id) as { changes?: number };
+
+    if (!result?.changes) return null;
+    return db.query('SELECT * FROM storyboard_image_jobs WHERE id = ?').get(candidate.id) as any;
+  };
+
+  const claimStoryboardImageJobById = (id: string) => {
+    const now = Date.now();
+    const result = db.query(`
+      UPDATE storyboard_image_jobs
+      SET status = 'processing', updatedAt = ?
+      WHERE id = ? AND status = 'queued'
+    `).run(now, id) as { changes?: number };
+
+    if (!result?.changes) return null;
+    return db.query('SELECT * FROM storyboard_image_jobs WHERE id = ?').get(id) as any;
+  };
+
+  const requeueStaleProcessingStoryboardImageJobs = (maxAgeMs: number = 10 * 60 * 1000) => {
+    const now = Date.now();
+    const staleBefore = now - Math.max(60_000, Number(maxAgeMs || 0));
+    const result = db.query(`
+      UPDATE storyboard_image_jobs
+      SET status = 'queued', updatedAt = ?
+      WHERE status = 'processing' AND updatedAt < ?
+    `).run(now, staleBefore) as { changes?: number };
+    return Number(result?.changes || 0);
   };
 
   const updateSceneVideoJob = (id: string, patch: Partial<{
@@ -503,6 +631,18 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return db.query('SELECT * FROM project_final_films WHERE id = ?').get(candidate.id) as any;
   };
 
+  const claimProjectFinalFilmById = (id: string) => {
+    const now = Date.now();
+    const result = db.query(`
+      UPDATE project_final_films
+      SET status = 'processing', updatedAt = ?
+      WHERE id = ? AND status = 'queued'
+    `).run(now, id) as { changes?: number };
+
+    if (!result?.changes) return null;
+    return db.query('SELECT * FROM project_final_films WHERE id = ?').get(id) as any;
+  };
+
   const requeueStaleProcessingProjectFinalFilms = (maxAgeMs: number = 10 * 60 * 1000) => {
     const now = Date.now();
     const staleBefore = now - Math.max(60_000, Number(maxAgeMs || 0));
@@ -534,6 +674,18 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
 
     if (!result?.changes) return null;
     return db.query('SELECT * FROM scene_videos WHERE id = ?').get(candidate.id) as any;
+  };
+
+  const claimSceneVideoJobById = (id: string) => {
+    const now = Date.now();
+    const result = db.query(`
+      UPDATE scene_videos
+      SET status = 'processing', updatedAt = ?
+      WHERE id = ? AND status = 'queued'
+    `).run(now, id) as { changes?: number };
+
+    if (!result?.changes) return null;
+    return db.query('SELECT * FROM scene_videos WHERE id = ?').get(id) as any;
   };
 
   const requeueStaleProcessingSceneVideos = (maxAgeMs: number = 10 * 60 * 1000) => {
@@ -695,7 +847,11 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     setBeatLocked,
     saveProjectPackage,
     getLatestProjectPackage,
+    getProjectPackageById,
+    updateProjectPackagePayload,
     setStoryboardSceneLocked,
+    createStoryboardImageJob,
+    updateStoryboardImageJob,
     createSceneVideoJob,
     updateSceneVideoJob,
     getLatestSceneVideo,
@@ -704,8 +860,13 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     updateProjectFinalFilm,
     getLatestProjectFinalFilm,
     claimNextQueuedProjectFinalFilm,
+    claimProjectFinalFilmById,
     requeueStaleProcessingProjectFinalFilms,
+    claimNextQueuedStoryboardImageJob,
+    claimStoryboardImageJobById,
+    requeueStaleProcessingStoryboardImageJobs,
     claimNextQueuedSceneVideo,
+    claimSceneVideoJobById,
     requeueStaleProcessingSceneVideos,
     createScenePromptLayer,
     getLatestScenePromptLayer,

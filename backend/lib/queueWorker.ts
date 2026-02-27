@@ -1,9 +1,11 @@
 import IORedis from 'ioredis';
 import { Queue, Worker } from 'bullmq';
+import { buildQueueRunJobId, sanitizeQueueToken } from './queueIds';
 
 type StartQueueWorkersArgs = {
-  processSceneVideoQueue: () => Promise<void>;
-  processFinalFilmQueue: () => Promise<void>;
+  processStoryboardImageQueue: (jobId?: string) => Promise<void>;
+  processSceneVideoQueue: (jobId?: string) => Promise<void>;
+  processFinalFilmQueue: (jobId?: string) => Promise<void>;
   onLog?: (message: string) => void;
 };
 
@@ -15,15 +17,8 @@ const QUEUE_NAME = String(process.env.QUEUE_NAME || 'yenengalabs:jobs').trim() |
 const QUEUE_PREFIX = String(process.env.BULLMQ_PREFIX || '').trim();
 const QUEUE_CONCURRENCY = Math.max(1, Math.floor(Number(process.env.QUEUE_CONCURRENCY || '1')));
 
-const sanitizeQueueToken = (value: string) => {
-  const normalized = value
-    .replace(/[^a-zA-Z0-9_-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return normalized || 'queue';
-};
-
 const QUEUE_NAME_SAFE = sanitizeQueueToken(QUEUE_NAME);
+const STORYBOARD_IMAGE_QUEUE = `${QUEUE_NAME_SAFE}-storyboard-image`;
 const SCENE_VIDEO_QUEUE = `${QUEUE_NAME_SAFE}-scene-video`;
 const FINAL_FILM_QUEUE = `${QUEUE_NAME_SAFE}-final-film`;
 
@@ -40,6 +35,7 @@ const queueBackend = resolveQueueBackend();
 
 let producerConnection: IORedis | null = null;
 let consumerConnection: IORedis | null = null;
+let storyboardImageQueue: Queue<{ jobId: string; enqueuedAt: number }> | null = null;
 let sceneQueue: Queue<{ jobId: string; enqueuedAt: number }> | null = null;
 let finalFilmQueue: Queue<{ jobId: string; enqueuedAt: number }> | null = null;
 
@@ -123,6 +119,25 @@ const getSceneQueue = () => {
   return sceneQueue;
 };
 
+const getStoryboardImageQueue = () => {
+  if (!storyboardImageQueue) {
+    const connection = ensureProducerConnection();
+    storyboardImageQueue = new Queue(STORYBOARD_IMAGE_QUEUE, {
+      ...queueOptions(connection),
+      defaultJobOptions: {
+        removeOnComplete: 200,
+        removeOnFail: 500,
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 1000,
+        },
+      },
+    });
+  }
+  return storyboardImageQueue;
+};
+
 const getFinalFilmQueue = () => {
   if (!finalFilmQueue) {
     const connection = ensureProducerConnection();
@@ -144,7 +159,7 @@ const getFinalFilmQueue = () => {
 
 export const getBullMqQueues = (): BullMqQueueHandle[] => {
   if (queueBackend !== 'bullmq') return [];
-  return [getSceneQueue(), getFinalFilmQueue()];
+  return [getStoryboardImageQueue(), getSceneQueue(), getFinalFilmQueue()];
 };
 
 export const getQueueBackend = () => queueBackend;
@@ -154,7 +169,15 @@ export const enqueueSceneVideoQueueRun = async (jobId: string) => {
   if (queueBackend !== 'bullmq') return;
   const queue = getSceneQueue();
   await queue.add('drain-scene-video', { jobId, enqueuedAt: Date.now() }, {
-    jobId: `scene-video:${jobId}`,
+    jobId: buildQueueRunJobId('scene-video', jobId),
+  });
+};
+
+export const enqueueStoryboardImageQueueRun = async (jobId: string) => {
+  if (queueBackend !== 'bullmq') return;
+  const queue = getStoryboardImageQueue();
+  await queue.add('drain-storyboard-image', { jobId, enqueuedAt: Date.now() }, {
+    jobId: buildQueueRunJobId('storyboard-image', jobId),
   });
 };
 
@@ -162,7 +185,7 @@ export const enqueueFinalFilmQueueRun = async (jobId: string) => {
   if (queueBackend !== 'bullmq') return;
   const queue = getFinalFilmQueue();
   await queue.add('drain-final-film', { jobId, enqueuedAt: Date.now() }, {
-    jobId: `final-film:${jobId}`,
+    jobId: buildQueueRunJobId('final-film', jobId),
   });
 };
 
@@ -170,8 +193,13 @@ export const startQueueWorkers = (args: StartQueueWorkersArgs) => {
   if (queueBackend !== 'bullmq') throw new Error('startQueueWorkers called while queue backend is not bullmq');
 
   const workerSceneConnection = ensureConsumerConnection().duplicate();
+  const workerStoryboardImageConnection = ensureConsumerConnection().duplicate();
   const workerFinalFilmConnection = ensureConsumerConnection().duplicate();
   const log = (message: string) => args.onLog?.(message);
+  workerStoryboardImageConnection.on('error', error => {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    log(`[queue] BullMQ storyboard image worker connection error: ${message}`);
+  });
   workerSceneConnection.on('error', error => {
     const message = error instanceof Error ? error.message : 'unknown error';
     log(`[queue] BullMQ scene worker connection error: ${message}`);
@@ -181,10 +209,21 @@ export const startQueueWorkers = (args: StartQueueWorkersArgs) => {
     log(`[queue] BullMQ final film worker connection error: ${message}`);
   });
 
+  const storyboardImageWorker = new Worker(
+    STORYBOARD_IMAGE_QUEUE,
+    async job => {
+      await args.processStoryboardImageQueue(String(job?.data?.jobId || ''));
+    },
+    {
+      ...queueOptions(workerStoryboardImageConnection),
+      concurrency: QUEUE_CONCURRENCY,
+    }
+  );
+
   const sceneWorker = new Worker(
     SCENE_VIDEO_QUEUE,
-    async () => {
-      await args.processSceneVideoQueue();
+    async job => {
+      await args.processSceneVideoQueue(String(job?.data?.jobId || ''));
     },
     {
       ...queueOptions(workerSceneConnection),
@@ -194,8 +233,8 @@ export const startQueueWorkers = (args: StartQueueWorkersArgs) => {
 
   const finalFilmWorker = new Worker(
     FINAL_FILM_QUEUE,
-    async () => {
-      await args.processFinalFilmQueue();
+    async job => {
+      await args.processFinalFilmQueue(String(job?.data?.jobId || ''));
     },
     {
       ...queueOptions(workerFinalFilmConnection),
@@ -203,14 +242,18 @@ export const startQueueWorkers = (args: StartQueueWorkersArgs) => {
     }
   );
 
+  storyboardImageWorker.on('ready', () => log?.('[queue] BullMQ storyboard-image worker ready'));
   sceneWorker.on('ready', () => log?.('[queue] BullMQ scene-video worker ready'));
   finalFilmWorker.on('ready', () => log?.('[queue] BullMQ final-film worker ready'));
+  storyboardImageWorker.on('error', error => log?.(`[queue] BullMQ storyboard-image worker error: ${error instanceof Error ? error.message : 'unknown error'}`));
   sceneWorker.on('error', error => log?.(`[queue] BullMQ scene-video worker error: ${error instanceof Error ? error.message : 'unknown error'}`));
   finalFilmWorker.on('error', error => log?.(`[queue] BullMQ final-film worker error: ${error instanceof Error ? error.message : 'unknown error'}`));
 
   const close = async () => {
+    await storyboardImageWorker.close();
     await sceneWorker.close();
     await finalFilmWorker.close();
+    await workerStoryboardImageConnection.quit();
     await workerSceneConnection.quit();
     await workerFinalFilmConnection.quit();
   };
@@ -249,7 +292,8 @@ export const getQueueDashboardData = async (): Promise<QueueDashboardData> => {
     };
   }
 
-  const [scene, finalFilm] = await Promise.all([
+  const [storyboardImage, scene, finalFilm] = await Promise.all([
+    buildQueueSnapshot(getStoryboardImageQueue()),
     buildQueueSnapshot(getSceneQueue()),
     buildQueueSnapshot(getFinalFilmQueue()),
   ]);
@@ -257,6 +301,6 @@ export const getQueueDashboardData = async (): Promise<QueueDashboardData> => {
   return {
     backend: queueBackend,
     timestamp: Date.now(),
-    queues: [scene, finalFilm],
+    queues: [storyboardImage, scene, finalFilm],
   };
 };
