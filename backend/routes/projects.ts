@@ -60,6 +60,8 @@ type ProjectsRouteArgs = {
   createProjectFinalFilm: (args: { projectId: string; sourceCount: number }) => any;
   updateProjectFinalFilm: (id: string, patch: { status?: string; sourceCount?: number; videoUrl?: string; error?: string }) => any;
   getLatestProjectFinalFilm: (projectId: string) => any;
+  enqueueSceneVideoQueueRun: (jobId: string) => Promise<void>;
+  enqueueFinalFilmQueueRun: (jobId: string) => Promise<void>;
   getProjectStyleBible: (projectId: string) => any;
   updateProjectStyleBible: (projectId: string, payload: any) => any;
   getLatestProjectScreenplay: (projectId: string) => any;
@@ -216,6 +218,8 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     createProjectFinalFilm,
     updateProjectFinalFilm,
     getLatestProjectFinalFilm,
+    enqueueSceneVideoQueueRun,
+    enqueueFinalFilmQueueRun,
     getProjectStyleBible,
     updateProjectStyleBible,
     getLatestProjectScreenplay,
@@ -802,6 +806,13 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     }
 
     const film = createProjectFinalFilm({ projectId, sourceCount: clipUrls.length });
+    try {
+      await enqueueFinalFilmQueueRun(String(film.id));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to enqueue final film job';
+      updateProjectFinalFilm(String(film.id), { status: 'failed', error: message });
+      return new Response(JSON.stringify({ error: message }), { status: 502, headers: jsonHeaders(corsHeaders) });
+    }
     return new Response(JSON.stringify({ success: true, item: film, message: 'Final film job queued.' }), { status: 202, headers: jsonHeaders(corsHeaders) });
   }
 
@@ -1157,6 +1168,13 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     });
 
     console.log(`[queue] Enqueued scene video job ${job.id} for project ${projectId}, beat ${beatId}`);
+    try {
+      await enqueueSceneVideoQueueRun(String(job.id));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to enqueue scene video job';
+      updateSceneVideoJob(String(job.id), { status: 'failed', error: message });
+      return new Response(JSON.stringify({ error: message }), { status: 502, headers: jsonHeaders(corsHeaders) });
+    }
 
     return new Response(JSON.stringify({ success: true, item: job, promptLayer, traceId }), { status: 202, headers: jsonHeaders(corsHeaders) });
   }

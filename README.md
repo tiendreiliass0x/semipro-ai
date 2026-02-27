@@ -67,6 +67,8 @@ Key backend variables include:
 - `XAI_API_KEY` (optional, for Grok image)
 - `GOOGLE_CLIENT_ID` (optional, Google login)
 - `ADMIN_ACCESS_KEY` (optional admin endpoints)
+- `QUEUE_PROVIDER` (`auto`, `bullmq`, or `polling`)
+- `REDIS_URL` (required when `QUEUE_PROVIDER=bullmq`)
 
 ## Auth Model
 

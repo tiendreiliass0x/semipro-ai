@@ -10,6 +10,7 @@ import { createStorylinesDb } from './db/storylines';
 import { createSubscribersDb } from './db/subscribers';
 import { generateHybridScreenplayWithLlm, generateProjectStoryboardWithLlm, generateScenesBibleWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
 import { buildCinematographerPrompt, buildDirectorSceneVideoPrompt, buildMergedScenePrompt, createFinalFilmFromClips, extractLastFrameFromVideo, generateSceneVideoWithFal } from './lib/sceneVideo';
+import { enqueueFinalFilmQueueRun as enqueueFinalFilmQueueRunBull, enqueueSceneVideoQueueRun as enqueueSceneVideoQueueRunBull, getQueueBackend, startQueueWorkers } from './lib/queueWorker';
 import { resolveVideoModel } from './lib/videoModel';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
 import { handleAccountRoutes } from './routes/account';
@@ -769,13 +770,51 @@ const processFinalFilmQueue = async () => {
   }
 };
 
-setInterval(() => {
+const queueBackend = getQueueBackend();
+let enqueueSceneVideoQueueRun = async (_jobId: string) => {
   processSceneVideoQueue().catch(() => null);
-}, 2500);
-
-setInterval(() => {
+};
+let enqueueFinalFilmQueueRun = async (_jobId: string) => {
   processFinalFilmQueue().catch(() => null);
-}, 2500);
+};
+
+const startPollingQueueWorkers = () => {
+  console.log('[queue] Running in polling mode');
+  setInterval(() => {
+    processSceneVideoQueue().catch(() => null);
+  }, 2500);
+  setInterval(() => {
+    processFinalFilmQueue().catch(() => null);
+  }, 2500);
+  processSceneVideoQueue().catch(() => null);
+  processFinalFilmQueue().catch(() => null);
+};
+
+const startBullMqQueueWorkers = () => {
+  if (queueBackend !== 'bullmq') return false;
+
+  try {
+    startQueueWorkers({
+      processSceneVideoQueue,
+      processFinalFilmQueue,
+      onLog: message => console.log(message),
+    });
+
+    enqueueSceneVideoQueueRun = async (jobId: string) => {
+      await enqueueSceneVideoQueueRunBull(jobId);
+    };
+    enqueueFinalFilmQueueRun = async (jobId: string) => {
+      await enqueueFinalFilmQueueRunBull(jobId);
+    };
+
+    console.log('[queue] Running in BullMQ mode');
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    console.warn(`[queue] Failed to start BullMQ workers (${message}). Falling back to polling mode.`);
+    return false;
+  }
+};
 
 setInterval(() => {
   const removed = revokeExpiredSessions();
@@ -794,8 +833,13 @@ if (requeuedFinalFilmCount > 0) {
   console.log(`[queue] Re-queued ${requeuedFinalFilmCount} stale processing final film job(s)`);
 }
 
-processSceneVideoQueue().catch(() => null);
-processFinalFilmQueue().catch(() => null);
+const bullStarted = startBullMqQueueWorkers();
+if (bullStarted) {
+  enqueueSceneVideoQueueRun('startup-drain').catch(() => null);
+  enqueueFinalFilmQueueRun('startup-drain').catch(() => null);
+} else {
+  startPollingQueueWorkers();
+}
 
 const buildStorylineContext = (storyline: any) => ({
   id: storyline.id,
@@ -1091,6 +1135,8 @@ serve({
       createProjectFinalFilm,
       updateProjectFinalFilm,
       getLatestProjectFinalFilm,
+      enqueueSceneVideoQueueRun,
+      enqueueFinalFilmQueueRun,
       getProjectStyleBible,
       updateProjectStyleBible,
       getLatestProjectScreenplay,
