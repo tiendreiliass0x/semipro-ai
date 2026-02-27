@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, LogOut, PlayCircle, Settings, X } from 'lucide-react';
+import { Loader2, LogOut, Pencil, PlayCircle, Settings, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 type GoogleCredentialResponse = {
@@ -68,8 +68,12 @@ export function AuthModal() {
   const [settingsSlug, setSettingsSlug] = useState('');
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('');
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [isEditingWorkspaceIdentity, setIsEditingWorkspaceIdentity] = useState(false);
 
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
+  const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const settingsPanelRef = useRef<HTMLDivElement | null>(null);
+  const settingsNameInputRef = useRef<HTMLInputElement | null>(null);
   const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
   const canUseGoogle = googleClientId.length > 0;
 
@@ -197,8 +201,39 @@ export function AuthModal() {
     setSettingsSlug(account?.slug || '');
     setSelectedWorkspaceId(account?.id || '');
     setSettingsError(null);
+    setIsEditingWorkspaceIdentity(false);
     setSettingsOpen(true);
   };
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (settingsPanelRef.current?.contains(target)) return;
+      if (settingsTriggerRef.current?.contains(target)) return;
+      setSettingsOpen(false);
+      setIsEditingWorkspaceIdentity(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setSettingsOpen(false);
+      setIsEditingWorkspaceIdentity(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    if (!settingsOpen || !isEditingWorkspaceIdentity) return;
+    settingsNameInputRef.current?.focus();
+  }, [settingsOpen, isEditingWorkspaceIdentity]);
 
   return (
     <>
@@ -241,6 +276,7 @@ export function AuthModal() {
             ) : (
               <button
                 onClick={openSettingsPanel}
+                ref={settingsTriggerRef}
                 className="inline-flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-white/30 bg-black/40 max-w-[300px]"
                 title="Open account settings"
               >
@@ -315,59 +351,83 @@ export function AuthModal() {
       )}
 
       {settingsOpen && isAuthenticated && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-cyan-500/30 bg-[#060a12] p-5">
+        <div className="fixed z-50 top-16 right-4 md:right-6 xl:right-8 left-4 md:left-auto">
+          <div ref={settingsPanelRef} className="w-full md:w-[390px] rounded-2xl border border-cyan-500/30 bg-[#060a12]/95 backdrop-blur-md p-4 shadow-2xl shadow-cyan-950/30">
             <div className="flex items-center justify-between gap-2 mb-3">
               <div>
-                <h3 className="text-lg font-semibold text-white">Account Settings</h3>
+                <h3 className="text-base font-semibold text-white">Account Settings</h3>
                 <p className="text-xs text-gray-500">Manage your workspace identity</p>
               </div>
-              <button onClick={() => setSettingsOpen(false)} className="p-1 rounded border border-gray-700 text-gray-300">
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsEditingWorkspaceIdentity(prev => !prev)}
+                  className={`p-1.5 rounded border text-xs ${isEditingWorkspaceIdentity ? 'border-cyan-400/60 text-cyan-100 bg-cyan-500/10' : 'border-gray-700 text-gray-300 hover:text-white'}`}
+                  title="Edit workspace title and slug"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setIsEditingWorkspaceIdentity(false);
+                  }}
+                  className="p-1.5 rounded border border-gray-700 text-gray-300"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <input
-                value={settingsName}
-                onChange={event => setSettingsName(event.target.value)}
-                className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm"
-                placeholder="Workspace name"
-              />
-              <input
-                value={settingsSlug}
-                onChange={event => setSettingsSlug(event.target.value)}
-                className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm"
-                placeholder="Workspace slug"
-              />
-              <p className="text-[11px] text-gray-500">Slug is used in account URLs and login targeting.</p>
+            {isEditingWorkspaceIdentity ? (
+              <div className="space-y-2 pb-3 border-b border-gray-800">
+                <input
+                  ref={settingsNameInputRef}
+                  value={settingsName}
+                  onChange={event => setSettingsName(event.target.value)}
+                  className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm"
+                  placeholder="Workspace title"
+                />
+                <input
+                  value={settingsSlug}
+                  onChange={event => setSettingsSlug(event.target.value)}
+                  className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm"
+                  placeholder="Workspace slug"
+                />
+                <p className="text-[11px] text-gray-500">Slug is used in workspace URLs and login targeting.</p>
+              </div>
+            ) : (
+              <div className="pb-3 border-b border-gray-800">
+                <p className="text-[11px] uppercase tracking-widest text-gray-500">Workspace</p>
+                <p className="text-sm text-gray-100 mt-1">{account?.name || 'Workspace'}</p>
+                <p className="text-xs text-gray-400 mt-1">slug: {account?.slug || '-'}</p>
+              </div>
+            )}
 
-              {memberships.length > 1 && (
-                <div className="pt-2 mt-1 border-t border-gray-800 space-y-2">
-                  <p className="text-[11px] uppercase tracking-widest text-gray-500">Switch Workspace</p>
-                  <div className="flex gap-2">
-                    <select
-                      value={selectedWorkspaceId}
-                      onChange={event => setSelectedWorkspaceId(event.target.value)}
-                      className="flex-1 bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm"
-                    >
-                      {memberships.map(item => (
-                        <option key={item.accountId} value={item.accountId}>
-                          {item.accountName} ({item.accountSlug})
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={handleSwitchWorkspace}
-                      disabled={isVerifying || selectedWorkspaceId === account?.id}
-                      className="px-3 py-2 rounded border border-cyan-400/40 text-cyan-100 text-sm disabled:opacity-50"
-                    >
-                      Switch
-                    </button>
-                  </div>
+            {memberships.length > 1 && (
+              <div className="pt-3 space-y-2">
+                <p className="text-[11px] uppercase tracking-widest text-gray-500">Switch Workspace</p>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedWorkspaceId}
+                    onChange={event => setSelectedWorkspaceId(event.target.value)}
+                    className="flex-1 bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm"
+                  >
+                    {memberships.map(item => (
+                      <option key={item.accountId} value={item.accountId}>
+                        {item.accountName} ({item.accountSlug})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleSwitchWorkspace}
+                    disabled={isVerifying || selectedWorkspaceId === account?.id}
+                    className="px-3 py-2 rounded border border-cyan-400/40 text-cyan-100 text-sm disabled:opacity-50"
+                  >
+                    Switch
+                  </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {settingsError && <p className="text-xs text-rose-300 mt-2">{settingsError}</p>}
             {error && !settingsError && <p className="text-xs text-rose-300 mt-2">{error}</p>}
@@ -376,7 +436,11 @@ export function AuthModal() {
               <button onClick={onLogout} className="inline-flex items-center gap-2 px-3 py-2 rounded border border-rose-400/40 text-rose-200 text-sm">
                 <LogOut className="w-4 h-4" /> Logout
               </button>
-              <button onClick={saveSettings} disabled={isVerifying} className="inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50">
+              <button
+                onClick={saveSettings}
+                disabled={isVerifying || !isEditingWorkspaceIdentity}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50"
+              >
                 {isVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 {isVerifying ? 'Saving...' : 'Save'}
               </button>
