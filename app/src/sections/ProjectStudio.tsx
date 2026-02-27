@@ -2,9 +2,41 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Compass, Lock, Mic, Palette, Plus, RefreshCcw, ShieldAlert, Sparkles, Unlock, Wand2, X, Film, ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
-import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectScenesBible, ProjectScreenplay, ProjectStyleBible, ScenePromptLayer, SceneVideoJob, SceneVideoPromptTrace, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
+import type { ContinuityIssue, MovieProject, ProjectBeat, ProjectFinalFilm, ProjectScenesBible, ProjectScreenplay, ProjectStyleBible, ScenePromptLayer, SceneVideoJob, SceneVideoPromptTrace, StoryboardScene, StorylineGenerationResult, StorylinePackageRecord, StoryNote } from '@/types';
 import { DeleteProjectModal } from './project-studio/DeleteProjectModal';
 import { ScenesWorkspace } from './project-studio/ScenesWorkspace';
+
+type SpeechRecognitionAlternativeLike = {
+  transcript: string;
+};
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  [index: number]: SpeechRecognitionAlternativeLike;
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+};
+
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+type BrowserSpeechWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+};
 
 export function ProjectStudio() {
   const { isAuthenticated } = useAuth();
@@ -100,6 +132,10 @@ export function ProjectStudio() {
   const [isSavingPromptLayerByBeatId, setIsSavingPromptLayerByBeatId] = useState<Record<string, boolean>>({});
   const beatsScrollRef = useRef<HTMLDivElement | null>(null);
   const projectIdeaInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const getSpeechRecognitionConstructor = () => {
+    const speechWindow = window as BrowserSpeechWindow;
+    return speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition || null;
+  };
 
   const filmTypeOptions = [
     'cinematic live-action',
@@ -157,7 +193,9 @@ export function ProjectStudio() {
       try {
         const data = await api.getProjects();
         setProjects(data);
-        if (!selectedProjectId && data.length) setSelectedProjectId(data[0].id);
+        if (data.length) {
+          setSelectedProjectId(previous => previous || data[0].id);
+        }
       } catch {
         setProjects([]);
       }
@@ -214,7 +252,7 @@ export function ProjectStudio() {
     const existingSet = new Set(existingAiStarters.map(item => item.trim().toLowerCase()));
     const outputs: string[] = [];
     for (const chunk of chunks) {
-      const line = `Beat story: ${chunk.replace(/^[\-\*\d\.\s]+/, '')}`;
+      const line = `Beat story: ${chunk.replace(/^[-*\d.\s]+/, '')}`;
       const normalized = line.trim().toLowerCase();
       if (existingSet.has(normalized)) continue;
       outputs.push(line);
@@ -235,19 +273,19 @@ export function ProjectStudio() {
   };
 
   useEffect(() => {
-    if (!selectedProject) return;
+    if (!selectedProjectId) return;
     const loadDetails = async () => {
       const [notesResponse, beatsResponse, storyboardResponse, styleBibleResponse, continuityResponse, videosResponse, finalFilmResponse, screenplayResponse, scenesBibleResponse, promptLayersResponse] = await Promise.all([
-        api.getProjectNotes(selectedProject.id).catch(() => ({ items: [] })),
-        api.getProjectBeats(selectedProject.id).catch(() => ({ items: [] })),
-        api.getLatestProjectStoryboard(selectedProject.id).catch(() => ({ item: null })),
-        api.getProjectStyleBible(selectedProject.id).catch(() => ({ item: { visualStyle: '', cameraGrammar: '', doList: [], dontList: [] } })),
-        api.checkProjectContinuity(selectedProject.id).catch(() => ({ success: true, issues: [] })),
-        api.listSceneVideos(selectedProject.id).catch(() => ({ items: [] })),
-        api.getLatestProjectFinalFilm(selectedProject.id).catch(() => ({ item: null })),
-        api.getProjectScreenplay(selectedProject.id).catch(() => ({ item: null })),
-        api.getProjectScenesBible(selectedProject.id).catch(() => ({ item: null })),
-        api.listScenePromptLayers(selectedProject.id).catch(() => ({ items: [] })),
+        api.getProjectNotes(selectedProjectId).catch(() => ({ items: [] })),
+        api.getProjectBeats(selectedProjectId).catch(() => ({ items: [] })),
+        api.getLatestProjectStoryboard(selectedProjectId).catch(() => ({ item: null })),
+        api.getProjectStyleBible(selectedProjectId).catch(() => ({ item: { visualStyle: '', cameraGrammar: '', doList: [], dontList: [] } })),
+        api.checkProjectContinuity(selectedProjectId).catch(() => ({ success: true, issues: [] })),
+        api.listSceneVideos(selectedProjectId).catch(() => ({ items: [] })),
+        api.getLatestProjectFinalFilm(selectedProjectId).catch(() => ({ item: null })),
+        api.getProjectScreenplay(selectedProjectId).catch(() => ({ item: null })),
+        api.getProjectScenesBible(selectedProjectId).catch(() => ({ item: null })),
+        api.listScenePromptLayers(selectedProjectId).catch(() => ({ items: [] })),
       ]);
       setNotes(notesResponse.items || []);
       setBeats(beatsResponse.items || []);
@@ -313,7 +351,7 @@ export function ProjectStudio() {
       setActiveTraceBeatId(null);
     };
     loadDetails();
-  }, [selectedProject?.id]);
+  }, [selectedProjectId]);
 
   const openPromptLayerHistory = async (beatId: string) => {
     if (!selectedProject?.id) return;
@@ -373,24 +411,29 @@ export function ProjectStudio() {
     setLeftSidebarPane(null);
     setScreenplayInlineError(null);
     setScenesBibleInlineError(null);
-  }, [selectedProject?.id]);
+  }, [selectedProject]);
 
   useEffect(() => {
     if (!selectedProject?.id) return;
-    const hasRunning = Object.values(sceneVideosByBeatId).some(item => item.status === 'queued' || item.status === 'processing');
-    if (!hasRunning) return;
+    const hasRunningSceneVideos = Object.values(sceneVideosByBeatId).some(item => item.status === 'queued' || item.status === 'processing');
+    const hasRunningFinalFilm = finalFilm?.status === 'queued' || finalFilm?.status === 'processing';
+    if (!hasRunningSceneVideos && !hasRunningFinalFilm) return;
 
     const timer = setInterval(async () => {
-      const response = await api.listSceneVideos(selectedProject.id).catch(() => ({ items: [] }));
+      const [videosResponse, finalFilmResponse] = await Promise.all([
+        api.listSceneVideos(selectedProject.id).catch(() => ({ items: [] })),
+        api.getLatestProjectFinalFilm(selectedProject.id).catch(() => ({ item: null })),
+      ]);
       const byBeat: Record<string, SceneVideoJob> = {};
-      (response.items || []).forEach(item => {
+      (videosResponse.items || []).forEach(item => {
         if (item?.beatId) byBeat[item.beatId] = item;
       });
       setSceneVideosByBeatId(byBeat);
+      setFinalFilm(finalFilmResponse.item || null);
     }, 4000);
 
     return () => clearInterval(timer);
-  }, [selectedProject?.id, sceneVideosByBeatId]);
+  }, [selectedProject?.id, sceneVideosByBeatId, finalFilm?.status]);
 
   const saveStyleBible = async () => {
     if (!selectedProject || !isAuthenticated) return;
@@ -538,7 +581,7 @@ export function ProjectStudio() {
   const startNoteRecording = () => {
     if (!selectedProject?.id || !isAuthenticated) return;
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = getSpeechRecognitionConstructor();
     if (!SpeechRecognition) {
       setBusyMessage('Speech recognition is not supported in this browser.');
       return;
@@ -553,7 +596,7 @@ export function ProjectStudio() {
       setIsListening(true);
       setBusyMessage('Listening... speak your beat story.');
     };
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
@@ -581,7 +624,7 @@ export function ProjectStudio() {
   };
 
   const recordProjectIdea = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = getSpeechRecognitionConstructor();
     if (!SpeechRecognition) {
       setBusyMessage('Speech recognition is not supported in this browser.');
       return;
@@ -596,7 +639,7 @@ export function ProjectStudio() {
       setIsRecordCreating(true);
       setBusyMessage('Listening... capture your project idea.');
     };
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
@@ -837,7 +880,7 @@ export function ProjectStudio() {
     };
   }, [notes, beats, generatedPackage, sceneVideosByBeatId]);
 
-  const getSceneFrameUrl = (scene: any) => {
+  const getSceneFrameUrl = (scene: StoryboardScene) => {
     if (scene.imageUrl && typeof scene.imageUrl === 'string') {
       if (scene.imageUrl.startsWith('/uploads/')) {
         return api.getUploadsUrl(scene.imageUrl);
@@ -868,7 +911,7 @@ export function ProjectStudio() {
     return 'border-gray-700';
   };
 
-  const getStoryboardImagePromptText = (scene: any) => {
+  const getStoryboardImagePromptText = (scene: StoryboardScene) => {
     return [
       filmType ? `Film type: ${filmType}` : '',
       String(scene?.imagePrompt || '').trim(),
@@ -1167,13 +1210,13 @@ export function ProjectStudio() {
   const generateFinalFilm = async () => {
     if (!selectedProject || !isAuthenticated || isGeneratingFinalFilm) return;
     setIsGeneratingFinalFilm(true);
-    setBusyMessage('Compiling final film from scene clips...');
+    setBusyMessage('Queueing final film build...');
     try {
       const response = await api.generateProjectFinalFilm(selectedProject.id);
       setFinalFilm(response.item || null);
-      setBusyMessage('Final film compiled successfully.');
+      setBusyMessage('Final film job queued. Rendering in background...');
     } catch (error) {
-      setBusyMessage(error instanceof Error ? error.message : 'Failed to compile final film');
+      setBusyMessage(error instanceof Error ? error.message : 'Failed to queue final film');
     } finally {
       setIsGeneratingFinalFilm(false);
     }

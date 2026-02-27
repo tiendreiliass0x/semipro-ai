@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Afrobeats Seattle Documentary - Deployment Script
-# This script builds the frontend and prepares the app for deployment
+# YenengaLabs - Deployment Prep Script
+# Builds frontend assets and validates backend runtime prerequisites.
 
 set -e
 
-echo "🎬 Afrobeats Seattle Documentary - Deployment"
+echo "YenengaLabs - Deployment"
 echo "=============================================="
 
 # Colors for output
@@ -28,13 +28,21 @@ else
     exit 1
 fi
 
-# Check if Node.js is installed
+# Check if Node.js is installed (frontend build tooling)
 if ! command -v node &> /dev/null; then
     echo -e "${RED}❌ Node.js is not installed${NC}"
     exit 1
 fi
 
 echo -e "${GREEN}✓ Node.js version: $(node --version)${NC}"
+
+# Check if Bun is installed (backend runtime)
+if ! command -v bun &> /dev/null; then
+    echo -e "${RED}❌ Bun is not installed${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Bun version: $(bun --version)${NC}"
 
 # Build frontend
 echo ""
@@ -71,6 +79,9 @@ fi
 # Create uploads directory
 mkdir -p uploads
 
+# Run migrations
+bun run migrate >/dev/null 2>&1 || true
+
 echo -e "${GREEN}✓ Backend ready${NC}"
 
 # Summary
@@ -81,7 +92,7 @@ echo ""
 echo "To start the application:"
 echo ""
 echo "  1. Start the backend:"
-echo "     cd backend && node server.js"
+echo "     cd backend && bun run start"
 echo ""
 echo "  2. Serve the frontend (in another terminal):"
 echo "     cd app/dist && npx serve -s . -l 5173"
@@ -91,7 +102,4 @@ echo ""
 echo "📁 Frontend build: app/dist/"
 echo "📁 Backend data:   backend/data/"
 echo "📁 Uploads:        backend/uploads/"
-echo ""
-echo "🔑 Access key: AFRO12"
-echo "   (Add ?key=AFRO12 to URL to enable editing)"
 echo ""

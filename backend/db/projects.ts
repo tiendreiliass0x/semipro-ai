@@ -440,7 +440,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     db.query(`
       INSERT INTO project_final_films (id, projectId, status, sourceCount, videoUrl, error, createdAt, updatedAt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, args.projectId, 'processing', Number(args.sourceCount || 0), '', '', now, now);
+    `).run(id, args.projectId, 'queued', Number(args.sourceCount || 0), '', '', now, now);
     return db.query('SELECT * FROM project_final_films WHERE id = ?').get(id) as any;
   };
 
@@ -479,6 +479,39 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
       ORDER BY createdAt DESC
       LIMIT 1
     `).get(projectId) as any;
+  };
+
+  const claimNextQueuedProjectFinalFilm = () => {
+    const candidate = db.query(`
+      SELECT id
+      FROM project_final_films
+      WHERE status = 'queued'
+      ORDER BY createdAt ASC
+      LIMIT 1
+    `).get() as { id?: string } | null;
+
+    if (!candidate?.id) return null;
+
+    const now = Date.now();
+    const result = db.query(`
+      UPDATE project_final_films
+      SET status = 'processing', updatedAt = ?
+      WHERE id = ? AND status = 'queued'
+    `).run(now, candidate.id) as { changes?: number };
+
+    if (!result?.changes) return null;
+    return db.query('SELECT * FROM project_final_films WHERE id = ?').get(candidate.id) as any;
+  };
+
+  const requeueStaleProcessingProjectFinalFilms = (maxAgeMs: number = 10 * 60 * 1000) => {
+    const now = Date.now();
+    const staleBefore = now - Math.max(60_000, Number(maxAgeMs || 0));
+    const result = db.query(`
+      UPDATE project_final_films
+      SET status = 'queued', updatedAt = ?
+      WHERE status = 'processing' AND updatedAt < ?
+    `).run(now, staleBefore) as { changes?: number };
+    return Number(result?.changes || 0);
   };
 
   const claimNextQueuedSceneVideo = () => {
@@ -670,6 +703,8 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     createProjectFinalFilm,
     updateProjectFinalFilm,
     getLatestProjectFinalFilm,
+    claimNextQueuedProjectFinalFilm,
+    requeueStaleProcessingProjectFinalFilms,
     claimNextQueuedSceneVideo,
     requeueStaleProcessingSceneVideos,
     createScenePromptLayer,

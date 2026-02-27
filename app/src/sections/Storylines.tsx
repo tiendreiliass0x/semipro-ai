@@ -151,7 +151,7 @@ export function Storylines() {
     return () => {
       isMounted = false;
     };
-  }, [isAuthenticated, selected?.id]);
+  }, [isAuthenticated, selected]);
 
   const handleSave = async () => {
     if (!storylines.length) return;

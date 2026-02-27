@@ -1,12 +1,21 @@
-# Semipro AI - Project Lifetime Reference
+# YenengaLabs - Project Lifetime Reference
 
 Purpose: keep a durable, 360-degree view of the product and technical system as the codebase grows.
 
 ## Product Intent
 
-- Product: Semipro AI, an AI filmmaking studio from rough idea -> beats -> storyboard -> scene videos -> final film.
+- Product: YenengaLabs, an AI filmmaking studio from rough idea -> beats -> storyboard -> scene videos -> final film.
 - Core promise: move from concept to usable cinematic package quickly, with structure and continuity checks.
 - Current priority UX: mobile-friendly creation flow, visible progress for async AI operations, and simple project lifecycle controls.
+
+## Recent Changes (2026-02)
+
+- Branding migrated to YenengaLabs (`yenengalabs.com`) across landing/auth/navigation metadata.
+- Film style selection moved to the initial idea/logline composer and now persists per project via `projects.filmType`.
+- Left overlay sidebar now defaults closed on load to avoid covering the creation/chat composer.
+- Scene-video prompt strategy switched from mega merged prompt to compact, model-aware prompts with explicit style-vs-realism conflict handling and provider-specific length caps.
+- Prompt traces now include effective prompt and prompt strategy for debugging generation quality.
+- Storyboard/frame image generation default model switched to FAL Nano Banana Pro (`fal-ai/nano-banana-pro`).
 
 ## Canonical User Workflow
 
@@ -89,6 +98,7 @@ UX note: Scenes workspace now includes a clickable scene-capture timeline strip 
   - Account-scoped requests only see projects belonging to the authenticated account.
   - Legacy access-key mode can still operate without account scoping for compatibility.
 - `projects.status` is reserved for workflow state (draft/active/locked), not deletion.
+- `projects.filmType` stores the persistent project-level visual style selection (default `cinematic live-action`).
 - Final films are tracked in `project_final_films` with status (`processing|completed|failed`) and `videoUrl`.
 - Latest scene videos are resolved per beat from `scene_videos` history.
 
@@ -148,6 +158,7 @@ UX note: Scenes workspace now includes a clickable scene-capture timeline strip 
   - `POST /api/projects`
   - `PATCH /api/projects/:id`
   - `DELETE /api/projects/:id` (soft-delete)
+  - Note: `POST` and `PATCH` now support `filmType` for persisted style intent.
 
 - Story pipeline:
   - `POST /api/projects/:id/synopsis/refine`

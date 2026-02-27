@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, Film, Loader2, MoveHorizontal, PlayCircle, RefreshCcw, Video } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import type { ProjectFinalFilm, ScenePromptLayer, SceneVideoJob, SceneVideoPromptTrace, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
+import type { ProjectFinalFilm, ScenePromptLayer, SceneVideoJob, SceneVideoPromptTrace, StoryboardScene, StorylineGenerationResult, StorylinePackageRecord } from '@/types';
 
 type VideoStats = {
   total: number;
@@ -61,7 +61,7 @@ type ScenesWorkspaceProps = {
   onChangeVideoPrompt: (beatId: string, prompt: string) => void;
   onChangeCinematographerPrompt: (beatId: string, prompt: string) => void;
   onAppendCameraMove: (beatId: string, move: string) => void;
-  getSceneFrameUrl: (scene: any) => string;
+  getSceneFrameUrl: (scene: StoryboardScene) => string;
   getSceneVideoUrl: (url: string) => string;
 };
 
@@ -157,7 +157,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     : null;
   const activeTraceItems = activeTraceBeatId ? (traceHistoryByBeatId[activeTraceBeatId] || []) : [];
 
-  const copyDiagnostics = async (scene: any) => {
+  const copyDiagnostics = async (scene: StoryboardScene) => {
     const beatId = String(scene?.beatId || '');
     const video = sceneVideosByBeatId[beatId];
     if (!beatId || !video) return;
@@ -193,8 +193,13 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     }
   };
 
-  const readPath = (source: any, path: string) => {
-    return path.split('.').reduce((acc: any, key) => (acc && typeof acc === 'object' ? acc[key] : undefined), source);
+  const readPath = (source: unknown, path: string): unknown => {
+    return path.split('.').reduce<unknown>((acc, key) => {
+      if (acc && typeof acc === 'object') {
+        return (acc as Record<string, unknown>)[key];
+      }
+      return undefined;
+    }, source);
   };
 
   const summarizeTraceDiff = (latest: Record<string, unknown>, previous: Record<string, unknown>) => {
@@ -258,7 +263,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
             </button>
             <button
               onClick={onGenerateFinalFilm}
-              disabled={!isAuthenticated || isGeneratingFinalFilm || videoStats.completed === 0}
+              disabled={!isAuthenticated || isGeneratingFinalFilm || finalFilm?.status === 'queued' || finalFilm?.status === 'processing' || videoStats.completed === 0}
               className="text-xs px-2 py-1 rounded border border-cyan-400/40 text-cyan-100 disabled:opacity-50 inline-flex items-center gap-1"
             >
               {isGeneratingFinalFilm ? <Loader2 className="w-3 h-3 animate-spin" /> : <Film className="w-3 h-3" />} Compile Final Film
@@ -287,6 +292,12 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
               <video src={getSceneVideoUrl(finalFilm.videoUrl)} className="w-full h-full object-cover" controls preload="auto" playsInline />
             </div>
           </div>
+        )}
+        {(finalFilm?.status === 'queued' || finalFilm?.status === 'processing') && (
+          <p className="text-[11px] text-amber-200 inline-flex items-center gap-1">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Final film render {finalFilm.status === 'queued' ? 'queued' : 'in progress'}...
+          </p>
         )}
         {finalFilm?.status === 'failed' && finalFilm.error && (
           <p className="text-[11px] text-rose-300">Final film failed: {finalFilm.error}</p>

@@ -1,4 +1,7 @@
-export const parseMultipart = async (req: Request): Promise<{ fields: Record<string, string>; files: { name: string; data: Uint8Array; filename: string; type: string }[] }> => {
+export const parseMultipart = async (
+  req: Request,
+  options?: { maxBytes?: number }
+): Promise<{ fields: Record<string, string>; files: { name: string; data: Uint8Array; filename: string; type: string }[] }> => {
   const contentType = req.headers.get('content-type') || '';
   if (!contentType.includes('multipart/form-data')) return { fields: {}, files: [] };
 
@@ -6,6 +9,9 @@ export const parseMultipart = async (req: Request): Promise<{ fields: Record<str
   if (!boundary) return { fields: {}, files: [] };
 
   const body = await req.arrayBuffer();
+  if (typeof options?.maxBytes === 'number' && body.byteLength > options.maxBytes) {
+    throw new Error(`multipart payload exceeds ${options.maxBytes} bytes`);
+  }
   const decoder = new TextDecoder();
   const data = new Uint8Array(body);
   const fields: Record<string, string> = {};
