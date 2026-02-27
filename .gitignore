@@ -5,6 +5,7 @@ node_modules/
 # Build outputs
 dist/
 build/
+app/.vite/
 
 # Environment variables
 .env
@@ -17,6 +18,11 @@ build/
 
 # Database files
 *.db
+*.db-shm
+*.db-wal
+
+# Runtime-generated media
+backend/uploads/
 
 # IDE
 .vscode/

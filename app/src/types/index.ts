@@ -269,7 +269,7 @@ export interface SceneVideoPromptTrace {
 export interface ProjectFinalFilm {
   id: string;
   projectId: string;
-  status: 'processing' | 'completed' | 'failed';
+  status: 'queued' | 'processing' | 'completed' | 'failed';
   sourceCount: number;
   videoUrl: string;
   error: string;
