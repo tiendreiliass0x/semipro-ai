@@ -49,7 +49,7 @@ export function ProjectStudio() {
   const [noteInput, setNoteInput] = useState('');
   const [directorPrompt, setDirectorPrompt] = useState('Cinematic, emotionally grounded, practical for low-budget production.');
   const [filmType, setFilmType] = useState('cinematic live-action');
-  const [storyboardImageModel, setStoryboardImageModel] = useState<'fal' | 'grok'>('fal');
+  const [storyboardImageModel, setStoryboardImageModel] = useState<'fal' | 'flux' | 'grok'>('fal');
   const [sceneFilmTypeByBeatId, setSceneFilmTypeByBeatId] = useState<Record<string, string>>({});
   const [sceneModelByBeatId, setSceneModelByBeatId] = useState<Record<string, 'seedance' | 'kling' | 'veo3'>>({});
   const [continuationModeByBeatId, setContinuationModeByBeatId] = useState<Record<string, 'off' | 'strict' | 'balanced' | 'loose'>>({});
@@ -116,8 +116,9 @@ export function ProjectStudio() {
     { key: 'kling', label: 'Kling' },
     { key: 'veo3', label: 'Veo 3' },
   ];
-  const storyboardImageModelOptions: Array<{ key: 'fal' | 'grok'; label: string }> = [
-    { key: 'fal', label: 'FAL Flux' },
+  const storyboardImageModelOptions: Array<{ key: 'fal' | 'flux' | 'grok'; label: string }> = [
+    { key: 'fal', label: 'Nano Banana Pro' },
+    { key: 'flux', label: 'FAL Flux' },
     { key: 'grok', label: 'Grok Image' },
   ];
 
@@ -1781,7 +1782,7 @@ export function ProjectStudio() {
                   <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Storyboard Image Model</p>
                   <select
                     value={storyboardImageModel}
-                    onChange={event => setStoryboardImageModel(event.target.value as 'fal' | 'grok')}
+                    onChange={event => setStoryboardImageModel(event.target.value as 'fal' | 'flux' | 'grok')}
                     className="w-full bg-black/40 border border-gray-800 rounded px-3 py-2 text-sm text-gray-200"
                   >
                     {storyboardImageModelOptions.map(option => (

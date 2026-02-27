@@ -110,9 +110,19 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS storylines_cache_accounts (
+    accountId TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (accountId) REFERENCES accounts(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS storyline_packages (
     id TEXT PRIMARY KEY,
     storylineId TEXT NOT NULL,
+    accountId TEXT,
     payload TEXT NOT NULL,
     prompt TEXT DEFAULT '',
     status TEXT DEFAULT 'draft',
@@ -121,6 +131,16 @@ db.exec(`
     updatedAt INTEGER NOT NULL
   )
 `);
+
+const ensureStorylinePackageColumn = (columnSql: string) => {
+  try {
+    db.exec(`ALTER TABLE storyline_packages ADD COLUMN ${columnSql}`);
+  } catch {
+    // no-op when column already exists
+  }
+};
+
+ensureStorylinePackageColumn('accountId TEXT');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS projects (
@@ -535,6 +555,19 @@ const newCount = db.query('SELECT COUNT(*) as count FROM anecdotes').get() as { 
 console.log(`Total anecdotes in database: ${newCount.count}`);
 const newSubscriberCount = db.query('SELECT COUNT(*) as count FROM subscribers').get() as { count: number };
 console.log(`Total subscribers in database: ${newSubscriberCount.count}`);
-const storylineRow = db.query('SELECT payload FROM storylines_cache WHERE id = 1').get() as { payload?: string } | null;
-const storylineTotal = storylineRow?.payload ? (JSON.parse(storylineRow.payload).length || 0) : 0;
+const storylineRowsByAccount = db.query('SELECT payload FROM storylines_cache_accounts').all() as Array<{ payload?: string }>;
+let storylineTotal = 0;
+storylineRowsByAccount.forEach(row => {
+  if (!row.payload) return;
+  try {
+    const parsed = JSON.parse(row.payload);
+    if (Array.isArray(parsed)) storylineTotal += parsed.length;
+  } catch {
+    // no-op
+  }
+});
+if (storylineTotal === 0) {
+  const storylineRow = db.query('SELECT payload FROM storylines_cache WHERE id = 1').get() as { payload?: string } | null;
+  storylineTotal = storylineRow?.payload ? (JSON.parse(storylineRow.payload).length || 0) : 0;
+}
 console.log(`Total storylines in database: ${storylineTotal}`);

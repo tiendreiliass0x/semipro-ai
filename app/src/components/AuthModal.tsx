@@ -200,9 +200,9 @@ export function AuthModal() {
                     setMode('login');
                     setAuthOpen(true);
                   }}
-                  className="hidden md:inline-flex px-4 xl:px-5 py-1.5 xl:py-2 rounded-full border border-white/45 text-xs md:text-sm xl:text-base text-white bg-white/5 hover:bg-white/10 transition"
+                  className="hidden md:inline-flex gap-2 px-4 xl:px-5 py-1.5 xl:py-2 rounded-full border border-white/45 text-xs md:text-sm xl:text-base text-white bg-white/5 hover:bg-white/10 transition"
                 >
-                  <PlayCircle className="w-4 h-4" /> Sign In
+                  <PlayCircle className="w-4 h-4"/> Sign In
                 </button>
                 <button
                   onClick={() => {

@@ -141,9 +141,19 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS storylines_cache_accounts (
+    accountId TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (accountId) REFERENCES accounts(id) ON DELETE CASCADE
+  )
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS storyline_packages (
     id TEXT PRIMARY KEY,
     storylineId TEXT NOT NULL,
+    accountId TEXT,
     payload TEXT NOT NULL,
     prompt TEXT DEFAULT '',
     status TEXT DEFAULT 'draft',
@@ -152,6 +162,16 @@ db.exec(`
     updatedAt INTEGER NOT NULL
   )
 `);
+
+const ensureStorylinePackageColumn = (columnSql: string) => {
+  try {
+    db.exec(`ALTER TABLE storyline_packages ADD COLUMN ${columnSql}`);
+  } catch {
+    // no-op if column already exists
+  }
+};
+
+ensureStorylinePackageColumn('accountId TEXT');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS projects (
@@ -321,7 +341,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS project_final_films (
     id TEXT PRIMARY KEY,
     projectId TEXT NOT NULL,
-    status TEXT DEFAULT 'processing',
+    status TEXT DEFAULT 'queued',
     sourceCount INTEGER DEFAULT 0,
     videoUrl TEXT DEFAULT '',
     error TEXT DEFAULT '',
@@ -702,24 +722,31 @@ const buildStorylineContext = (storyline: any) => ({
   timeframe: storyline.timeframe,
   tags: Array.isArray(storyline.tags) ? storyline.tags.slice(0, 12) : [],
   beats: Array.isArray(storyline.beats)
-    ? storyline.beats.map((beat: any, index: number) => ({
-      order: index + 1,
-      beatId: beat.id,
-      intensity: beat.intensity,
-      summary: beat.summary,
-      voiceover: beat.voiceover,
-      connection: beat.connection,
-      anecdote: {
-        id: beat.anecdote?.id,
-        date: beat.anecdote?.date,
-        year: beat.anecdote?.year,
-        title: beat.anecdote?.title,
-        story: beat.anecdote?.story,
-        storyteller: beat.anecdote?.storyteller,
-        location: beat.anecdote?.location,
-        tags: beat.anecdote?.tags || [],
-      },
-    }))
+    ? storyline.beats.map((beat: any, index: number) => {
+      const source = (beat?.anecdote && typeof beat.anecdote === 'object')
+        ? beat.anecdote
+        : (beat?.source && typeof beat.source === 'object')
+            ? beat.source
+            : {};
+      return {
+        order: index + 1,
+        beatId: beat.id,
+        intensity: beat.intensity,
+        summary: beat.summary,
+        voiceover: beat.voiceover,
+        connection: beat.connection,
+        anecdote: {
+          id: source.id ?? beat.id ?? `beat-${index + 1}`,
+          date: source.date ?? '',
+          year: source.year ?? null,
+          title: source.title ?? beat.summary ?? '',
+          story: source.story ?? beat.summary ?? '',
+          storyteller: source.storyteller ?? '',
+          location: source.location ?? '',
+          tags: Array.isArray(source.tags) ? source.tags : [],
+        },
+      };
+    })
     : [],
 });
 
@@ -801,10 +828,13 @@ const validateStorylinesPayload = (storylines: any): string[] => {
       });
       if (!isNumber(beat.intensity)) pushError(`${beatPath}.intensity`, 'must be a number');
 
-      if (!beat.anecdote || typeof beat.anecdote !== 'object') {
-        pushError(`${beatPath}.anecdote`, 'must be an object');
-      } else if (!isString(beat.anecdote.id)) {
-        pushError(`${beatPath}.anecdote.id`, 'must be a string');
+      const source = beat.anecdote ?? beat.source;
+      if (source != null) {
+        if (!source || typeof source !== 'object') {
+          pushError(`${beatPath}.anecdote`, 'must be an object when provided');
+        } else if (source.id != null && !isString(source.id)) {
+          pushError(`${beatPath}.anecdote.id`, 'must be a string when provided');
+        }
       }
 
       if (beat.connection != null) {
@@ -831,16 +861,37 @@ const getDbStats = () => {
   const projectPackages = (db.query('SELECT COUNT(*) as count FROM project_packages').get() as { count: number }).count;
   const storylinePackages = (db.query('SELECT COUNT(*) as count FROM storyline_packages').get() as { count: number }).count;
   const storylineRow = db.query('SELECT payload, updatedAt FROM storylines_cache WHERE id = 1').get() as { payload?: string; updatedAt?: number } | null;
+  const storylineAccountRows = db.query('SELECT payload, updatedAt FROM storylines_cache_accounts').all() as Array<{ payload?: string; updatedAt?: number }>;
 
-  let storylines = 0;
+  let legacyStorylines = 0;
   if (storylineRow?.payload) {
     try {
       const parsed = JSON.parse(storylineRow.payload);
-      storylines = Array.isArray(parsed) ? parsed.length : 0;
+      legacyStorylines = Array.isArray(parsed) ? parsed.length : 0;
     } catch {
-      storylines = 0;
+      legacyStorylines = 0;
     }
   }
+
+  let accountStorylines = 0;
+  let accountStorylinesUpdatedAt: number | null = null;
+  storylineAccountRows.forEach(row => {
+    if (typeof row.updatedAt === 'number') {
+      accountStorylinesUpdatedAt = accountStorylinesUpdatedAt == null
+        ? row.updatedAt
+        : Math.max(accountStorylinesUpdatedAt, row.updatedAt);
+    }
+    if (!row.payload) return;
+    try {
+      const parsed = JSON.parse(row.payload);
+      if (Array.isArray(parsed)) accountStorylines += parsed.length;
+    } catch {
+      // Ignore malformed row payloads in diagnostics.
+    }
+  });
+
+  const storylines = accountStorylines > 0 ? accountStorylines : legacyStorylines;
+  const storylinesUpdatedAt = accountStorylinesUpdatedAt || storylineRow?.updatedAt || null;
 
   return {
     anecdotes,
@@ -852,7 +903,10 @@ const getDbStats = () => {
     projectPackages,
     storylines,
     storylinePackages,
-    storylinesUpdatedAt: storylineRow?.updatedAt || null,
+    storylinesUpdatedAt,
+    storylinesLegacy: legacyStorylines,
+    storylinesAccountScoped: accountStorylines,
+    storylineAccounts: storylineAccountRows.length,
   };
 };
 
@@ -980,6 +1034,7 @@ serve({
       url,
       corsHeaders,
       verifyAccessKey,
+      getRequestAccountId,
       loadStorylines,
       saveStorylines,
       validateStorylinesPayload,

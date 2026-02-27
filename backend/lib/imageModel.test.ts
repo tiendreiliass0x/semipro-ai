@@ -13,4 +13,10 @@ describe('image model resolver', () => {
     expect(model.key).toBe('grok');
     expect(model.provider).toBe('xai');
   });
+
+  test('resolves flux image key', () => {
+    const model = resolveImageModel('flux');
+    expect(model.key).toBe('flux');
+    expect(model.provider).toBe('fal');
+  });
 });

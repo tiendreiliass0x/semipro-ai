@@ -318,21 +318,21 @@ export const api = {
       body: JSON.stringify({ mode, dryRun }),
     }),
 
-  generateProjectStoryboard: (projectId: string, prompt?: string, filmType?: string, imageModelKey?: 'fal' | 'grok') =>
+  generateProjectStoryboard: (projectId: string, prompt?: string, filmType?: string, imageModelKey?: 'fal' | 'flux' | 'grok') =>
     fetchApi<{ success: boolean; result: StorylineGenerationResult; package: StorylinePackageRecord }>(`/projects/${projectId}/storyboard/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: prompt || '', filmType: filmType || '', imageModelKey: imageModelKey || 'fal' }),
     }),
 
-  regenerateStoryboardImage: (projectId: string, beatId: string, payload?: { imageModelKey?: 'fal' | 'grok'; filmType?: string }) =>
+  regenerateStoryboardImage: (projectId: string, beatId: string, payload?: { imageModelKey?: 'fal' | 'flux' | 'grok'; filmType?: string }) =>
     fetchApi<{ success: boolean; item: StorylinePackageRecord }>(`/projects/${projectId}/storyboard/${beatId}/image/regenerate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageModelKey: payload?.imageModelKey || 'fal', filmType: payload?.filmType || '' }),
     }),
 
-  regenerateAllStoryboardImages: (projectId: string, payload?: { imageModelKey?: 'fal' | 'grok'; filmType?: string }) =>
+  regenerateAllStoryboardImages: (projectId: string, payload?: { imageModelKey?: 'fal' | 'flux' | 'grok'; filmType?: string }) =>
     fetchApi<{ success: boolean; item: StorylinePackageRecord; refreshedCount: number; failedCount: number }>(`/projects/${projectId}/storyboard/images/regenerate-all`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -353,7 +353,7 @@ export const api = {
     directorPrompt?: string;
     cinematographerPrompt?: string;
     filmType?: string;
-    imageModelKey?: 'fal' | 'grok';
+    imageModelKey?: 'fal' | 'flux' | 'grok';
     modelKey?: 'seedance' | 'kling' | 'veo3';
     continuationMode?: 'off' | 'strict' | 'balanced' | 'loose';
     anchorBeatId?: string;

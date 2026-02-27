@@ -615,7 +615,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
     try {
       const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
-      const imageModelKey = ['fal', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
+      const imageModelKey = ['fal', 'flux', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
         ? String(body.imageModelKey).trim().toLowerCase()
         : 'fal';
       const result = await generateProjectStoryboardWithLlm({
@@ -842,7 +842,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     }
 
     const body = await req.json().catch(() => ({}));
-    const imageModelKey = ['fal', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
+    const imageModelKey = ['fal', 'flux', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
       ? String(body.imageModelKey).trim().toLowerCase()
       : 'fal';
     const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
@@ -889,7 +889,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     }
 
     const body = await req.json().catch(() => ({}));
-    const imageModelKey = ['fal', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
+    const imageModelKey = ['fal', 'flux', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
       ? String(body.imageModelKey).trim().toLowerCase()
       : 'fal';
     const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
@@ -941,7 +941,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const body = await req.json().catch(() => ({}));
     const promptOverride = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
     const filmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
-    const imageModelKey = ['fal', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
+    const imageModelKey = ['fal', 'flux', 'grok'].includes(String(body?.imageModelKey || '').trim().toLowerCase())
       ? String(body.imageModelKey).trim().toLowerCase()
       : 'fal';
     const modelKeyInput = typeof body?.modelKey === 'string' ? body.modelKey.trim().toLowerCase() : '';

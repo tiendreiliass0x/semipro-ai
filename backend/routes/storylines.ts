@@ -5,14 +5,15 @@ type StorylinesRouteArgs = {
   url: URL;
   corsHeaders: Record<string, string>;
   verifyAccessKey: (req: Request) => boolean;
-  loadStorylines: () => any[];
-  saveStorylines: (data: any) => boolean;
+  getRequestAccountId: (req: Request) => string | null;
+  loadStorylines: (accountId?: string) => any[];
+  saveStorylines: (data: any, accountId?: string) => boolean;
   validateStorylinesPayload: (storylines: any) => string[];
   generateStoryPackage: (storyline: any, prompt: string) => Promise<any>;
   generateStoryboardScene: (storyline: any, scene: any, prompt: string) => Promise<any>;
-  listStorylinePackages: (storylineId: string) => any[];
-  getLatestStorylinePackage: (storylineId: string) => any;
-  saveStorylinePackage: (storylineId: string, payload: any, prompt: string, status?: string) => any;
+  listStorylinePackages: (storylineId: string, accountId?: string) => any[];
+  getLatestStorylinePackage: (storylineId: string, accountId?: string) => any;
+  saveStorylinePackage: (storylineId: string, payload: any, prompt: string, status?: string, accountId?: string) => any;
 };
 
 const jsonHeaders = (corsHeaders: Record<string, string>) => ({
@@ -28,6 +29,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
     url,
     corsHeaders,
     verifyAccessKey,
+    getRequestAccountId,
     loadStorylines,
     saveStorylines,
     validateStorylinesPayload,
@@ -38,12 +40,20 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
     saveStorylinePackage,
   } = args;
 
+  const requestAccountId = getRequestAccountId(req);
+  const scopeAccountId = requestAccountId || undefined;
+  const canWrite = Boolean(requestAccountId) && verifyAccessKey(req);
+
+  if (pathname.startsWith('/api/storylines') && !requestAccountId) {
+    return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+  }
+
   if (pathname === '/api/storylines' && method === 'GET') {
-    return new Response(JSON.stringify(loadStorylines()), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify(loadStorylines(scopeAccountId)), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/storylines/generate' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     const storyline = body.storyline;
     const prompt = typeof body.prompt === 'string' ? body.prompt : '';
@@ -54,7 +64,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
     try {
       const result = await generateStoryPackage(storyline, prompt);
       const storylineId = String(storyline.id || 'unknown-storyline');
-      const saved = saveStorylinePackage(storylineId, result, prompt, 'draft');
+      const saved = saveStorylinePackage(storylineId, result, prompt, 'draft', scopeAccountId);
       return new Response(JSON.stringify({ success: true, result, package: saved }), { headers: jsonHeaders(corsHeaders) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate story package';
@@ -63,7 +73,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
   }
 
   if (pathname === '/api/storylines/scene/regenerate' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     const storyline = body.storyline;
     const scene = body.scene;
@@ -83,22 +93,20 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
   }
 
   if (pathname === '/api/storylines/packages' && method === 'GET') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const storylineId = url.searchParams.get('storylineId');
     if (!storylineId) return new Response(JSON.stringify({ error: 'storylineId is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify({ items: listStorylinePackages(storylineId) }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ items: listStorylinePackages(storylineId, scopeAccountId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/storylines/package' && method === 'GET') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const storylineId = url.searchParams.get('storylineId');
     if (!storylineId) return new Response(JSON.stringify({ error: 'storylineId is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
-    const item = getLatestStorylinePackage(storylineId);
+    const item = getLatestStorylinePackage(storylineId, scopeAccountId);
     return new Response(JSON.stringify({ item }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/storylines/package' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     const storylineId = String(body.storylineId || '');
     const payload = body.payload;
@@ -110,7 +118,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
     }
 
     try {
-      const item = saveStorylinePackage(storylineId, payload, prompt, status);
+      const item = saveStorylinePackage(storylineId, payload, prompt, status, scopeAccountId);
       return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
     } catch {
       return new Response(JSON.stringify({ error: 'Failed to save storyline package' }), { status: 500, headers: jsonHeaders(corsHeaders) });
@@ -118,7 +126,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
   }
 
   if (pathname === '/api/storylines' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     const storylines = Array.isArray(body) ? body : body.storylines;
     if (!Array.isArray(storylines)) return new Response(JSON.stringify({ error: 'Invalid storylines payload' }), { status: 400, headers: jsonHeaders(corsHeaders) });
@@ -126,7 +134,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
     if (validationErrors.length) {
       return new Response(JSON.stringify({ error: 'Malformed storyline data', details: validationErrors }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
-    const success = saveStorylines(storylines);
+    const success = saveStorylines(storylines, scopeAccountId);
     if (!success) return new Response(JSON.stringify({ error: 'Failed to save storylines' }), { status: 500, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify({ success: true, count: storylines.length }), { headers: jsonHeaders(corsHeaders) });
   }
