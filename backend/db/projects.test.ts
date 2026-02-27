@@ -1,39 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { Database } from 'bun:sqlite';
+import { createTestDb } from '../test-helpers/setupDb';
 import { createProjectsDb } from './projects';
 
 describe('projects db prompt traces', () => {
   test('stores and lists scene video prompt traces ordered by newest first', () => {
-    const db = new Database(':memory:');
-    db.exec('PRAGMA foreign_keys = ON');
-    db.exec(`
-      CREATE TABLE projects (
-        id TEXT PRIMARY KEY,
-        accountId TEXT,
-        title TEXT,
-        pseudoSynopsis TEXT,
-        polishedSynopsis TEXT,
-        plotScript TEXT,
-        style TEXT,
-        durationMinutes INTEGER,
-        status TEXT,
-        deletedAt INTEGER,
-        createdAt INTEGER,
-        updatedAt INTEGER
-      )
-    `);
-    db.exec(`
-      CREATE TABLE scene_video_prompt_traces (
-        traceId TEXT PRIMARY KEY,
-        projectId TEXT NOT NULL,
-        packageId TEXT NOT NULL,
-        beatId TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        createdAt INTEGER NOT NULL,
-        FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
-      )
-    `);
-    db.query('INSERT INTO projects (id, title) VALUES (?, ?)').run('p1', 'Project 1');
+    const db = createTestDb();
+    db.query('INSERT INTO projects (id, title, pseudoSynopsis, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)').run('p1', 'Project 1', 'synopsis', Date.now(), Date.now());
 
     let id = 0;
     const projectsDb = createProjectsDb({

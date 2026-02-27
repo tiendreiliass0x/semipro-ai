@@ -1,45 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { Database } from 'bun:sqlite';
+import { createTestDb } from '../test-helpers/setupDb';
 import { createStorylinesDb } from './storylines';
 
 const setupDb = () => {
-  const db = new Database(':memory:');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec(`
-    CREATE TABLE accounts (
-      id TEXT PRIMARY KEY
-    )
-  `);
-  db.exec(`
-    CREATE TABLE storylines_cache (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      payload TEXT NOT NULL,
-      updatedAt INTEGER NOT NULL
-    )
-  `);
-  db.exec(`
-    CREATE TABLE storylines_cache_accounts (
-      accountId TEXT PRIMARY KEY,
-      payload TEXT NOT NULL,
-      updatedAt INTEGER NOT NULL,
-      FOREIGN KEY (accountId) REFERENCES accounts(id) ON DELETE CASCADE
-    )
-  `);
-  db.exec(`
-    CREATE TABLE storyline_packages (
-      id TEXT PRIMARY KEY,
-      storylineId TEXT NOT NULL,
-      accountId TEXT,
-      payload TEXT NOT NULL,
-      prompt TEXT DEFAULT '',
-      status TEXT DEFAULT 'draft',
-      version INTEGER NOT NULL,
-      createdAt INTEGER NOT NULL,
-      updatedAt INTEGER NOT NULL
-    )
-  `);
-  db.query('INSERT INTO accounts (id) VALUES (?)').run('acc-1');
-  db.query('INSERT INTO accounts (id) VALUES (?)').run('acc-2');
+  const db = createTestDb();
+  db.query('INSERT INTO accounts (id, name, slug, plan, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)').run('acc-1', 'A1', 'a1', 'free', 'active', Date.now(), Date.now());
+  db.query('INSERT INTO accounts (id, name, slug, plan, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)').run('acc-2', 'A2', 'a2', 'free', 'active', Date.now(), Date.now());
   return db;
 };
 
