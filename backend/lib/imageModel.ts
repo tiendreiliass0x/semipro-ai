@@ -10,9 +10,9 @@ type ImageModelEntry = {
 const MODELS: Record<ImageModelKey, ImageModelEntry> = {
   fal: {
     key: 'fal',
-    label: 'FAL Flux',
+    label: 'Nano Banana Pro',
     provider: 'fal',
-    modelId: process.env.FAL_IMAGE_MODEL || 'fal-ai/flux-pro/kontext/text-to-image',
+    modelId: process.env.FAL_IMAGE_MODEL || 'fal-ai/nano-banana-pro',
   },
   grok: {
     key: 'grok',
@@ -23,7 +23,7 @@ const MODELS: Record<ImageModelKey, ImageModelEntry> = {
 };
 
 export const IMAGE_MODEL_OPTIONS = [
-  { key: 'fal', label: 'FAL Flux' },
+  { key: 'fal', label: 'Nano Banana Pro' },
   { key: 'grok', label: 'Grok Image' },
 ] as const;
 

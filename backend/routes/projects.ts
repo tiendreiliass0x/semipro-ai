@@ -774,6 +774,11 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const project = getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
 
+    const latestFinalFilm = getLatestProjectFinalFilm(projectId);
+    if (latestFinalFilm && (latestFinalFilm.status === 'queued' || latestFinalFilm.status === 'processing')) {
+      return new Response(JSON.stringify({ success: true, item: latestFinalFilm, message: 'Final film job already running.' }), { status: 202, headers: jsonHeaders(corsHeaders) });
+    }
+
     const latestPackage = getLatestProjectPackage(projectId);
     const storyboard = Array.isArray(latestPackage?.payload?.storyboard) ? latestPackage.payload.storyboard : [];
     if (!storyboard.length) {
@@ -797,27 +802,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     }
 
     const film = createProjectFinalFilm({ projectId, sourceCount: clipUrls.length });
-    try {
-      const outputFilename = `final-film-${projectId}-${Date.now()}.mp4`;
-      const videoUrl = await createFinalFilmFromClips({
-        uploadsDir,
-        clipUrls,
-        outputFilename,
-      });
-      registerUploadOwnership({ filename: outputFilename, accountId: String(requestAccountId) });
-
-      const item = updateProjectFinalFilm(film.id, {
-        status: 'completed',
-        sourceCount: clipUrls.length,
-        videoUrl,
-        error: '',
-      });
-      return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to build final film';
-      const item = updateProjectFinalFilm(film.id, { status: 'failed', error: message });
-      return new Response(JSON.stringify({ error: message, item }), { status: 502, headers: jsonHeaders(corsHeaders) });
-    }
+    return new Response(JSON.stringify({ success: true, item: film, message: 'Final film job queued.' }), { status: 202, headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/video$/) && method === 'GET') {

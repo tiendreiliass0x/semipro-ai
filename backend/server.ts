@@ -321,7 +321,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS project_final_films (
     id TEXT PRIMARY KEY,
     projectId TEXT NOT NULL,
-    status TEXT DEFAULT 'processing',
+    status TEXT DEFAULT 'queued',
     sourceCount INTEGER DEFAULT 0,
     videoUrl TEXT DEFAULT '',
     error TEXT DEFAULT '',
@@ -517,10 +517,11 @@ const verifyAdminKey = (req: Request): boolean => {
 
 const getAuthContext = (req: Request) => {
   const authHeader = req.headers.get('authorization') || '';
+  const pathname = new URL(req.url).pathname;
   let token = '';
   if (authHeader.toLowerCase().startsWith('bearer ')) {
     token = authHeader.slice(7).trim();
-  } else {
+  } else if (pathname.startsWith('/uploads/')) {
     const tokenFromQuery = new URL(req.url).searchParams.get('token') || '';
     token = tokenFromQuery.trim();
   }
@@ -616,6 +617,8 @@ const {
   createProjectFinalFilm,
   updateProjectFinalFilm,
   getLatestProjectFinalFilm,
+  claimNextQueuedProjectFinalFilm,
+  requeueStaleProcessingProjectFinalFilms,
   claimNextQueuedSceneVideo,
   requeueStaleProcessingSceneVideos,
   createScenePromptLayer,
@@ -673,8 +676,85 @@ const processSceneVideoQueue = async () => {
   }
 };
 
+let finalFilmWorkerActive = false;
+const processFinalFilmQueue = async () => {
+  if (finalFilmWorkerActive) return;
+  finalFilmWorkerActive = true;
+
+  try {
+    while (true) {
+      const filmJob = claimNextQueuedProjectFinalFilm();
+      if (!filmJob) break;
+
+      try {
+        const projectId = String(filmJob.projectId || '');
+        console.log(`[queue] Processing final film job ${filmJob.id} (project: ${projectId})`);
+
+        const project = getProjectById(projectId);
+        if (!project) {
+          updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'Project not found' });
+          continue;
+        }
+
+        const latestPackage = getLatestProjectPackage(projectId);
+        const storyboard = Array.isArray(latestPackage?.payload?.storyboard) ? latestPackage.payload.storyboard : [];
+        if (!storyboard.length) {
+          updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'No storyboard found. Generate scenes first.' });
+          continue;
+        }
+
+        const sceneVideos = listLatestSceneVideos(projectId);
+        const completedByBeatId = new Map<string, any>();
+        sceneVideos.forEach(item => {
+          if (String(item?.status) === 'completed' && String(item?.videoUrl || '').trim()) {
+            completedByBeatId.set(String(item.beatId), item);
+          }
+        });
+
+        const clipUrls = storyboard
+          .map((scene: any) => completedByBeatId.get(String(scene.beatId))?.videoUrl)
+          .filter((url: any) => typeof url === 'string' && url.trim().length > 0);
+
+        if (!clipUrls.length) {
+          updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'No completed scene videos found to compile.' });
+          continue;
+        }
+
+        const outputFilename = `final-film-${projectId}-${Date.now()}.mp4`;
+        const videoUrl = await createFinalFilmFromClips({
+          uploadsDir,
+          clipUrls,
+          outputFilename,
+        });
+
+        if (project?.accountId) {
+          registerUploadOwnership({ filename: outputFilename, accountId: String(project.accountId) });
+        }
+
+        updateProjectFinalFilm(filmJob.id, {
+          status: 'completed',
+          sourceCount: clipUrls.length,
+          videoUrl,
+          error: '',
+        });
+        console.log(`[queue] Completed final film job ${filmJob.id}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to build final film';
+        updateProjectFinalFilm(filmJob.id, { status: 'failed', error: message });
+        console.error(`[queue] Failed final film job ${filmJob.id}: ${message}`);
+      }
+    }
+  } finally {
+    finalFilmWorkerActive = false;
+  }
+};
+
 setInterval(() => {
   processSceneVideoQueue().catch(() => null);
+}, 2500);
+
+setInterval(() => {
+  processFinalFilmQueue().catch(() => null);
 }, 2500);
 
 setInterval(() => {
@@ -689,7 +769,13 @@ if (requeuedCount > 0) {
   console.log(`[queue] Re-queued ${requeuedCount} stale processing scene video job(s)`);
 }
 
+const requeuedFinalFilmCount = requeueStaleProcessingProjectFinalFilms();
+if (requeuedFinalFilmCount > 0) {
+  console.log(`[queue] Re-queued ${requeuedFinalFilmCount} stale processing final film job(s)`);
+}
+
 processSceneVideoQueue().catch(() => null);
+processFinalFilmQueue().catch(() => null);
 
 const buildStorylineContext = (storyline: any) => ({
   id: storyline.id,

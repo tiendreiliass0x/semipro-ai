@@ -5,7 +5,7 @@ import { resolveImageModel } from './imageModel';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 const FAL_KEY = process.env.FAL_KEY || process.env.FAL_API_KEY || '';
-const FAL_IMAGE_MODEL = process.env.FAL_IMAGE_MODEL || 'fal-ai/flux-pro/kontext/text-to-image';
+const FAL_IMAGE_MODEL = process.env.FAL_IMAGE_MODEL || 'fal-ai/nano-banana-pro';
 const XAI_API_KEY = process.env.XAI_API_KEY || process.env.GROK_API_KEY || '';
 const SUPPORTS_TEMPERATURE = !OPENAI_MODEL.startsWith('gpt-5');
 

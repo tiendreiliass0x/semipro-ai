@@ -2,9 +2,34 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, LogOut, PlayCircle, Settings, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
+type GoogleCredentialResponse = {
+  credential?: string;
+};
+
+type GoogleAccountsId = {
+  initialize: (args: {
+    client_id: string;
+    callback: (response: GoogleCredentialResponse) => void | Promise<void>;
+  }) => void;
+  renderButton: (
+    target: HTMLElement,
+    args: {
+      theme: 'outline';
+      size: 'large';
+      shape: 'pill';
+      text: 'continue_with';
+      width: number;
+    }
+  ) => void;
+};
+
 declare global {
   interface Window {
-    google?: any;
+    google?: {
+      accounts?: {
+        id?: GoogleAccountsId;
+      };
+    };
   }
 }
 
@@ -64,15 +89,6 @@ export function AuthModal() {
       window.removeEventListener('semipro:open-auth', handleOpenAuth as EventListener);
     };
   }, []);
-
-  useEffect(() => {
-    if (settingsOpen) {
-      setSettingsName(account?.name || '');
-      setSettingsSlug(account?.slug || '');
-      setSelectedWorkspaceId(account?.id || '');
-      setSettingsError(null);
-    }
-  }, [settingsOpen, account?.id, account?.name, account?.slug]);
 
   useEffect(() => {
     if (!authOpen || !canUseGoogle || !googleButtonRef.current) return;
@@ -176,6 +192,14 @@ export function AuthModal() {
     setAuthOpen(false);
   };
 
+  const openSettingsPanel = () => {
+    setSettingsName(account?.name || '');
+    setSettingsSlug(account?.slug || '');
+    setSelectedWorkspaceId(account?.id || '');
+    setSettingsError(null);
+    setSettingsOpen(true);
+  };
+
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-white/15 bg-black/45 backdrop-blur-md">
@@ -216,7 +240,7 @@ export function AuthModal() {
               </div>
             ) : (
               <button
-                onClick={() => setSettingsOpen(true)}
+                onClick={openSettingsPanel}
                 className="inline-flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-white/30 bg-black/40 max-w-[300px]"
                 title="Open account settings"
               >

@@ -291,7 +291,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS project_final_films (
     id TEXT PRIMARY KEY,
     projectId TEXT NOT NULL,
-    status TEXT DEFAULT 'processing',
+    status TEXT DEFAULT 'queued',
     sourceCount INTEGER DEFAULT 0,
     videoUrl TEXT DEFAULT '',
     error TEXT DEFAULT '',

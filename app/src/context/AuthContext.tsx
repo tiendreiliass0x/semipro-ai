@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(me.user);
       setAccount(me.account);
       setMemberships(me.memberships || []);
-    } catch (err) {
+    } catch {
       setIsAuthenticated(false);
       setUser(null);
       setAccount(null);
