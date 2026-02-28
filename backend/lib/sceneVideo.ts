@@ -9,132 +9,103 @@ if (FAL_KEY) {
   fal.config({ credentials: FAL_KEY });
 }
 
-export const buildDirectorSceneVideoPrompt = (args: {
-  projectTitle: string;
-  synopsis: string;
-  styleBible: any;
-  scene: any;
-  directorPrompt?: string;
-}) => {
-  const styleBible = args.styleBible || {};
-  const scene = args.scene || {};
-
-  const line = (label: string, value: unknown) => {
-    const text = String(value || '').trim();
-    return text ? `${label}: ${text}` : '';
-  };
-  const listLine = (label: string, value: unknown) => {
-    const items = Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean) : [];
-    return items.length ? `${label}: ${items.join(', ')}` : '';
-  };
-
-  const sharedScenePacket = [
-    line('Project', args.projectTitle),
-    line('Synopsis', args.synopsis),
-    line('Scene slugline', scene.slugline),
-    line('Visual direction', scene.visualDirection),
-    line('Camera language', scene.camera),
-    line('Audio mood', scene.audio),
-    line('Voiceover intent', scene.voiceover),
-    line('On-screen text', scene.onScreenText),
-    line('Duration seconds', scene.durationSeconds || 5),
-    line('Style visual', styleBible.visualStyle),
-    line('Style camera grammar', styleBible.cameraGrammar),
-    listLine('Style do list', styleBible.doList),
-    listLine('Style dont list', styleBible.dontList),
-  ].filter(Boolean).join('\n');
-
-  return [
-    'ROLE: Film director prompt layer for one coherent cinematic shot.',
-    'SHARED SCENE PACKET:',
-    sharedScenePacket,
-    'DIRECTOR LAYER OVERRIDE:',
-    String(args.directorPrompt || '').trim() || '(none)',
-    'DIRECTOR GOALS:',
-    '- Keep performance and emotional intent crystal clear.',
-    '- Preserve spatial continuity and believable action progression.',
-    '- Avoid surreal artifacts, random text overlays, and watermarks.',
-  ].filter(Boolean).join('\n');
+const truncate = (value: unknown, max: number) => {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.length <= max ? text : `${text.slice(0, max)}...`;
 };
 
-export const buildCinematographerPrompt = (args: {
-  styleBible: any;
+const MODEL_CHAR_LIMITS: Record<string, number> = { veo3: 1000, kling: 1300, seedance: 1500 };
+
+export const compileSceneVideoPrompt = (args: {
+  modelKey: string;
   scene: any;
+  styleBible?: any;
   scenesBible?: any;
+  filmType?: string;
+  directorLayer?: string;
+  cinematographerLayer?: string;
 }) => {
+  const model = String(args.modelKey || 'seedance').trim().toLowerCase();
+  const maxLen = MODEL_CHAR_LIMITS[model] || 1500;
+  const scene = args.scene || {};
   const styleBible = args.styleBible || {};
   const scenesBible = args.scenesBible || {};
-  const scene = args.scene || {};
 
-  const line = (label: string, value: unknown) => {
-    const text = String(value || '').trim();
-    return text ? `${label}: ${text}` : '';
-  };
-  const listLine = (label: string, value: unknown) => {
-    const items = Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean) : [];
-    return items.length ? `${label}: ${items.join(', ')}` : '';
-  };
+  const duration = Math.max(5, Math.min(10, Number(scene.durationSeconds || 5)));
 
-  const sharedScenePacket = [
-    line('Scene slugline', scene.slugline),
-    line('Visual direction', scene.visualDirection),
-    line('Camera language', scene.camera),
-    line('Duration seconds', scene.durationSeconds || 5),
-    line('Style camera grammar', styleBible.cameraGrammar),
-    line('Style visual', styleBible.visualStyle),
-    line('Scenes bible location canon', String(scenesBible.locationCanon || '').slice(0, 600)),
-    line('Scenes bible cinematic language', scenesBible.cinematicLanguage),
-    line('Scenes bible palette', scenesBible.paletteAndTexture),
-    listLine('Scenes bible continuity invariants', scenesBible.continuityInvariants),
-  ].filter(Boolean).join('\n');
+  // --- Camera: merge scene camera + style bible grammar, keep unique ---
+  const cameraRaw = [scene.camera, styleBible.cameraGrammar].map(v => String(v || '').trim()).filter(Boolean);
+  const camera = cameraRaw.length > 1 ? cameraRaw.join('. ') : cameraRaw[0] || '';
 
-  return [
-    'ROLE: Cinematographer prompt layer (camera/lens/lighting continuity owner).',
-    'SHARED SCENE PACKET:',
-    sharedScenePacket,
-    'CINEMATOGRAPHY GOALS:',
-    '- Preserve axis consistency and subject scale continuity.',
-    '- Keep lens and camera movement choices motivated and coherent.',
-    '- Maintain realistic lighting continuity and avoid jumpy visual grammar.',
-  ].join('\n');
-};
+  // --- Look: merge film type + style bible visual ---
+  const lookParts = [args.filmType, styleBible.visualStyle].map(v => String(v || '').trim()).filter(Boolean);
+  const look = lookParts.join('. ');
 
-export const buildMergedScenePrompt = (args: {
-  directorPrompt: string;
-  cinematographerPrompt: string;
-  scenesBible?: any;
-}) => {
-  const scenesBible = args.scenesBible || {};
-  const line = (label: string, value: unknown) => {
-    const text = String(value || '').trim();
-    return text ? `${label}: ${text}` : '';
-  };
-  const listLine = (label: string, value: unknown) => {
-    const items = Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean) : [];
-    return items.length ? `${label}: ${items.map(item => `- ${item}`).join('\n')}` : '';
+  // --- Continuity invariants: top 3, pipe-separated ---
+  const invariants = Array.isArray(scenesBible.continuityInvariants)
+    ? scenesBible.continuityInvariants
+        .map((item: unknown) => String(item || '').replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+        .slice(0, 3)
+    : [];
+
+  // Build fields in priority order (top = most important, bottom = first to cut)
+  type Field = { line: string; priority: number };
+  const fields: Field[] = [];
+
+  const add = (line: string, priority: number) => {
+    if (line) fields.push({ line, priority });
   };
 
-  const scenesBibleBlock = [
-    line('Overview', scenesBible.overview),
-    line('Character canon', scenesBible.characterCanon),
-    line('Location canon', scenesBible.locationCanon),
-    line('Cinematic language', scenesBible.cinematicLanguage),
-    line('Palette and texture', scenesBible.paletteAndTexture),
-    listLine('Continuity invariants', scenesBible.continuityInvariants),
-  ].filter(Boolean).join('\n');
+  // P0 – core shot instruction (never cut)
+  add('One coherent cinematic shot from the reference image.', 0);
+  add(truncate(scene.slugline, 180) ? `Scene: ${truncate(scene.slugline, 180)}` : '', 0);
+  add(truncate(scene.visualDirection, 260) ? `Action: ${truncate(scene.visualDirection, 260)}` : '', 0);
+  add(truncate(camera, 220) ? `Camera: ${truncate(camera, 220)}` : '', 1);
+  add(truncate(look, 160) ? `Look: ${truncate(look, 160)}` : '', 1);
+  add(truncate(scene.audio, 140) ? `Mood: ${truncate(scene.audio, 140)}` : '', 2);
+  add(`Duration: ${duration}s`, 0);
 
-  return [
-    'PROMPT MERGE CONTRACT:',
-    '- Scenes Bible is a hard constraint layer.',
-    '- Cinematographer layer controls camera/lens/lighting continuity.',
-    '- Director layer controls performance, tone, and emotional intent.',
-    'SCENES BIBLE HARD CONSTRAINTS:',
-    scenesBibleBlock || '(none)',
-    'CINEMATOGRAPHER LAYER:',
-    args.cinematographerPrompt,
-    'DIRECTOR LAYER:',
-    args.directorPrompt,
-  ].filter(Boolean).join('\n');
+  // P1 – scenes bible constraints (compact)
+  add(truncate(scenesBible.locationCanon, 180) ? `Setting: ${truncate(scenesBible.locationCanon, 180)}` : '', 3);
+  add(truncate(scenesBible.characterCanon, 180) ? `Character: ${truncate(scenesBible.characterCanon, 180)}` : '', 3);
+  add(truncate(scenesBible.paletteAndTexture, 140) ? `Palette: ${truncate(scenesBible.paletteAndTexture, 140)}` : '', 4);
+  add(invariants.length ? `Invariants: ${invariants.map(i => truncate(i, 80)).join(' | ')}` : '', 4);
+
+  // P2 – user overrides
+  const dir = String(args.directorLayer || '').trim();
+  const cin = String(args.cinematographerLayer || '').trim();
+  add(dir ? `Director: ${truncate(dir, 300)}` : '', 5);
+  add(cin ? `Cinematography: ${truncate(cin, 300)}` : '', 5);
+
+  // P3 – guardrails (always present, but last to survive truncation)
+  add('No text overlays. No watermarks. Preserve subject identity and lighting continuity.', 6);
+
+  // Filter empties and sort by priority
+  const populated = fields.filter(f => f.line);
+  populated.sort((a, b) => a.priority - b.priority);
+
+  // Assemble and truncate from bottom (highest priority number = least important)
+  let lines = populated.map(f => f.line);
+  let result = lines.join('\n');
+
+  // If over budget, drop lowest-priority fields one at a time
+  while (result.length > maxLen && lines.length > 1) {
+    // Find highest priority number among remaining lines
+    const maxPriority = Math.max(...populated.filter((_, i) => i < lines.length).map(f => f.priority));
+    // Remove last line with that priority
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (populated[i].priority === maxPriority) {
+        lines.splice(i, 1);
+        populated.splice(i, 1);
+        break;
+      }
+    }
+    result = lines.join('\n');
+  }
+
+  return result.length <= maxLen ? result : result.slice(0, maxLen);
 };
 
 const resolveFalImageUrl = async (args: {

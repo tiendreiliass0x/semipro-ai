@@ -13,7 +13,7 @@ import { createProjectsDb } from './db/projects';
 import { createStorylinesDb } from './db/storylines';
 import { createSubscribersDb } from './db/subscribers';
 import { generateHybridScreenplayWithLlm, generateProjectStoryboardWithLlm, generateScenesBibleWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
-import { buildCinematographerPrompt, buildDirectorSceneVideoPrompt, buildMergedScenePrompt, createFinalFilmFromClips, extractLastFrameFromVideo, generateSceneVideoWithFal } from './lib/sceneVideo';
+import { compileSceneVideoPrompt, createFinalFilmFromClips, extractLastFrameFromVideo, generateSceneVideoWithFal } from './lib/sceneVideo';
 import { resolveVideoModel } from './lib/videoModel';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
 import { handleAccountRoutes } from './routes/account';
@@ -222,7 +222,7 @@ serve({
       getProjectScenesBible, updateProjectScenesBible,
       refineSynopsisWithLlm, generateHybridScreenplayWithLlm, generateScenesBibleWithLlm,
       polishNotesIntoBeatsWithLlm, generateProjectStoryboardWithLlm, generateStoryboardFrameWithLlm,
-      buildDirectorSceneVideoPrompt, buildCinematographerPrompt, buildMergedScenePrompt,
+      compileSceneVideoPrompt,
       createFinalFilmFromClips, extractLastFrameFromVideo, registerUploadOwnership, uploadsDir,
     });
     if (projectsResponse) return projectsResponse;

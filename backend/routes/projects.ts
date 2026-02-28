@@ -72,9 +72,7 @@ type ProjectsRouteArgs = {
   polishNotesIntoBeatsWithLlm: (args: { synopsis: string; notes: any[]; durationMinutes?: number; style?: string; styleBible?: any }) => Promise<any>;
   generateProjectStoryboardWithLlm: (args: { title: string; synopsis: string; beats: any[]; prompt?: string; style?: string; styleBible?: any; filmType?: string }) => Promise<any>;
   generateStoryboardFrameWithLlm: (prompt: string, imageModelKey?: string) => Promise<string>;
-  buildDirectorSceneVideoPrompt: (args: { projectTitle: string; synopsis: string; styleBible: any; scene: any; directorPrompt?: string }) => string;
-  buildCinematographerPrompt: (args: { styleBible: any; scene: any; scenesBible?: any }) => string;
-  buildMergedScenePrompt: (args: { directorPrompt: string; cinematographerPrompt: string; scenesBible?: any }) => string;
+  compileSceneVideoPrompt: (args: { modelKey: string; scene: any; styleBible?: any; scenesBible?: any; filmType?: string; directorLayer?: string; cinematographerLayer?: string }) => string;
   createFinalFilmFromClips: (args: { uploadsDir: string; clipUrls: string[]; outputFilename: string }) => Promise<string>;
   extractLastFrameFromVideo: (args: { uploadsDir: string; videoUrl: string; outputFilename: string }) => Promise<string>;
   registerUploadOwnership: (args: { filename: string; accountId: string }) => void;
@@ -124,64 +122,6 @@ const buildStoryboardImagePrompt = (args: {
   return parts.join('. ');
 };
 
-const compactPromptLine = (value: unknown, max: number) => {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!text) return '';
-  return text.length <= max ? text : `${text.slice(0, max)}...`;
-};
-
-const buildEffectiveSceneVideoPrompt = (args: {
-  modelKey: string;
-  scene: any;
-  directorLayer: string;
-  cinematographerLayer: string;
-  scenesBible?: any;
-  filmType?: string;
-  continuationMode: string;
-  anchorBeatId?: string;
-  autoRegenerateThreshold: number;
-}) => {
-  const modelKey = String(args.modelKey || 'seedance').trim().toLowerCase();
-  const scenesBible = args.scenesBible || {};
-
-  const duration = Math.max(5, Math.min(10, Number(args.scene?.durationSeconds || 5)));
-  const stylePriority = args.filmType || args.directorLayer
-    ? 'Aesthetic priority: film type + director intent.'
-    : 'Aesthetic priority: scenes bible cinematic language.';
-  const realismGuardrail = compactPromptLine(scenesBible?.cinematicLanguage, 160)
-    ? `Realism guardrail: ${compactPromptLine(scenesBible?.cinematicLanguage, 160)}`
-    : 'Realism guardrail: preserve grounded motion and physically plausible lighting.';
-  const continuityInvariants = Array.isArray(scenesBible?.continuityInvariants)
-    ? scenesBible.continuityInvariants.map((item: unknown) => compactPromptLine(item, 120)).filter(Boolean).slice(0, 5)
-    : [];
-
-  const promptParts = [
-    'Generate one coherent cinematic shot from the reference image.',
-    stylePriority,
-    realismGuardrail,
-    continuityInvariants.length ? `Continuity invariants: ${continuityInvariants.join(' | ')}` : '',
-    compactPromptLine(scenesBible?.locationCanon, 180) ? `Location canon: ${compactPromptLine(scenesBible?.locationCanon, 180)}` : '',
-    compactPromptLine(scenesBible?.characterCanon, 180) ? `Character canon: ${compactPromptLine(scenesBible?.characterCanon, 180)}` : '',
-    args.filmType ? `Film type: ${compactPromptLine(args.filmType, 90)}` : '',
-    compactPromptLine(args.scene?.slugline, 180) ? `Scene slugline: ${compactPromptLine(args.scene?.slugline, 180)}` : '',
-    compactPromptLine(args.scene?.visualDirection, 260) ? `Visual direction: ${compactPromptLine(args.scene?.visualDirection, 260)}` : '',
-    compactPromptLine(args.scene?.camera, 200) ? `Camera language: ${compactPromptLine(args.scene?.camera, 200)}` : '',
-    compactPromptLine(args.scene?.audio, 180) ? `Audio mood: ${compactPromptLine(args.scene?.audio, 180)}` : '',
-    `Duration seconds: ${duration}`,
-    `Continuation mode: ${compactPromptLine(args.continuationMode, 30) || 'strict'}`,
-    args.anchorBeatId ? `Anchor beat: ${compactPromptLine(args.anchorBeatId, 40)}` : 'Anchor beat: current scene frame',
-    `Auto-regenerate threshold: ${args.autoRegenerateThreshold}`,
-    compactPromptLine(args.directorLayer, 420) ? `Director intent: ${compactPromptLine(args.directorLayer, 420)}` : '',
-    compactPromptLine(args.cinematographerLayer, 420) ? `Cinematography intent: ${compactPromptLine(args.cinematographerLayer, 420)}` : '',
-    'Constraints: realistic motion, coherent subject identity, natural lighting continuity, no text overlays, no watermark.',
-    'Conflict rule: if style and realism conflict, keep the requested style while preserving continuity, identity, and physically plausible motion.',
-  ].filter(Boolean);
-
-  const compactPrompt = promptParts.join('\n');
-  const maxLength = modelKey === 'veo3' ? 1200 : modelKey === 'kling' ? 1300 : 1500;
-  return compactPrompt.length <= maxLength ? compactPrompt : `${compactPrompt.slice(0, maxLength)}...`;
-};
-
 export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Response | null> => {
   const {
     req,
@@ -228,9 +168,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     polishNotesIntoBeatsWithLlm,
     generateProjectStoryboardWithLlm,
     generateStoryboardFrameWithLlm,
-    buildDirectorSceneVideoPrompt,
-    buildCinematographerPrompt,
-    buildMergedScenePrompt,
+    compileSceneVideoPrompt,
     createFinalFilmFromClips,
     extractLastFrameFromVideo,
     registerUploadOwnership,
@@ -712,24 +650,14 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
     const styleBible = await getProjectStyleBible(projectId);
     const scenesBible = await getProjectScenesBible(projectId) || null;
-    const resolvedDirectorPrompt = buildDirectorSceneVideoPrompt({
-      projectTitle: project.title,
-      synopsis: project.polishedSynopsis || project.pseudoSynopsis,
-      styleBible,
+    const compiledPrompt = compileSceneVideoPrompt({
+      modelKey,
       scene,
-      directorPrompt: [
-        activeFilmType ? `Film type: ${activeFilmType}` : '',
-        `Continuation mode: ${continuationMode}`,
-        anchorBeatId ? `Anchor beat: ${anchorBeatId}` : '',
-        `Auto-regenerate threshold: ${autoRegenerateThreshold}`,
-        directorLayer,
-      ].filter(Boolean).join('\n'),
-    });
-    const resolvedCinematographerPrompt = cinematographerLayer || buildCinematographerPrompt({ styleBible, scene, scenesBible });
-    const mergedPrompt = buildMergedScenePrompt({
-      directorPrompt: resolvedDirectorPrompt,
-      cinematographerPrompt: resolvedCinematographerPrompt,
+      styleBible,
       scenesBible,
+      filmType: activeFilmType,
+      directorLayer,
+      cinematographerLayer,
     });
 
     const item = await createScenePromptLayer({
@@ -738,7 +666,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       beatId,
       directorPrompt: directorLayer,
       cinematographerPrompt: cinematographerLayer,
-      mergedPrompt,
+      mergedPrompt: compiledPrompt,
       filmType: activeFilmType,
       generationModel: modelKey,
       continuationMode,
@@ -1014,35 +942,14 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const resolvedAnchorBeatId = String(anchorResolution.anchorBeatId || '').trim();
     const resolvedSourceImageUrl = String(anchorResolution.sourceImageUrl || '').trim();
 
-    const directorPrompt = buildDirectorSceneVideoPrompt({
-      projectTitle: project.title,
-      synopsis: project.polishedSynopsis || project.pseudoSynopsis,
-      styleBible,
-      scene,
-      directorPrompt: [
-        activeFilmType ? `Film type: ${activeFilmType}` : '',
-        `Continuation mode: ${activeContinuationMode}`,
-        resolvedAnchorBeatId ? `Anchor beat: ${resolvedAnchorBeatId}` : 'Anchor beat: current scene frame',
-        `Auto-regenerate threshold: ${activeAutoRegenerateThreshold}`,
-        directorLayer,
-      ].filter(Boolean).join('\n'),
-    });
-    const cinematographerPrompt = cinematographerLayer || buildCinematographerPrompt({ styleBible, scene, scenesBible });
-    const videoPrompt = buildMergedScenePrompt({
-      directorPrompt,
-      cinematographerPrompt,
-      scenesBible,
-    });
-    const effectiveVideoPrompt = buildEffectiveSceneVideoPrompt({
+    const compiledPrompt = compileSceneVideoPrompt({
       modelKey: activeModelKey,
       scene,
-      directorLayer,
-      cinematographerLayer,
+      styleBible,
       scenesBible,
       filmType: activeFilmType,
-      continuationMode: activeContinuationMode,
-      anchorBeatId: resolvedAnchorBeatId,
-      autoRegenerateThreshold: activeAutoRegenerateThreshold,
+      directorLayer,
+      cinematographerLayer,
     });
 
     const traceId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1070,12 +977,10 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         autoRegenerateThreshold: Number.isFinite(autoRegenerateThresholdInput) ? autoRegenerateThresholdInput : null,
       },
       resolved: {
-        directorLayerSource: directorLayerInput ? 'request.directorPrompt' : promptOverride ? 'request.prompt' : 'latestPromptLayer.directorPrompt',
-        cinematographerLayerSource: cinematographerLayerInput ? 'request.cinematographerPrompt' : 'latestPromptLayer.cinematographerPrompt|auto-build',
         activeFilmType,
         imageModelKey,
         modelKey: activeModelKey,
-        promptStrategy: `compact-scene-prompt:${activeModelKey}`,
+        promptStrategy: `compiled:${activeModelKey}`,
         continuationMode: activeContinuationMode,
         anchorBeatId: resolvedAnchorBeatId,
         anchorSource: anchorResolution.anchorSource,
@@ -1083,30 +988,9 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         sourceImageUrl: previewText(resolvedSourceImageUrl, 220),
         autoRegenerateThreshold: activeAutoRegenerateThreshold,
       },
-      components: {
-        styleBible: {
-          visualStyle: previewText(styleBible?.visualStyle, 180),
-          cameraGrammar: previewText(styleBible?.cameraGrammar, 180),
-          doCount: Array.isArray(styleBible?.doList) ? styleBible.doList.length : 0,
-          dontCount: Array.isArray(styleBible?.dontList) ? styleBible.dontList.length : 0,
-        },
-        scenesBible: {
-          hasScenesBible: Boolean(scenesBible),
-          overview: previewText(scenesBible?.overview, 160),
-          continuityInvariantsCount: Array.isArray(scenesBible?.continuityInvariants) ? scenesBible.continuityInvariants.length : 0,
-        },
-        directorPrompt: previewText(directorPrompt, 900),
-        cinematographerPrompt: previewText(cinematographerPrompt, 900),
-        mergedPrompt: previewText(videoPrompt, 1200),
-        effectivePrompt: previewText(effectiveVideoPrompt, 1200),
-      },
-      lengths: {
-        directorLayer: directorLayer.length,
-        cinematographerLayer: cinematographerLayer.length,
-        directorPrompt: directorPrompt.length,
-        cinematographerPrompt: cinematographerPrompt.length,
-        mergedPrompt: videoPrompt.length,
-        effectivePrompt: effectiveVideoPrompt.length,
+      compiled: {
+        prompt: previewText(compiledPrompt, 1500),
+        length: compiledPrompt.length,
       },
     };
     console.log(`[trace] scene-video-prompt\n${safeJson(promptTrace)}`);
@@ -1124,7 +1008,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       beatId,
       directorPrompt: directorLayer,
       cinematographerPrompt: cinematographerLayer,
-      mergedPrompt: videoPrompt,
+      mergedPrompt: compiledPrompt,
       filmType: activeFilmType,
       generationModel: activeModelKey,
       continuationMode: activeContinuationMode,
@@ -1147,7 +1031,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       beatId,
       provider: `fal-${activeModelKey}`,
       modelKey: activeModelKey,
-      prompt: effectiveVideoPrompt,
+      prompt: compiledPrompt,
       sourceImageUrl: resolvedSourceImageUrl,
       continuityScore: continuationEvaluation.score,
       continuityThreshold: activeAutoRegenerateThreshold,
