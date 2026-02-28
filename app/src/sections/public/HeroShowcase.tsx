@@ -66,12 +66,12 @@ export function HeroShowcase() {
                 >
                   Start Creating <ArrowRight className="w-4 h-4" />
                 </button>
-                <button
+                {/* <button
                   onClick={() => openAuth('login')}
-                  className="inline-flex items-center  px-3.5 xl:px-5 py-1.5 xl:py-2.5 rounded-full border border-white/55 text-white text-xs sm:text-sm xl:text-base bg-black/25 hover:bg-black/40 transition"
+                  className="inline-flex items-center gap-2 px-3.5 xl:px-5 py-1.5 xl:py-2.5 rounded-full border border-white/55 text-white text-xs sm:text-sm xl:text-base bg-black/25 hover:bg-black/40 transition"
                 >
                   <PlayCircle className="w-4 h-4" /> Sign In
-                </button>
+                </button> */}
                 <a href="#features" className="hidden sm:inline-flex items-center px-4 xl:px-5 py-2 xl:py-2.5 rounded-full border border-white/55 text-white text-sm xl:text-base bg-black/25 hover:bg-black/40 transition">
                   Explore Features
                 </a>
