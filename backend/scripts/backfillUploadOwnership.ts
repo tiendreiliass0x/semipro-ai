@@ -1,5 +1,7 @@
-import { Database } from 'bun:sqlite';
-import { basename, join } from 'path';
+import { basename } from 'path';
+import { createDatabase } from '../data/database';
+import { accounts, media, accountUploads } from '../data/drizzle-schema';
+import { eq, like, sql } from 'drizzle-orm';
 
 type CliOptions = {
   accountId: string;
@@ -62,19 +64,9 @@ const extractUploadFilename = (url: string): string | null => {
   return file || null;
 };
 
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://yenengalabs:yenengalabs@localhost:5432/yenengalabs';
 const options = parseArgs(Bun.argv.slice(2));
-const dbPath = join(import.meta.dir, '..', 'data', 'anecdotes.db');
-const db = new Database(dbPath);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS account_uploads (
-    filename TEXT PRIMARY KEY,
-    accountId TEXT NOT NULL,
-    createdAt INTEGER NOT NULL,
-    updatedAt INTEGER NOT NULL,
-    FOREIGN KEY (accountId) REFERENCES accounts(id) ON DELETE CASCADE
-  )
-`);
+const db = createDatabase(DATABASE_URL);
 
 if (options.apply && !options.accountId) {
   console.error('Missing required argument: --account-id=<id> when using --apply');
@@ -82,7 +74,7 @@ if (options.apply && !options.accountId) {
 }
 
 if (options.accountId) {
-  const account = db.query('SELECT id, name FROM accounts WHERE id = ?').get(options.accountId) as { id?: string; name?: string } | null;
+  const [account] = await db.select({ id: accounts.id, name: accounts.name }).from(accounts).where(eq(accounts.id, options.accountId));
   if (!account?.id) {
     console.error(`Account not found: ${options.accountId}`);
     process.exit(1);
@@ -90,14 +82,12 @@ if (options.accountId) {
   console.log(`Target account: ${account.id} (${account.name || 'unnamed'})`);
 }
 
-const mediaRows = db.query('SELECT url FROM media WHERE url LIKE ? LIMIT ?').all('/uploads/%', options.limit) as Array<{ url?: string }>;
+const mediaRows = await db.select({ url: media.url }).from(media).where(like(media.url, '/uploads/%')).limit(options.limit);
 const filenames = Array.from(new Set(mediaRows.map(row => extractUploadFilename(String(row.url || ''))).filter(Boolean) as string[]));
 
-const getOwner = db.query('SELECT accountId FROM account_uploads WHERE filename = ?');
-const unmatched = filenames.filter(filename => {
-  const row = getOwner.get(filename) as { accountId?: string } | null;
-  return !row?.accountId;
-});
+const ownedRows = await db.select({ filename: accountUploads.filename }).from(accountUploads);
+const ownedSet = new Set(ownedRows.map(r => r.filename));
+const unmatched = filenames.filter(filename => !ownedSet.has(filename));
 
 console.log(`Scanned media rows: ${mediaRows.length}`);
 console.log(`Unique /uploads filenames: ${filenames.length}`);
@@ -120,16 +110,17 @@ if (!options.apply) {
 }
 
 const now = Date.now();
-const upsert = db.query(`
-  INSERT INTO account_uploads (filename, accountId, createdAt, updatedAt)
-  VALUES (?, ?, ?, ?)
-  ON CONFLICT(filename) DO UPDATE SET accountId = excluded.accountId, updatedAt = excluded.updatedAt
-`);
-
-db.transaction(() => {
-  unmatched.forEach(filename => {
-    upsert.run(filename, options.accountId, now, now);
+for (const filename of unmatched) {
+  await db.insert(accountUploads).values({
+    filename,
+    accountId: options.accountId,
+    createdAt: now,
+    updatedAt: now,
+  }).onConflictDoUpdate({
+    target: accountUploads.filename,
+    set: { accountId: options.accountId, updatedAt: now },
   });
-})();
+}
 
 console.log(`Applied ownership for ${unmatched.length} filename(s).`);
+process.exit(0);

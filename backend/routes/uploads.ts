@@ -161,13 +161,13 @@ export const handleUploadsRoutes = async (args: UploadsRouteArgs): Promise<Respo
   const { req, pathname, method, uploadsDir, corsHeaders, verifyAccessKey, getRequestAccountId, getUploadOwnerAccountId, registerUploadOwnership } = args;
 
   if (pathname.startsWith('/uploads/')) {
-    const accountId = getRequestAccountId(req);
+    const accountId = await getRequestAccountId(req);
     if (!accountId) {
       return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     }
 
     const filename = basename(pathname);
-    const ownerAccountId = getUploadOwnerAccountId(filename);
+    const ownerAccountId = await getUploadOwnerAccountId(filename);
     if (!ownerAccountId || ownerAccountId !== accountId) {
       return new Response(JSON.stringify({ error: 'File not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
@@ -182,8 +182,8 @@ export const handleUploadsRoutes = async (args: UploadsRouteArgs): Promise<Respo
   }
 
   if (pathname === '/api/upload' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
-    const accountId = getRequestAccountId(req);
+    if (!(await verifyAccessKey(req))) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const accountId = await getRequestAccountId(req);
     if (!accountId) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
 
     const parsed = await parseUploadFiles({
@@ -208,7 +208,7 @@ export const handleUploadsRoutes = async (args: UploadsRouteArgs): Promise<Respo
     const uniqueName = buildStoredFilename(validation.extension);
     const filePath = join(uploadsDir, uniqueName);
     await Bun.write(filePath, imageFile.data);
-    registerUploadOwnership({ filename: uniqueName, accountId });
+    await registerUploadOwnership({ filename: uniqueName, accountId });
 
     return new Response(JSON.stringify({ success: true, url: `/uploads/${uniqueName}`, filename: uniqueName }), {
       headers: jsonHeaders(corsHeaders),
@@ -216,8 +216,8 @@ export const handleUploadsRoutes = async (args: UploadsRouteArgs): Promise<Respo
   }
 
   if (pathname === '/api/upload/multiple' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
-    const accountId = getRequestAccountId(req);
+    if (!(await verifyAccessKey(req))) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const accountId = await getRequestAccountId(req);
     if (!accountId) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
 
     const parsed = await parseUploadFiles({
@@ -247,7 +247,7 @@ export const handleUploadsRoutes = async (args: UploadsRouteArgs): Promise<Respo
       const uniqueName = buildStoredFilename(validation.extension);
       const filePath = join(uploadsDir, uniqueName);
       await Bun.write(filePath, imageFile.data);
-      registerUploadOwnership({ filename: uniqueName, accountId });
+      await registerUploadOwnership({ filename: uniqueName, accountId });
       savedFiles.push({
         url: `/uploads/${uniqueName}`,
         filename: uniqueName,

@@ -32,14 +32,14 @@ const toSlug = (input: string) => {
     .slice(0, 50);
 };
 
-const uniqueSlug = (desired: string, getAccountBySlug: (slug: string) => any, currentAccountId?: string) => {
+const uniqueSlug = async (desired: string, getAccountBySlug: (slug: string) => any, currentAccountId?: string) => {
   let base = toSlug(desired);
   if (!base) base = `workspace-${Date.now()}`;
 
   let candidate = base;
   let counter = 2;
   while (true) {
-    const existing = getAccountBySlug(candidate);
+    const existing = await getAccountBySlug(candidate);
     if (!existing || (currentAccountId && String(existing.id) === String(currentAccountId))) return candidate;
     candidate = `${base}-${counter}`;
     counter += 1;
@@ -51,13 +51,13 @@ export const handleAccountRoutes = async (args: AccountRouteArgs): Promise<Respo
 
   if (pathname !== '/api/account') return null;
 
-  const auth = getAuthContext(req);
+  const auth = await getAuthContext(req);
   if (!auth?.accountId) {
     return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
   }
 
   if (method === 'GET') {
-    const account = getAccountById(auth.accountId);
+    const account = await getAccountById(auth.accountId);
     if (!account) {
       return new Response(JSON.stringify({ error: 'Account not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
@@ -73,7 +73,7 @@ export const handleAccountRoutes = async (args: AccountRouteArgs): Promise<Respo
   }
 
   if (method === 'PATCH') {
-    const account = getAccountById(auth.accountId);
+    const account = await getAccountById(auth.accountId);
     if (!account) {
       return new Response(JSON.stringify({ error: 'Account not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
@@ -86,8 +86,8 @@ export const handleAccountRoutes = async (args: AccountRouteArgs): Promise<Respo
       return new Response(JSON.stringify({ error: 'name is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
 
-    const nextSlug = uniqueSlug(requestedSlug || nextName, getAccountBySlug, account.id);
-    const updated = updateAccount(account.id, { name: nextName, slug: nextSlug });
+    const nextSlug = await uniqueSlug(requestedSlug || nextName, getAccountBySlug, account.id);
+    const updated = await updateAccount(account.id, { name: nextName, slug: nextSlug });
     return new Response(JSON.stringify({
       success: true,
       account: {

@@ -35,7 +35,7 @@ export const handleSubscribersRoutes = async (args: SubscribersRouteArgs): Promi
     }
 
     try {
-      addSubscriber(email, name || '');
+      await addSubscriber(email, name || '');
       return new Response(JSON.stringify({ success: true, message: 'Subscribed successfully' }), { status: 201, headers: jsonHeaders(corsHeaders) });
     } catch (err: any) {
       if (err.message?.includes('UNIQUE constraint failed')) {
@@ -46,13 +46,13 @@ export const handleSubscribersRoutes = async (args: SubscribersRouteArgs): Promi
   }
 
   if (pathname === '/api/subscribers' && method === 'GET') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify(listSubscribers()), { headers: jsonHeaders(corsHeaders) });
+    if (!(await verifyAccessKey(req))) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify(await listSubscribers()), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/subscribers/export' && method === 'GET') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
-    const csv = exportSubscribersCsv();
+    if (!(await verifyAccessKey(req))) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    const csv = await exportSubscribersCsv();
     return new Response(csv, { headers: { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="subscribers.csv"' } });
   }
 

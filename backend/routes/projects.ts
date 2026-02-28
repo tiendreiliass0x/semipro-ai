@@ -237,10 +237,10 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     uploadsDir,
   } = args;
 
-  const requestAccountId = getRequestAccountId(req);
+  const requestAccountId = await getRequestAccountId(req);
   const scopeAccountId = requestAccountId || undefined;
-  const canWrite = Boolean(requestAccountId) && verifyAccessKey(req);
-  const getScopedProject = (projectId: string) => getProjectById(projectId, scopeAccountId);
+  const canWrite = Boolean(requestAccountId) && await verifyAccessKey(req);
+  const getScopedProject = async (projectId: string) => await getProjectById(projectId, scopeAccountId);
 
   if (pathname.startsWith('/api/projects') && !requestAccountId) {
     return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
@@ -353,7 +353,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   };
 
   if (pathname === '/api/projects' && method === 'GET') {
-    return new Response(JSON.stringify(listProjects(scopeAccountId)), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify(await listProjects(scopeAccountId)), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/projects' && method === 'POST') {
@@ -362,7 +362,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     if (!body?.pseudoSynopsis || !String(body.pseudoSynopsis).trim()) {
       return new Response(JSON.stringify({ error: 'pseudoSynopsis is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
-    const project = createProject({
+    const project = await createProject({
       accountId: scopeAccountId,
       title: body.title ? String(body.title) : '',
       pseudoSynopsis: String(body.pseudoSynopsis),
@@ -375,7 +375,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const item = getProjectById(projectId, scopeAccountId);
+    const item = await getProjectById(projectId, scopeAccountId);
     if (!item) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify(item), { headers: jsonHeaders(corsHeaders) });
   }
@@ -383,19 +383,19 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   if (pathname.match(/^\/api\/projects\/[^/]+$/) && method === 'DELETE') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const item = getProjectById(projectId, scopeAccountId);
+    const item = await getProjectById(projectId, scopeAccountId);
     if (!item) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    const success = softDeleteProject(projectId);
+    const success = await softDeleteProject(projectId);
     return new Response(JSON.stringify({ success }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+$/) && method === 'PATCH') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const existing = getProjectById(projectId, scopeAccountId);
+    const existing = await getProjectById(projectId, scopeAccountId);
     if (!existing) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json().catch(() => ({}));
-    const item = updateProjectBasics(projectId, {
+    const item = await updateProjectBasics(projectId, {
       title: typeof body?.title === 'string' ? body.title : undefined,
       pseudoSynopsis: typeof body?.pseudoSynopsis === 'string' ? body.pseudoSynopsis : undefined,
       filmType: typeof body?.filmType === 'string' ? body.filmType : undefined,
@@ -406,46 +406,46 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/style-bible$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify({ item: getProjectStyleBible(projectId) }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ item: await getProjectStyleBible(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/style-bible$/) && method === 'PUT') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
-    const item = updateProjectStyleBible(projectId, body?.payload || body || {});
+    const item = await updateProjectStyleBible(projectId, body?.payload || body || {});
     return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/screenplay$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify({ item: getLatestProjectScreenplay(projectId) }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ item: await getLatestProjectScreenplay(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/screenplay$/) && method === 'PUT') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json().catch(() => ({}));
     const payload = body?.payload || body || null;
     if (!payload) return new Response(JSON.stringify({ error: 'payload is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
-    const item = saveProjectScreenplay(projectId, payload, 'manual');
+    const item = await saveProjectScreenplay(projectId, payload, 'manual');
     return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/screenplay\/generate$/) && method === 'POST') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    const beats = listStoryBeats(projectId);
+    const beats = await listStoryBeats(projectId);
     try {
       const payload = await generateHybridScreenplayWithLlm({
         title: project.title,
@@ -453,10 +453,10 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         plotScript: project.plotScript || '',
         beats,
         style: project.style || 'cinematic',
-        styleBible: getProjectStyleBible(projectId),
+        styleBible: await getProjectStyleBible(projectId),
         durationMinutes: project.durationMinutes || 1,
       });
-      const item = saveProjectScreenplay(projectId, payload, 'generated');
+      const item = await saveProjectScreenplay(projectId, payload, 'generated');
       return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate screenplay';
@@ -466,29 +466,29 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/scenes-bible$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify({ item: getProjectScenesBible(projectId) }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ item: await getProjectScenesBible(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/scenes-bible$/) && method === 'PUT') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json().catch(() => ({}));
     const payload = body?.payload || body || null;
     if (!payload) return new Response(JSON.stringify({ error: 'payload is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
-    const item = updateProjectScenesBible(projectId, payload);
+    const item = await updateProjectScenesBible(projectId, payload);
     return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/scenes-bible\/generate$/) && method === 'POST') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    const screenplay = getLatestProjectScreenplay(projectId);
+    const screenplay = await getLatestProjectScreenplay(projectId);
     try {
       const payload = await generateScenesBibleWithLlm({
         title: project.title,
@@ -496,9 +496,9 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         plotScript: project.plotScript || '',
         screenplay: screenplay?.payload?.screenplay || '',
         style: project.style || 'cinematic',
-        styleBible: getProjectStyleBible(projectId),
+        styleBible: await getProjectStyleBible(projectId),
       });
-      const item = updateProjectScenesBible(projectId, payload);
+      const item = await updateProjectScenesBible(projectId, payload);
       return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate scenes bible';
@@ -509,7 +509,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   if (pathname.match(/^\/api\/projects\/[^/]+\/synopsis\/refine$/) && method === 'POST') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
 
     try {
@@ -517,11 +517,11 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         pseudoSynopsis: project.pseudoSynopsis,
         style: project.style || 'cinematic',
         durationMinutes: project.durationMinutes || 1,
-        styleBible: getProjectStyleBible(projectId),
+        styleBible: await getProjectStyleBible(projectId),
       });
       const synopsis = String(refined?.synopsis || '').trim();
       const plotScript = String(refined?.plotScript || '').trim();
-      const updated = updateProjectSynopsis(projectId, synopsis, plotScript);
+      const updated = await updateProjectSynopsis(projectId, synopsis, plotScript);
       return new Response(JSON.stringify({ success: true, refined, project: updated }), { headers: jsonHeaders(corsHeaders) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to refine synopsis';
@@ -531,21 +531,21 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/notes$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify({ items: listStoryNotes(projectId) }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ items: await listStoryNotes(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/notes$/) && method === 'POST') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     if (!body?.rawText && !body?.transcript) {
       return new Response(JSON.stringify({ error: 'rawText or transcript is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
-    const item = addStoryNote(projectId, {
+    const item = await addStoryNote(projectId, {
       rawText: String(body.rawText || body.transcript || ''),
       transcript: String(body.transcript || ''),
       source: String(body.source || 'typed'),
@@ -556,29 +556,29 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/beats$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify({ items: listStoryBeats(projectId) }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ items: await listStoryBeats(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/beats\/[^/]+\/lock$/) && method === 'PATCH') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const beatId = pathname.split('/')[5];
     const body = await req.json().catch(() => ({}));
     const locked = Boolean(body?.locked);
-    const item = setBeatLocked(projectId, beatId, locked);
+    const item = await setBeatLocked(projectId, beatId, locked);
     return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/beats\/polish$/) && method === 'POST') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    const notes = listStoryNotes(projectId);
+    const notes = await listStoryNotes(projectId);
     if (!notes.length) {
       return new Response(JSON.stringify({ error: 'Add notes first' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
@@ -594,9 +594,9 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         })),
         durationMinutes: project.durationMinutes || 1,
         style: project.style || 'cinematic',
-        styleBible: getProjectStyleBible(projectId),
+        styleBible: await getProjectStyleBible(projectId),
       });
-      const beats = replaceProjectBeats(projectId, polished?.beats || []);
+      const beats = await replaceProjectBeats(projectId, polished?.beats || []);
       return new Response(JSON.stringify({ success: true, items: beats }), { headers: jsonHeaders(corsHeaders) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to polish beats';
@@ -607,9 +607,9 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/generate$/) && method === 'POST') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    const beats = listStoryBeats(projectId);
+    const beats = await listStoryBeats(projectId);
     if (!beats.length) return new Response(JSON.stringify({ error: 'No polished beats found' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     const body = await req.json().catch(() => ({}));
 
@@ -624,7 +624,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         beats,
         prompt: typeof body?.prompt === 'string' ? body.prompt : '',
         style: project.style || 'cinematic',
-        styleBible: getProjectStyleBible(projectId),
+        styleBible: await getProjectStyleBible(projectId),
         filmType,
       });
 
@@ -645,7 +645,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         }
       }
 
-      const saved = saveProjectPackage(projectId, result, typeof body?.prompt === 'string' ? body.prompt : '');
+      const saved = await saveProjectPackage(projectId, result, typeof body?.prompt === 'string' ? body.prompt : '');
       return new Response(JSON.stringify({ success: true, result, package: saved }), { headers: jsonHeaders(corsHeaders) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate storyboard';
@@ -655,41 +655,41 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    const item = getLatestProjectPackage(projectId);
+    const item = await getLatestProjectPackage(projectId);
     return new Response(JSON.stringify({ item }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/videos$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify({ items: listLatestSceneVideos(projectId) }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ items: await listLatestSceneVideos(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/prompt-layers$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify({ items: listLatestScenePromptLayers(projectId) }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ items: await listLatestScenePromptLayers(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/prompt-layers$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
     const beatId = pathname.split('/')[5];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify({ items: listScenePromptLayerHistory(projectId, beatId) }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ items: await listScenePromptLayerHistory(projectId, beatId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/prompt-layers$/) && method === 'POST') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
     const beatId = pathname.split('/')[5];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    const latestPackage = getLatestProjectPackage(projectId);
+    const latestPackage = await getLatestProjectPackage(projectId);
     if (!latestPackage?.payload?.storyboard || !Array.isArray(latestPackage.payload.storyboard)) {
       return new Response(JSON.stringify({ error: 'No storyboard package found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
@@ -710,8 +710,8 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const autoRegenerateThreshold = Math.max(0, Math.min(1, Number(body?.autoRegenerateThreshold ?? 0.75)));
     const source = typeof body?.source === 'string' ? body.source.trim() : 'manual';
 
-    const styleBible = getProjectStyleBible(projectId);
-    const scenesBible = getProjectScenesBible(projectId) || null;
+    const styleBible = await getProjectStyleBible(projectId);
+    const scenesBible = await getProjectScenesBible(projectId) || null;
     const resolvedDirectorPrompt = buildDirectorSceneVideoPrompt({
       projectTitle: project.title,
       synopsis: project.polishedSynopsis || project.pseudoSynopsis,
@@ -732,7 +732,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       scenesBible,
     });
 
-    const item = createScenePromptLayer({
+    const item = await createScenePromptLayer({
       projectId,
       packageId: latestPackage.id,
       beatId,
@@ -753,39 +753,39 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/video-traces$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
     const beatId = pathname.split('/')[5];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const url = new URL(req.url);
     const limit = Number(url.searchParams.get('limit') || 20);
-    const items = listSceneVideoPromptTraces(projectId, beatId, limit);
+    const items = await listSceneVideoPromptTraces(projectId, beatId, limit);
     return new Response(JSON.stringify({ items }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/final-film$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify({ item: getLatestProjectFinalFilm(projectId) }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ item: await getLatestProjectFinalFilm(projectId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/final-film\/generate$/) && method === 'POST') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
 
-    const latestFinalFilm = getLatestProjectFinalFilm(projectId);
+    const latestFinalFilm = await getLatestProjectFinalFilm(projectId);
     if (latestFinalFilm && (latestFinalFilm.status === 'queued' || latestFinalFilm.status === 'processing')) {
       return new Response(JSON.stringify({ success: true, item: latestFinalFilm, message: 'Final film job already running.' }), { status: 202, headers: jsonHeaders(corsHeaders) });
     }
 
-    const latestPackage = getLatestProjectPackage(projectId);
+    const latestPackage = await getLatestProjectPackage(projectId);
     const storyboard = Array.isArray(latestPackage?.payload?.storyboard) ? latestPackage.payload.storyboard : [];
     if (!storyboard.length) {
       return new Response(JSON.stringify({ error: 'No storyboard found. Generate scenes first.' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
 
-    const sceneVideos = listLatestSceneVideos(projectId);
+    const sceneVideos = await listLatestSceneVideos(projectId);
     const completedByBeatId = new Map<string, any>();
     sceneVideos.forEach(item => {
       if (String(item?.status) === 'completed' && String(item?.videoUrl || '').trim()) {
@@ -801,16 +801,16 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       return new Response(JSON.stringify({ error: 'No completed scene videos found to compile.' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
 
-    const film = createProjectFinalFilm({ projectId, sourceCount: clipUrls.length });
+    const film = await createProjectFinalFilm({ projectId, sourceCount: clipUrls.length });
     return new Response(JSON.stringify({ success: true, item: film, message: 'Final film job queued.' }), { status: 202, headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/[^/]+\/video$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const beatId = pathname.split('/')[5];
-    const item = getLatestSceneVideo(projectId, beatId);
+    const item = await getLatestSceneVideo(projectId, beatId);
     return new Response(JSON.stringify({ item }), { headers: jsonHeaders(corsHeaders) });
   }
 
@@ -818,10 +818,10 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
     const beatId = pathname.split('/')[5];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
 
-    const latestPackage = getLatestProjectPackage(projectId);
+    const latestPackage = await getLatestProjectPackage(projectId);
     if (!latestPackage?.payload?.storyboard || !Array.isArray(latestPackage.payload.storyboard)) {
       return new Response(JSON.stringify({ error: 'No storyboard package found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
@@ -854,7 +854,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         )),
       };
 
-      const item = saveProjectPackage(projectId, updatedPayload, latestPackage.prompt || 'regenerate-storyboard-image');
+      const item = await saveProjectPackage(projectId, updatedPayload, latestPackage.prompt || 'regenerate-storyboard-image');
       return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to regenerate storyboard image';
@@ -865,10 +865,10 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/images\/regenerate-all$/) && method === 'POST') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
 
-    const latestPackage = getLatestProjectPackage(projectId);
+    const latestPackage = await getLatestProjectPackage(projectId);
     if (!latestPackage?.payload?.storyboard || !Array.isArray(latestPackage.payload.storyboard)) {
       return new Response(JSON.stringify({ error: 'No storyboard package found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
@@ -905,7 +905,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       ...latestPackage.payload,
       storyboard: refreshedStoryboard,
     };
-    const item = saveProjectPackage(projectId, updatedPayload, latestPackage.prompt || 'regenerate-all-storyboard-images');
+    const item = await saveProjectPackage(projectId, updatedPayload, latestPackage.prompt || 'regenerate-all-storyboard-images');
     return new Response(JSON.stringify({ success: true, item, refreshedCount, failedCount }), { headers: jsonHeaders(corsHeaders) });
   }
 
@@ -913,9 +913,9 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
     const beatId = pathname.split('/')[5];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    const latestPackage = getLatestProjectPackage(projectId);
+    const latestPackage = await getLatestProjectPackage(projectId);
     if (!latestPackage?.payload?.storyboard || !Array.isArray(latestPackage.payload.storyboard)) {
       return new Response(JSON.stringify({ error: 'No storyboard package found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
@@ -950,15 +950,15 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
         latestPackage.payload.storyboard = latestPackage.payload.storyboard.map((item: any) => (
           String(item.beatId) === String(beatId) ? { ...item, imageUrl: scene.imageUrl } : item
         ));
-        saveProjectPackage(projectId, latestPackage.payload, latestPackage.prompt || 'image-seed-for-video');
+        await saveProjectPackage(projectId, latestPackage.payload, latestPackage.prompt || 'image-seed-for-video');
       } catch {
         return new Response(JSON.stringify({ error: 'Unable to generate source image for video' }), { status: 502, headers: jsonHeaders(corsHeaders) });
       }
     }
 
-    const styleBible = getProjectStyleBible(projectId);
-    const scenesBible = getProjectScenesBible(projectId) || null;
-    const latestLayer = getLatestScenePromptLayer(projectId, beatId);
+    const styleBible = await getProjectStyleBible(projectId);
+    const scenesBible = await getProjectScenesBible(projectId) || null;
+    const latestLayer = await getLatestScenePromptLayer(projectId, beatId);
     const directorLayer = directorLayerInput || promptOverride || String(latestLayer?.directorPrompt || '').trim();
     const cinematographerLayer = cinematographerLayerInput || String(latestLayer?.cinematographerPrompt || '').trim();
     const activeFilmType = filmType || String(latestLayer?.filmType || '').trim();
@@ -980,7 +980,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
 
     let previousClipLastFrameUrl = '';
     if (!manualAnchorScene?.beatId && previousScene?.beatId) {
-      const previousClip = getLatestSceneVideo(projectId, String(previousScene.beatId));
+      const previousClip = await getLatestSceneVideo(projectId, String(previousScene.beatId));
       const previousClipUrl = String(previousClip?.videoUrl || '').trim();
       const previousClipIsReady = String(previousClip?.status || '') === 'completed';
       if (previousClipIsReady && previousClipUrl) {
@@ -993,7 +993,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
           });
           previousClipLastFrameUrl = extractedUrl;
           if (requestAccountId) {
-            registerUploadOwnership({ filename: outputFilename, accountId: String(requestAccountId) });
+            await registerUploadOwnership({ filename: outputFilename, accountId: String(requestAccountId) });
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'unknown extraction error';
@@ -1110,7 +1110,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       },
     };
     console.log(`[trace] scene-video-prompt\n${safeJson(promptTrace)}`);
-    createSceneVideoPromptTrace({
+    await createSceneVideoPromptTrace({
       traceId,
       projectId,
       packageId: latestPackage.id,
@@ -1118,7 +1118,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       payload: promptTrace,
     });
 
-    const promptLayer = createScenePromptLayer({
+    const promptLayer = await createScenePromptLayer({
       projectId,
       packageId: latestPackage.id,
       beatId,
@@ -1141,7 +1141,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       threshold: activeAutoRegenerateThreshold,
     });
 
-    const job = createSceneVideoJob({
+    const job = await createSceneVideoJob({
       projectId,
       packageId: latestPackage.id,
       beatId,
@@ -1164,20 +1164,20 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   if (pathname.match(/^\/api\/projects\/[^/]+\/storyboard\/scene-lock$/) && method === 'PATCH') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json().catch(() => ({}));
     if (!body?.beatId) return new Response(JSON.stringify({ error: 'beatId is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
-    const item = setStoryboardSceneLocked(projectId, String(body.beatId), Boolean(body.locked));
+    const item = await setStoryboardSceneLocked(projectId, String(body.beatId), Boolean(body.locked));
     if (!item) return new Response(JSON.stringify({ error: 'No storyboard package found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/projects\/[^/]+\/continuity\/check$/) && method === 'GET') {
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
-    const beats = listStoryBeats(projectId);
+    const beats = await listStoryBeats(projectId);
     const issues = buildContinuityIssues(beats);
     return new Response(JSON.stringify({ success: true, issues }), { headers: jsonHeaders(corsHeaders) });
   }
@@ -1185,13 +1185,13 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
   if (pathname.match(/^\/api\/projects\/[^/]+\/continuity\/fix$/) && method === 'POST') {
     if (!canWrite) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const projectId = pathname.split('/')[3];
-    const project = getScopedProject(projectId);
+    const project = await getScopedProject(projectId);
     if (!project) return new Response(JSON.stringify({ error: 'Project not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     const body = await req.json().catch(() => ({}));
     const mode = body?.mode === 'timeline' || body?.mode === 'intensity' || body?.mode === 'all' ? body.mode : 'all';
     const dryRun = Boolean(body?.dryRun);
 
-    const beats = listStoryBeats(projectId);
+    const beats = await listStoryBeats(projectId);
     if (!beats.length) return new Response(JSON.stringify({ error: 'No beats to fix' }), { status: 400, headers: jsonHeaders(corsHeaders) });
 
     const fixed = autoFixContinuity(beats, mode);
@@ -1200,7 +1200,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       return new Response(JSON.stringify({ success: true, items: fixed, issues, mode, dryRun: true }), { headers: jsonHeaders(corsHeaders) });
     }
 
-    const items = replaceProjectBeats(projectId, fixed);
+    const items = await replaceProjectBeats(projectId, fixed);
     const issues = buildContinuityIssues(items);
     return new Response(JSON.stringify({ success: true, items, issues, mode }), { headers: jsonHeaders(corsHeaders) });
   }

@@ -1,91 +1,97 @@
-import type { Database } from 'bun:sqlite';
+import { eq, and, isNull, desc, sql } from 'drizzle-orm';
+import type { Database } from '../data/database';
+import {
+  storylinesCache,
+  storylinesCacheAccounts,
+  storylinePackages,
+} from '../data/drizzle-schema';
 
 type CreateStorylinesDbArgs = {
   db: Database;
   generateId: () => string;
 };
 
-const parsePayload = (value: unknown) => {
-  try {
-    return JSON.parse(String(value || '[]'));
-  } catch {
-    return null;
-  }
-};
-
 export const createStorylinesDb = ({ db, generateId }: CreateStorylinesDbArgs) => {
-  const loadLegacyStorylines = () => {
-    const row = db.query('SELECT payload FROM storylines_cache WHERE id = 1').get() as { payload?: string } | null;
+  const loadLegacyStorylines = async () => {
+    const [row] = await db
+      .select({ payload: storylinesCache.payload })
+      .from(storylinesCache)
+      .where(eq(storylinesCache.id, 1));
     if (!row?.payload) return [];
-    const parsed = parsePayload(row.payload);
+    const parsed = row.payload;
     return Array.isArray(parsed) ? parsed : [];
   };
 
-  const loadStorylines = (accountId?: string) => {
+  const loadStorylines = async (accountId?: string) => {
     const normalizedAccountId = String(accountId || '').trim();
     if (!normalizedAccountId) {
       return loadLegacyStorylines();
     }
 
-    const row = db.query('SELECT payload FROM storylines_cache_accounts WHERE accountId = ?').get(normalizedAccountId) as { payload?: string } | null;
+    const [row] = await db
+      .select({ payload: storylinesCacheAccounts.payload })
+      .from(storylinesCacheAccounts)
+      .where(eq(storylinesCacheAccounts.accountId, normalizedAccountId));
+
     if (row?.payload) {
-      const parsed = parsePayload(row.payload);
+      const parsed = row.payload;
       return Array.isArray(parsed) ? parsed : [];
     }
 
-    // One-way bridge for legacy global cache so existing users keep their storylines.
-    const legacy = loadLegacyStorylines();
+    const legacy = await loadLegacyStorylines();
     if (legacy.length) {
       const now = Date.now();
-      db.query(`
-        INSERT INTO storylines_cache_accounts (accountId, payload, updatedAt)
-        VALUES (?, ?, ?)
-        ON CONFLICT(accountId) DO UPDATE SET payload = excluded.payload, updatedAt = excluded.updatedAt
-      `).run(normalizedAccountId, JSON.stringify(legacy), now);
+      await db
+        .insert(storylinesCacheAccounts)
+        .values({ accountId: normalizedAccountId, payload: legacy, updatedAt: now })
+        .onConflictDoUpdate({
+          target: storylinesCacheAccounts.accountId,
+          set: { payload: legacy, updatedAt: now },
+        });
     }
 
     return legacy;
   };
 
-  const saveStorylines = (data: any, accountId?: string) => {
+  const saveStorylines = async (data: any, accountId?: string) => {
     try {
       const now = Date.now();
       const normalizedAccountId = String(accountId || '').trim();
       if (normalizedAccountId) {
-        db.query(`
-          INSERT INTO storylines_cache_accounts (accountId, payload, updatedAt)
-          VALUES (?, ?, ?)
-          ON CONFLICT(accountId) DO UPDATE SET payload = excluded.payload, updatedAt = excluded.updatedAt
-        `).run(normalizedAccountId, JSON.stringify(data), now);
+        await db
+          .insert(storylinesCacheAccounts)
+          .values({ accountId: normalizedAccountId, payload: data, updatedAt: now })
+          .onConflictDoUpdate({
+            target: storylinesCacheAccounts.accountId,
+            set: { payload: data, updatedAt: now },
+          });
         return true;
       }
 
-      db.query(`
-        INSERT INTO storylines_cache (id, payload, updatedAt)
-        VALUES (1, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updatedAt = excluded.updatedAt
-      `).run(JSON.stringify(data), now);
+      await db
+        .insert(storylinesCache)
+        .values({ id: 1, payload: data, updatedAt: now })
+        .onConflictDoUpdate({
+          target: storylinesCache.id,
+          set: { payload: data, updatedAt: now },
+        });
       return true;
     } catch {
       return false;
     }
   };
 
-  const listStorylinePackages = (storylineId: string, accountId?: string) => {
+  const listStorylinePackages = async (storylineId: string, accountId?: string) => {
     const normalizedAccountId = String(accountId || '').trim();
-    const rows = (normalizedAccountId
-      ? db.query(`
-          SELECT id, storylineId, accountId, payload, prompt, status, version, createdAt, updatedAt
-          FROM storyline_packages
-          WHERE storylineId = ? AND accountId = ?
-          ORDER BY version DESC
-        `).all(storylineId, normalizedAccountId)
-      : db.query(`
-          SELECT id, storylineId, accountId, payload, prompt, status, version, createdAt, updatedAt
-          FROM storyline_packages
-          WHERE storylineId = ? AND accountId IS NULL
-          ORDER BY version DESC
-        `).all(storylineId)) as any[];
+    const condition = normalizedAccountId
+      ? and(eq(storylinePackages.storylineId, storylineId), eq(storylinePackages.accountId, normalizedAccountId))
+      : and(eq(storylinePackages.storylineId, storylineId), isNull(storylinePackages.accountId));
+
+    const rows = await db
+      .select()
+      .from(storylinePackages)
+      .where(condition)
+      .orderBy(desc(storylinePackages.version));
 
     return rows.map(row => ({
       id: row.id,
@@ -96,27 +102,22 @@ export const createStorylinesDb = ({ db, generateId }: CreateStorylinesDbArgs) =
       version: row.version,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-      payload: parsePayload(row.payload) || {},
+      payload: row.payload ?? {},
     }));
   };
 
-  const getLatestStorylinePackage = (storylineId: string, accountId?: string) => {
+  const getLatestStorylinePackage = async (storylineId: string, accountId?: string) => {
     const normalizedAccountId = String(accountId || '').trim();
-    const row = (normalizedAccountId
-      ? db.query(`
-          SELECT id, storylineId, accountId, payload, prompt, status, version, createdAt, updatedAt
-          FROM storyline_packages
-          WHERE storylineId = ? AND accountId = ?
-          ORDER BY version DESC
-          LIMIT 1
-        `).get(storylineId, normalizedAccountId)
-      : db.query(`
-          SELECT id, storylineId, accountId, payload, prompt, status, version, createdAt, updatedAt
-          FROM storyline_packages
-          WHERE storylineId = ? AND accountId IS NULL
-          ORDER BY version DESC
-          LIMIT 1
-        `).get(storylineId)) as any;
+    const condition = normalizedAccountId
+      ? and(eq(storylinePackages.storylineId, storylineId), eq(storylinePackages.accountId, normalizedAccountId))
+      : and(eq(storylinePackages.storylineId, storylineId), isNull(storylinePackages.accountId));
+
+    const [row] = await db
+      .select()
+      .from(storylinePackages)
+      .where(condition)
+      .orderBy(desc(storylinePackages.version))
+      .limit(1);
 
     if (!row) return null;
     return {
@@ -128,36 +129,38 @@ export const createStorylinesDb = ({ db, generateId }: CreateStorylinesDbArgs) =
       version: row.version,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-      payload: parsePayload(row.payload) || {},
+      payload: row.payload ?? {},
     };
   };
 
-  const saveStorylinePackage = (storylineId: string, payload: any, prompt: string, status: string = 'draft', accountId?: string) => {
+  const saveStorylinePackage = async (storylineId: string, payload: any, prompt: string, status: string = 'draft', accountId?: string) => {
     const now = Date.now();
     const normalizedAccountId = String(accountId || '').trim();
-    const latest = (normalizedAccountId
-      ? db.query(`
-          SELECT version
-          FROM storyline_packages
-          WHERE storylineId = ? AND accountId = ?
-          ORDER BY version DESC
-          LIMIT 1
-        `).get(storylineId, normalizedAccountId)
-      : db.query(`
-          SELECT version
-          FROM storyline_packages
-          WHERE storylineId = ? AND accountId IS NULL
-          ORDER BY version DESC
-          LIMIT 1
-        `).get(storylineId)) as { version?: number } | null;
+    const condition = normalizedAccountId
+      ? and(eq(storylinePackages.storylineId, storylineId), eq(storylinePackages.accountId, normalizedAccountId))
+      : and(eq(storylinePackages.storylineId, storylineId), isNull(storylinePackages.accountId));
+
+    const [latest] = await db
+      .select({ version: storylinePackages.version })
+      .from(storylinePackages)
+      .where(condition)
+      .orderBy(desc(storylinePackages.version))
+      .limit(1);
 
     const version = (latest?.version || 0) + 1;
     const id = generateId();
 
-    db.query(`
-      INSERT INTO storyline_packages (id, storylineId, accountId, payload, prompt, status, version, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, storylineId, normalizedAccountId || null, JSON.stringify(payload), prompt || '', status || 'draft', version, now, now);
+    await db.insert(storylinePackages).values({
+      id,
+      storylineId,
+      accountId: normalizedAccountId || null,
+      payload,
+      prompt: prompt || '',
+      status: status || 'draft',
+      version,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     return {
       id,

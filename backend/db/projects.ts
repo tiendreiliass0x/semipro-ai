@@ -1,9 +1,39 @@
-import type { Database } from 'bun:sqlite';
+import { eq, and, desc, asc, isNull, lt, sql } from 'drizzle-orm';
+import type { Database } from '../data/database';
+import {
+  projects,
+  storyNotes,
+  storyBeats,
+  projectPackages,
+  sceneVideos,
+  scenePromptLayers,
+  sceneVideoPromptTraces,
+  projectFinalFilms,
+  projectStyleBibles,
+  projectScreenplays,
+  projectScenesBibles,
+} from '../data/drizzle-schema';
 
 type CreateProjectsDbArgs = {
   db: Database;
   generateId: () => string;
 };
+
+const PROJECT_COLUMNS = {
+  id: projects.id,
+  accountId: projects.accountId,
+  title: projects.title,
+  pseudoSynopsis: projects.pseudoSynopsis,
+  polishedSynopsis: projects.polishedSynopsis,
+  plotScript: projects.plotScript,
+  style: projects.style,
+  filmType: projects.filmType,
+  durationMinutes: projects.durationMinutes,
+  status: projects.status,
+  deletedAt: projects.deletedAt,
+  createdAt: projects.createdAt,
+  updatedAt: projects.updatedAt,
+} as const;
 
 export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
   const DEFAULT_STYLE_BIBLE = {
@@ -13,47 +43,32 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     dontList: ['Avoid generic inspirational cliches', 'Avoid timeline jumps without transition cards'],
   };
 
-  const listProjects = (accountId?: string) => {
-    if (accountId) {
-      return db.query(`
-        SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, filmType, durationMinutes, status, deletedAt, createdAt, updatedAt
-        FROM projects
-        WHERE deletedAt IS NULL AND accountId = ?
-        ORDER BY updatedAt DESC
-      `).all(accountId) as any[];
-    }
-
-    return db.query(`
-      SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, filmType, durationMinutes, status, deletedAt, createdAt, updatedAt
-      FROM projects
-      WHERE deletedAt IS NULL
-      ORDER BY updatedAt DESC
-    `).all() as any[];
+  const listProjects = async (accountId?: string) => {
+    const condition = accountId
+      ? and(isNull(projects.deletedAt), eq(projects.accountId, accountId))
+      : isNull(projects.deletedAt);
+    return db.select(PROJECT_COLUMNS).from(projects).where(condition).orderBy(desc(projects.updatedAt));
   };
 
-  const getProjectById = (id: string, accountId?: string) => {
-    if (accountId) {
-      return db.query(`
-        SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, filmType, durationMinutes, status, deletedAt, createdAt, updatedAt
-        FROM projects
-        WHERE id = ? AND accountId = ? AND deletedAt IS NULL
-      `).get(id, accountId) as any;
-    }
-
-    return db.query(`
-      SELECT id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, filmType, durationMinutes, status, deletedAt, createdAt, updatedAt
-      FROM projects
-      WHERE id = ? AND deletedAt IS NULL
-    `).get(id) as any;
+  const getProjectById = async (id: string, accountId?: string) => {
+    const condition = accountId
+      ? and(eq(projects.id, id), eq(projects.accountId, accountId), isNull(projects.deletedAt))
+      : and(eq(projects.id, id), isNull(projects.deletedAt));
+    const [row] = await db.select(PROJECT_COLUMNS).from(projects).where(condition);
+    return row ?? null;
   };
 
-  const softDeleteProject = (id: string) => {
+  const softDeleteProject = async (id: string) => {
     const now = Date.now();
-    const result = db.query('UPDATE projects SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL').run(now, now, id) as { changes?: number };
-    return Number(result?.changes || 0) > 0;
+    const deleted = await db
+      .update(projects)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(projects.id, id), isNull(projects.deletedAt)))
+      .returning({ id: projects.id });
+    return deleted.length > 0;
   };
 
-  const createProject = (input: { accountId?: string; title?: string; pseudoSynopsis: string; style?: string; filmType?: string; durationMinutes?: number }) => {
+  const createProject = async (input: { accountId?: string; title?: string; pseudoSynopsis: string; style?: string; filmType?: string; durationMinutes?: number }) => {
     const now = Date.now();
     const id = generateId();
     const style = (input.style || 'cinematic').toLowerCase();
@@ -66,94 +81,116 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
       : `Untitled Project ${new Date(now).toLocaleDateString()}`;
     const title = explicitTitle || fallbackTitle;
 
-    db.query(`
-      INSERT INTO projects (id, accountId, title, pseudoSynopsis, polishedSynopsis, plotScript, style, filmType, durationMinutes, status, deletedAt, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, input.accountId || null, title, synopsis, '', '', style, filmType, durationMinutes, 'draft', null, now, now);
-    db.query(`
-      INSERT INTO project_style_bibles (projectId, payload, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?)
-    `).run(id, JSON.stringify(DEFAULT_STYLE_BIBLE), now, now);
+    await db.insert(projects).values({
+      id,
+      accountId: input.accountId || null,
+      title,
+      pseudoSynopsis: synopsis,
+      polishedSynopsis: '',
+      plotScript: '',
+      style,
+      filmType,
+      durationMinutes,
+      status: 'draft',
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(projectStyleBibles).values({
+      projectId: id,
+      payload: DEFAULT_STYLE_BIBLE,
+      createdAt: now,
+      updatedAt: now,
+    });
     return getProjectById(id, input.accountId);
   };
 
-  const getProjectStyleBible = (projectId: string) => {
-    const row = db.query('SELECT payload FROM project_style_bibles WHERE projectId = ?').get(projectId) as { payload?: string } | null;
+  const getProjectStyleBible = async (projectId: string) => {
+    const [row] = await db
+      .select({ payload: projectStyleBibles.payload })
+      .from(projectStyleBibles)
+      .where(eq(projectStyleBibles.projectId, projectId));
     if (!row?.payload) return DEFAULT_STYLE_BIBLE;
-    try {
-      return JSON.parse(row.payload);
-    } catch {
-      return DEFAULT_STYLE_BIBLE;
-    }
+    return row.payload;
   };
 
-  const updateProjectStyleBible = (projectId: string, payload: any) => {
+  const updateProjectStyleBible = async (projectId: string, payload: any) => {
     const now = Date.now();
-    const serialized = JSON.stringify(payload || DEFAULT_STYLE_BIBLE);
-    db.query(`
-      INSERT INTO project_style_bibles (projectId, payload, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(projectId) DO UPDATE SET payload = excluded.payload, updatedAt = excluded.updatedAt
-    `).run(projectId, serialized, now, now);
+    const data = payload || DEFAULT_STYLE_BIBLE;
+    await db
+      .insert(projectStyleBibles)
+      .values({ projectId, payload: data, createdAt: now, updatedAt: now })
+      .onConflictDoUpdate({
+        target: projectStyleBibles.projectId,
+        set: { payload: data, updatedAt: now },
+      });
     return getProjectStyleBible(projectId);
   };
 
-  const getLatestProjectScreenplay = (projectId: string) => {
-    const row = db.query(`
-      SELECT id, projectId, payload, version, status, createdAt, updatedAt
-      FROM project_screenplays
-      WHERE projectId = ?
-      ORDER BY version DESC
-      LIMIT 1
-    `).get(projectId) as any;
+  const getLatestProjectScreenplay = async (projectId: string) => {
+    const [row] = await db
+      .select()
+      .from(projectScreenplays)
+      .where(eq(projectScreenplays.projectId, projectId))
+      .orderBy(desc(projectScreenplays.version))
+      .limit(1);
     if (!row) return null;
-    return {
-      ...row,
-      payload: JSON.parse(row.payload || '{}'),
-    };
+    return { ...row, payload: row.payload ?? {} };
   };
 
-  const saveProjectScreenplay = (projectId: string, payload: any, status: string = 'draft') => {
+  const saveProjectScreenplay = async (projectId: string, payload: any, status: string = 'draft') => {
     const now = Date.now();
     const id = generateId();
-    const row = db.query('SELECT COALESCE(MAX(version), 0) as maxVersion FROM project_screenplays WHERE projectId = ?').get(projectId) as { maxVersion: number };
-    const version = Number(row?.maxVersion || 0) + 1;
-    db.query(`
-      INSERT INTO project_screenplays (id, projectId, payload, status, version, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, projectId, JSON.stringify(payload || {}), status, version, now, now);
+    const [versionRow] = await db
+      .select({ maxVersion: sql<number>`coalesce(max(${projectScreenplays.version}), 0)` })
+      .from(projectScreenplays)
+      .where(eq(projectScreenplays.projectId, projectId));
+    const version = (versionRow?.maxVersion || 0) + 1;
+    await db.insert(projectScreenplays).values({
+      id,
+      projectId,
+      payload: payload || {},
+      status,
+      version,
+      createdAt: now,
+      updatedAt: now,
+    });
     return { id, projectId, payload, status, version, createdAt: now, updatedAt: now };
   };
 
-  const getProjectScenesBible = (projectId: string) => {
-    const row = db.query('SELECT payload FROM project_scenes_bibles WHERE projectId = ?').get(projectId) as { payload?: string } | null;
-    if (!row?.payload) return null;
-    try {
-      return JSON.parse(row.payload);
-    } catch {
-      return null;
-    }
+  const getProjectScenesBible = async (projectId: string) => {
+    const [row] = await db
+      .select({ payload: projectScenesBibles.payload })
+      .from(projectScenesBibles)
+      .where(eq(projectScenesBibles.projectId, projectId));
+    return row?.payload ?? null;
   };
 
-  const updateProjectScenesBible = (projectId: string, payload: any) => {
+  const updateProjectScenesBible = async (projectId: string, payload: any) => {
     const now = Date.now();
-    db.query(`
-      INSERT INTO project_scenes_bibles (projectId, payload, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(projectId) DO UPDATE SET payload = excluded.payload, updatedAt = excluded.updatedAt
-    `).run(projectId, JSON.stringify(payload || {}), now, now);
+    const data = payload || {};
+    await db
+      .insert(projectScenesBibles)
+      .values({ projectId, payload: data, createdAt: now, updatedAt: now })
+      .onConflictDoUpdate({
+        target: projectScenesBibles.projectId,
+        set: { payload: data, updatedAt: now },
+      });
     return getProjectScenesBible(projectId);
   };
 
-  const updateProjectSynopsis = (id: string, polishedSynopsis: string, plotScript: string = '') => {
+  const updateProjectSynopsis = async (id: string, polishedSynopsis: string, plotScript: string = '') => {
     const now = Date.now();
-    db.query('UPDATE projects SET polishedSynopsis = ?, plotScript = ?, updatedAt = ? WHERE id = ?').run(polishedSynopsis, plotScript || '', now, id);
+    await db
+      .update(projects)
+      .set({ polishedSynopsis, plotScript: plotScript || '', updatedAt: now })
+      .where(eq(projects.id, id));
     return getProjectById(id);
   };
 
-  const updateProjectBasics = (id: string, input: { title?: string; pseudoSynopsis?: string; filmType?: string }) => {
+  const updateProjectBasics = async (id: string, input: { title?: string; pseudoSynopsis?: string; filmType?: string }) => {
     const now = Date.now();
-    const existing = getProjectById(id);
+    const existing = await getProjectById(id);
     if (!existing) return null;
 
     const nextTitle = typeof input.title === 'string' && input.title.trim()
@@ -166,168 +203,195 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
       ? input.filmType.trim()
       : String(existing.filmType || '').trim() || 'cinematic live-action';
 
-    db.query('UPDATE projects SET title = ?, pseudoSynopsis = ?, filmType = ?, updatedAt = ? WHERE id = ?').run(nextTitle, nextPseudoSynopsis, nextFilmType, now, id);
+    await db
+      .update(projects)
+      .set({ title: nextTitle, pseudoSynopsis: nextPseudoSynopsis, filmType: nextFilmType, updatedAt: now })
+      .where(eq(projects.id, id));
     return getProjectById(id);
   };
 
-  const addStoryNote = (projectId: string, input: { rawText: string; minuteMark?: number; source?: string; transcript?: string }) => {
+  const addStoryNote = async (projectId: string, input: { rawText: string; minuteMark?: number; source?: string; transcript?: string }) => {
     const now = Date.now();
     const id = generateId();
-    const row = db.query('SELECT COALESCE(MAX(orderIndex), 0) as maxOrder FROM story_notes WHERE projectId = ?').get(projectId) as { maxOrder: number };
-    const orderIndex = Number(row?.maxOrder || 0) + 1;
-    db.query(`
-      INSERT INTO story_notes (id, projectId, source, rawText, transcript, minuteMark, orderIndex, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    const [orderRow] = await db
+      .select({ maxOrder: sql<number>`coalesce(max(${storyNotes.orderIndex}), 0)` })
+      .from(storyNotes)
+      .where(eq(storyNotes.projectId, projectId));
+    const orderIndex = (orderRow?.maxOrder || 0) + 1;
+    await db.insert(storyNotes).values({
       id,
       projectId,
-      input.source || 'typed',
-      input.rawText,
-      input.transcript || '',
-      typeof input.minuteMark === 'number' ? input.minuteMark : null,
+      source: input.source || 'typed',
+      rawText: input.rawText,
+      transcript: input.transcript || '',
+      minuteMark: typeof input.minuteMark === 'number' ? input.minuteMark : null,
       orderIndex,
-      now,
-      now
-    );
-    return db.query('SELECT * FROM story_notes WHERE id = ?').get(id) as any;
+      createdAt: now,
+      updatedAt: now,
+    });
+    const [row] = await db.select().from(storyNotes).where(eq(storyNotes.id, id));
+    return row ?? null;
   };
 
-  const listStoryNotes = (projectId: string) => {
-    return db.query('SELECT * FROM story_notes WHERE projectId = ? ORDER BY orderIndex ASC, createdAt ASC').all(projectId) as any[];
+  const listStoryNotes = async (projectId: string) => {
+    return db
+      .select()
+      .from(storyNotes)
+      .where(eq(storyNotes.projectId, projectId))
+      .orderBy(asc(storyNotes.orderIndex), asc(storyNotes.createdAt));
   };
 
-  const replaceProjectBeats = (projectId: string, beats: any[]) => {
+  const replaceProjectBeats = async (projectId: string, beats: any[]) => {
     const now = Date.now();
-    const existingRows = db.query('SELECT * FROM story_beats WHERE projectId = ? ORDER BY orderIndex ASC').all(projectId) as any[];
+    const existingRows = await db
+      .select()
+      .from(storyBeats)
+      .where(eq(storyBeats.projectId, projectId))
+      .orderBy(asc(storyBeats.orderIndex));
+
     const lockByOrder = new Map<number, any>();
     existingRows.forEach(row => {
-      if (Number(row.locked || 0) === 1) lockByOrder.set(Number(row.orderIndex), row);
+      if (row.locked) lockByOrder.set(Number(row.orderIndex), row);
     });
 
-    db.query('DELETE FROM story_beats WHERE projectId = ?').run(projectId);
-    beats.forEach((beat, index) => {
+    await db.delete(storyBeats).where(eq(storyBeats.projectId, projectId));
+
+    for (let index = 0; index < beats.length; index++) {
+      const beat = beats[index];
       const orderIndex = index + 1;
       const lockedExisting = lockByOrder.get(orderIndex);
+
       if (lockedExisting) {
-        db.query(`
-          INSERT INTO story_beats (
-            id, projectId, sourceNoteId, orderIndex, minuteStart, minuteEnd,
-            pseudoBeat, polishedBeat, objective, conflict, turnText, intensity, tags, locked, createdAt, updatedAt
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          generateId(),
+        await db.insert(storyBeats).values({
+          id: generateId(),
           projectId,
-          lockedExisting.sourceNoteId || null,
+          sourceNoteId: lockedExisting.sourceNoteId || null,
           orderIndex,
-          Number(lockedExisting.minuteStart || 0),
-          Number(lockedExisting.minuteEnd || 1),
-          String(lockedExisting.pseudoBeat || ''),
-          String(lockedExisting.polishedBeat || ''),
-          String(lockedExisting.objective || ''),
-          String(lockedExisting.conflict || ''),
-          String(lockedExisting.turnText || ''),
-          Number(lockedExisting.intensity || 50),
-          String(lockedExisting.tags || '[]'),
-          1,
-          now,
-          now
-        );
-        return;
+          minuteStart: Number(lockedExisting.minuteStart || 0),
+          minuteEnd: Number(lockedExisting.minuteEnd || 1),
+          pseudoBeat: String(lockedExisting.pseudoBeat || ''),
+          polishedBeat: String(lockedExisting.polishedBeat || ''),
+          objective: String(lockedExisting.objective || ''),
+          conflict: String(lockedExisting.conflict || ''),
+          turnText: String(lockedExisting.turnText || ''),
+          intensity: Math.round(Number(lockedExisting.intensity || 50)),
+          tags: lockedExisting.tags ?? [],
+          locked: true,
+          createdAt: now,
+          updatedAt: now,
+        });
+        continue;
       }
 
-      db.query(`
-        INSERT INTO story_beats (
-          id, projectId, sourceNoteId, orderIndex, minuteStart, minuteEnd,
-          pseudoBeat, polishedBeat, objective, conflict, turnText, intensity, tags, locked, createdAt, updatedAt
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        generateId(),
+      await db.insert(storyBeats).values({
+        id: generateId(),
         projectId,
-        beat.sourceNoteId || null,
+        sourceNoteId: beat.sourceNoteId || null,
         orderIndex,
-        Number(beat.minuteStart || 0),
-        Number(beat.minuteEnd || 1),
-        String(beat.pseudoBeat || ''),
-        String(beat.polishedBeat || ''),
-        String(beat.objective || ''),
-        String(beat.conflict || ''),
-        String(beat.turn || beat.turnText || ''),
-        Number(beat.intensity || 50),
-        JSON.stringify(Array.isArray(beat.tags) ? beat.tags : []),
-        Number(beat.locked ? 1 : 0),
-        now,
-        now
-      );
-    });
+        minuteStart: Number(beat.minuteStart || 0),
+        minuteEnd: Number(beat.minuteEnd || 1),
+        pseudoBeat: String(beat.pseudoBeat || ''),
+        polishedBeat: String(beat.polishedBeat || ''),
+        objective: String(beat.objective || ''),
+        conflict: String(beat.conflict || ''),
+        turnText: String(beat.turn || beat.turnText || ''),
+        intensity: Math.round(Number(beat.intensity || 50)),
+        tags: Array.isArray(beat.tags) ? beat.tags : [],
+        locked: !!beat.locked,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
     return listStoryBeats(projectId);
   };
 
-  const setBeatLocked = (projectId: string, beatId: string, locked: boolean) => {
+  const setBeatLocked = async (projectId: string, beatId: string, locked: boolean) => {
     const now = Date.now();
-    db.query('UPDATE story_beats SET locked = ?, updatedAt = ? WHERE id = ? AND projectId = ?').run(locked ? 1 : 0, now, beatId, projectId);
-    const row = db.query('SELECT * FROM story_beats WHERE id = ? AND projectId = ?').get(beatId, projectId) as any;
+    await db
+      .update(storyBeats)
+      .set({ locked, updatedAt: now })
+      .where(and(eq(storyBeats.id, beatId), eq(storyBeats.projectId, projectId)));
+    const [row] = await db
+      .select()
+      .from(storyBeats)
+      .where(and(eq(storyBeats.id, beatId), eq(storyBeats.projectId, projectId)));
     if (!row) return null;
     return {
       ...row,
-      tags: JSON.parse(row.tags || '[]'),
+      tags: row.tags ?? [],
       turn: row.turnText,
-      locked: Number(row.locked || 0) === 1,
+      locked: row.locked ?? false,
     };
   };
 
-  const listStoryBeats = (projectId: string) => {
-    const rows = db.query('SELECT * FROM story_beats WHERE projectId = ? ORDER BY orderIndex ASC').all(projectId) as any[];
+  const listStoryBeats = async (projectId: string) => {
+    const rows = await db
+      .select()
+      .from(storyBeats)
+      .where(eq(storyBeats.projectId, projectId))
+      .orderBy(asc(storyBeats.orderIndex));
     return rows.map(row => ({
       ...row,
-      tags: JSON.parse(row.tags || '[]'),
+      tags: row.tags ?? [],
       turn: row.turnText,
-      locked: Number(row.locked || 0) === 1,
+      locked: row.locked ?? false,
     }));
   };
 
-  const saveProjectPackage = (projectId: string, payload: any, prompt: string) => {
+  const saveProjectPackage = async (projectId: string, payload: any, prompt: string) => {
     const now = Date.now();
     const id = generateId();
-    const row = db.query('SELECT COALESCE(MAX(version), 0) as maxVersion FROM project_packages WHERE projectId = ?').get(projectId) as { maxVersion: number };
-    const version = Number(row?.maxVersion || 0) + 1;
-    db.query(`
-      INSERT INTO project_packages (id, projectId, payload, prompt, status, version, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, projectId, JSON.stringify(payload), prompt || '', 'draft', version, now, now);
+    const [versionRow] = await db
+      .select({ maxVersion: sql<number>`coalesce(max(${projectPackages.version}), 0)` })
+      .from(projectPackages)
+      .where(eq(projectPackages.projectId, projectId));
+    const version = (versionRow?.maxVersion || 0) + 1;
+    await db.insert(projectPackages).values({
+      id,
+      projectId,
+      payload,
+      prompt: prompt || '',
+      status: 'draft',
+      version,
+      createdAt: now,
+      updatedAt: now,
+    });
     return { id, projectId, payload, prompt: prompt || '', status: 'draft', version, createdAt: now, updatedAt: now };
   };
 
-  const getLatestProjectPackage = (projectId: string) => {
-    const row = db.query(`
-      SELECT id, projectId, payload, prompt, status, version, createdAt, updatedAt
-      FROM project_packages
-      WHERE projectId = ?
-      ORDER BY version DESC
-      LIMIT 1
-    `).get(projectId) as any;
+  const getLatestProjectPackage = async (projectId: string) => {
+    const [row] = await db
+      .select()
+      .from(projectPackages)
+      .where(eq(projectPackages.projectId, projectId))
+      .orderBy(desc(projectPackages.version))
+      .limit(1);
     if (!row) return null;
-    return { ...row, payload: JSON.parse(row.payload) };
+    return { ...row, payload: row.payload };
   };
 
-  const setStoryboardSceneLocked = (projectId: string, beatId: string, locked: boolean) => {
-    const latest = getLatestProjectPackage(projectId);
-    if (!latest?.payload?.storyboard || !Array.isArray(latest.payload.storyboard)) return null;
+  const setStoryboardSceneLocked = async (projectId: string, beatId: string, locked: boolean) => {
+    const latest = await getLatestProjectPackage(projectId);
+    if (!latest?.payload || typeof latest.payload !== 'object') return null;
+    const p = latest.payload as any;
+    if (!p.storyboard || !Array.isArray(p.storyboard)) return null;
     const now = Date.now();
     const updatedPayload = {
-      ...latest.payload,
-      storyboard: latest.payload.storyboard.map((scene: any) => (
+      ...p,
+      storyboard: p.storyboard.map((scene: any) => (
         String(scene.beatId) === String(beatId)
           ? { ...scene, locked }
           : scene
       )),
     };
-    db.query('UPDATE project_packages SET payload = ?, updatedAt = ? WHERE id = ?').run(JSON.stringify(updatedPayload), now, latest.id);
+    await db
+      .update(projectPackages)
+      .set({ payload: updatedPayload, updatedAt: now })
+      .where(eq(projectPackages.id, latest.id));
     return { ...latest, payload: updatedPayload, updatedAt: now };
   };
 
-  const createSceneVideoJob = (args: {
+  const createSceneVideoJob = async (args: {
     projectId: string;
     packageId: string;
     beatId: string;
@@ -343,38 +407,33 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
   }) => {
     const id = generateId();
     const now = Date.now();
-    const durationSeconds = Number(args.durationSeconds || 5);
-    db.query(`
-      INSERT INTO scene_videos (
-        id, projectId, packageId, beatId, provider, modelKey, prompt, sourceImageUrl,
-        continuityScore, continuityThreshold, recommendRegenerate, continuityReason,
-        status, jobId, videoUrl, durationSeconds, error, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    const durationSeconds = Math.round(Number(args.durationSeconds || 5));
+    await db.insert(sceneVideos).values({
       id,
-      args.projectId,
-      args.packageId,
-      args.beatId,
-      args.provider || 'local-ffmpeg',
-      args.modelKey || 'seedance',
-      args.prompt || '',
-      args.sourceImageUrl || '',
-      Math.max(0, Math.min(1, Number(args.continuityScore ?? 0.75))),
-      Math.max(0, Math.min(1, Number(args.continuityThreshold ?? 0.75))),
-      args.recommendRegenerate ? 1 : 0,
-      args.continuityReason || '',
-      'queued',
-      '',
-      '',
+      projectId: args.projectId,
+      packageId: args.packageId,
+      beatId: args.beatId,
+      provider: args.provider || 'local-ffmpeg',
+      modelKey: args.modelKey || 'seedance',
+      prompt: args.prompt || '',
+      sourceImageUrl: args.sourceImageUrl || '',
+      continuityScore: Math.max(0, Math.min(1, Number(args.continuityScore ?? 0.75))),
+      continuityThreshold: Math.max(0, Math.min(1, Number(args.continuityThreshold ?? 0.75))),
+      recommendRegenerate: !!args.recommendRegenerate,
+      continuityReason: args.continuityReason || '',
+      status: 'queued',
+      jobId: '',
+      videoUrl: '',
       durationSeconds,
-      '',
-      now,
-      now
-    );
-    return db.query('SELECT * FROM scene_videos WHERE id = ?').get(id) as any;
+      error: '',
+      createdAt: now,
+      updatedAt: now,
+    });
+    const [row] = await db.select().from(sceneVideos).where(eq(sceneVideos.id, id));
+    return row ?? null;
   };
 
-  const updateSceneVideoJob = (id: string, patch: Partial<{
+  const updateSceneVideoJob = async (id: string, patch: Partial<{
     status: string;
     jobId: string;
     videoUrl: string;
@@ -382,44 +441,39 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     sourceImageUrl: string;
   }>) => {
     const now = Date.now();
-    const row = db.query('SELECT * FROM scene_videos WHERE id = ?').get(id) as any;
+    const [row] = await db.select().from(sceneVideos).where(eq(sceneVideos.id, id));
     if (!row) return null;
-    db.query(`
-      UPDATE scene_videos SET
-        status = ?,
-        jobId = ?,
-        videoUrl = ?,
-        error = ?,
-        sourceImageUrl = ?,
-        updatedAt = ?
-      WHERE id = ?
-    `).run(
-      patch.status ?? row.status,
-      patch.jobId ?? row.jobId,
-      patch.videoUrl ?? row.videoUrl,
-      patch.error ?? row.error,
-      patch.sourceImageUrl ?? row.sourceImageUrl,
-      now,
-      id
-    );
-    return db.query('SELECT * FROM scene_videos WHERE id = ?').get(id) as any;
+    await db
+      .update(sceneVideos)
+      .set({
+        status: patch.status ?? row.status,
+        jobId: patch.jobId ?? row.jobId,
+        videoUrl: patch.videoUrl ?? row.videoUrl,
+        error: patch.error ?? row.error,
+        sourceImageUrl: patch.sourceImageUrl ?? row.sourceImageUrl,
+        updatedAt: now,
+      })
+      .where(eq(sceneVideos.id, id));
+    const [updated] = await db.select().from(sceneVideos).where(eq(sceneVideos.id, id));
+    return updated ?? null;
   };
 
-  const getLatestSceneVideo = (projectId: string, beatId: string) => {
-    return db.query(`
-      SELECT * FROM scene_videos
-      WHERE projectId = ? AND beatId = ?
-      ORDER BY createdAt DESC
-      LIMIT 1
-    `).get(projectId, beatId) as any;
+  const getLatestSceneVideo = async (projectId: string, beatId: string) => {
+    const [row] = await db
+      .select()
+      .from(sceneVideos)
+      .where(and(eq(sceneVideos.projectId, projectId), eq(sceneVideos.beatId, beatId)))
+      .orderBy(desc(sceneVideos.createdAt))
+      .limit(1);
+    return row ?? null;
   };
 
-  const listLatestSceneVideos = (projectId: string) => {
-    const rows = db.query(`
-      SELECT * FROM scene_videos
-      WHERE projectId = ?
-      ORDER BY createdAt DESC
-    `).all(projectId) as any[];
+  const listLatestSceneVideos = async (projectId: string) => {
+    const rows = await db
+      .select()
+      .from(sceneVideos)
+      .where(eq(sceneVideos.projectId, projectId))
+      .orderBy(desc(sceneVideos.createdAt));
     const seen = new Set<string>();
     const items: any[] = [];
     for (const row of rows) {
@@ -431,123 +485,121 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return items;
   };
 
-  const createProjectFinalFilm = (args: {
-    projectId: string;
-    sourceCount: number;
-  }) => {
+  const createProjectFinalFilm = async (args: { projectId: string; sourceCount: number }) => {
     const id = generateId();
     const now = Date.now();
-    db.query(`
-      INSERT INTO project_final_films (id, projectId, status, sourceCount, videoUrl, error, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, args.projectId, 'queued', Number(args.sourceCount || 0), '', '', now, now);
-    return db.query('SELECT * FROM project_final_films WHERE id = ?').get(id) as any;
+    await db.insert(projectFinalFilms).values({
+      id,
+      projectId: args.projectId,
+      status: 'queued',
+      sourceCount: Number(args.sourceCount || 0),
+      videoUrl: '',
+      error: '',
+      createdAt: now,
+      updatedAt: now,
+    });
+    const [row] = await db.select().from(projectFinalFilms).where(eq(projectFinalFilms.id, id));
+    return row ?? null;
   };
 
-  const updateProjectFinalFilm = (id: string, patch: Partial<{
+  const updateProjectFinalFilm = async (id: string, patch: Partial<{
     status: string;
     sourceCount: number;
     videoUrl: string;
     error: string;
   }>) => {
     const now = Date.now();
-    const row = db.query('SELECT * FROM project_final_films WHERE id = ?').get(id) as any;
+    const [row] = await db.select().from(projectFinalFilms).where(eq(projectFinalFilms.id, id));
     if (!row) return null;
-    db.query(`
-      UPDATE project_final_films SET
-        status = ?,
-        sourceCount = ?,
-        videoUrl = ?,
-        error = ?,
-        updatedAt = ?
-      WHERE id = ?
-    `).run(
-      patch.status ?? row.status,
-      typeof patch.sourceCount === 'number' ? patch.sourceCount : row.sourceCount,
-      patch.videoUrl ?? row.videoUrl,
-      patch.error ?? row.error,
-      now,
-      id
-    );
-    return db.query('SELECT * FROM project_final_films WHERE id = ?').get(id) as any;
+    await db
+      .update(projectFinalFilms)
+      .set({
+        status: patch.status ?? row.status,
+        sourceCount: typeof patch.sourceCount === 'number' ? patch.sourceCount : row.sourceCount,
+        videoUrl: patch.videoUrl ?? row.videoUrl,
+        error: patch.error ?? row.error,
+        updatedAt: now,
+      })
+      .where(eq(projectFinalFilms.id, id));
+    const [updated] = await db.select().from(projectFinalFilms).where(eq(projectFinalFilms.id, id));
+    return updated ?? null;
   };
 
-  const getLatestProjectFinalFilm = (projectId: string) => {
-    return db.query(`
-      SELECT * FROM project_final_films
-      WHERE projectId = ?
-      ORDER BY createdAt DESC
-      LIMIT 1
-    `).get(projectId) as any;
+  const getLatestProjectFinalFilm = async (projectId: string) => {
+    const [row] = await db
+      .select()
+      .from(projectFinalFilms)
+      .where(eq(projectFinalFilms.projectId, projectId))
+      .orderBy(desc(projectFinalFilms.createdAt))
+      .limit(1);
+    return row ?? null;
   };
 
-  const claimNextQueuedProjectFinalFilm = () => {
-    const candidate = db.query(`
-      SELECT id
-      FROM project_final_films
-      WHERE status = 'queued'
-      ORDER BY createdAt ASC
-      LIMIT 1
-    `).get() as { id?: string } | null;
+  const claimNextQueuedProjectFinalFilm = async () => {
+    const [candidate] = await db
+      .select({ id: projectFinalFilms.id })
+      .from(projectFinalFilms)
+      .where(eq(projectFinalFilms.status, 'queued'))
+      .orderBy(asc(projectFinalFilms.createdAt))
+      .limit(1);
 
     if (!candidate?.id) return null;
 
     const now = Date.now();
-    const result = db.query(`
-      UPDATE project_final_films
-      SET status = 'processing', updatedAt = ?
-      WHERE id = ? AND status = 'queued'
-    `).run(now, candidate.id) as { changes?: number };
+    const updated = await db
+      .update(projectFinalFilms)
+      .set({ status: 'processing', updatedAt: now })
+      .where(and(eq(projectFinalFilms.id, candidate.id), eq(projectFinalFilms.status, 'queued')))
+      .returning();
 
-    if (!result?.changes) return null;
-    return db.query('SELECT * FROM project_final_films WHERE id = ?').get(candidate.id) as any;
+    if (!updated.length) return null;
+    return updated[0];
   };
 
-  const requeueStaleProcessingProjectFinalFilms = (maxAgeMs: number = 10 * 60 * 1000) => {
+  const requeueStaleProcessingProjectFinalFilms = async (maxAgeMs: number = 10 * 60 * 1000) => {
     const now = Date.now();
     const staleBefore = now - Math.max(60_000, Number(maxAgeMs || 0));
-    const result = db.query(`
-      UPDATE project_final_films
-      SET status = 'queued', updatedAt = ?
-      WHERE status = 'processing' AND updatedAt < ?
-    `).run(now, staleBefore) as { changes?: number };
-    return Number(result?.changes || 0);
+    const updated = await db
+      .update(projectFinalFilms)
+      .set({ status: 'queued', updatedAt: now })
+      .where(and(eq(projectFinalFilms.status, 'processing'), lt(projectFinalFilms.updatedAt, staleBefore)))
+      .returning();
+    return updated.length;
   };
 
-  const claimNextQueuedSceneVideo = () => {
-    const candidate = db.query(`
-      SELECT id
-      FROM scene_videos
-      WHERE status = 'queued'
-      ORDER BY createdAt ASC
-      LIMIT 1
-    `).get() as { id?: string } | null;
+  const claimNextQueuedSceneVideo = async () => {
+    const [candidate] = await db
+      .select({ id: sceneVideos.id })
+      .from(sceneVideos)
+      .where(eq(sceneVideos.status, 'queued'))
+      .orderBy(asc(sceneVideos.createdAt))
+      .limit(1);
 
     if (!candidate?.id) return null;
 
     const now = Date.now();
-    const result = db.query(`
-      UPDATE scene_videos
-      SET status = 'processing', updatedAt = ?
-      WHERE id = ? AND status = 'queued'
-    `).run(now, candidate.id) as { changes?: number };
+    const updated = await db
+      .update(sceneVideos)
+      .set({ status: 'processing', updatedAt: now })
+      .where(and(eq(sceneVideos.id, candidate.id), eq(sceneVideos.status, 'queued')))
+      .returning();
 
-    if (!result?.changes) return null;
-    return db.query('SELECT * FROM scene_videos WHERE id = ?').get(candidate.id) as any;
+    if (!updated.length) return null;
+    return updated[0];
   };
 
-  const requeueStaleProcessingSceneVideos = (maxAgeMs: number = 10 * 60 * 1000) => {
+  const requeueStaleProcessingSceneVideos = async (maxAgeMs: number = 10 * 60 * 1000) => {
     const now = Date.now();
     const staleBefore = now - Math.max(60_000, Number(maxAgeMs || 0));
-    const result = db.query(`
-      UPDATE scene_videos
-      SET status = 'queued', updatedAt = ?
-      WHERE status = 'processing' AND updatedAt < ?
-    `).run(now, staleBefore) as { changes?: number };
-    return Number(result?.changes || 0);
+    const updated = await db
+      .update(sceneVideos)
+      .set({ status: 'queued', updatedAt: now })
+      .where(and(eq(sceneVideos.status, 'processing'), lt(sceneVideos.updatedAt, staleBefore)))
+      .returning();
+    return updated.length;
   };
 
-  const createScenePromptLayer = (args: {
+  const createScenePromptLayer = async (args: {
     projectId: string;
     packageId: string;
     beatId: string;
@@ -563,58 +615,57 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
   }) => {
     const id = generateId();
     const now = Date.now();
-    const row = db.query('SELECT COALESCE(MAX(version), 0) as maxVersion FROM scene_prompt_layers WHERE projectId = ? AND beatId = ?').get(args.projectId, args.beatId) as { maxVersion: number };
-    const version = Number(row?.maxVersion || 0) + 1;
-    db.query(`
-      INSERT INTO scene_prompt_layers (
-        id, projectId, packageId, beatId, directorPrompt, cinematographerPrompt,
-        mergedPrompt, filmType, generationModel, continuationMode, anchorBeatId, autoRegenerateThreshold,
-        source, version, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    const [versionRow] = await db
+      .select({ maxVersion: sql<number>`coalesce(max(${scenePromptLayers.version}), 0)` })
+      .from(scenePromptLayers)
+      .where(and(eq(scenePromptLayers.projectId, args.projectId), eq(scenePromptLayers.beatId, args.beatId)));
+    const version = (versionRow?.maxVersion || 0) + 1;
+    await db.insert(scenePromptLayers).values({
       id,
-      args.projectId,
-      args.packageId,
-      args.beatId,
-      args.directorPrompt || '',
-      args.cinematographerPrompt || '',
-      args.mergedPrompt || '',
-      args.filmType || '',
-      args.generationModel || 'seedance',
-      args.continuationMode || 'strict',
-      args.anchorBeatId || '',
-      Number(args.autoRegenerateThreshold || 0.75),
-      args.source || 'manual',
+      projectId: args.projectId,
+      packageId: args.packageId,
+      beatId: args.beatId,
+      directorPrompt: args.directorPrompt || '',
+      cinematographerPrompt: args.cinematographerPrompt || '',
+      mergedPrompt: args.mergedPrompt || '',
+      filmType: args.filmType || '',
+      generationModel: args.generationModel || 'seedance',
+      continuationMode: args.continuationMode || 'strict',
+      anchorBeatId: args.anchorBeatId || '',
+      autoRegenerateThreshold: Number(args.autoRegenerateThreshold || 0.75),
+      source: args.source || 'manual',
       version,
-      now,
-      now
-    );
-    return db.query('SELECT * FROM scene_prompt_layers WHERE id = ?').get(id) as any;
+      createdAt: now,
+      updatedAt: now,
+    });
+    const [row] = await db.select().from(scenePromptLayers).where(eq(scenePromptLayers.id, id));
+    return row ?? null;
   };
 
-  const getLatestScenePromptLayer = (projectId: string, beatId: string) => {
-    return db.query(`
-      SELECT * FROM scene_prompt_layers
-      WHERE projectId = ? AND beatId = ?
-      ORDER BY version DESC, createdAt DESC
-      LIMIT 1
-    `).get(projectId, beatId) as any;
+  const getLatestScenePromptLayer = async (projectId: string, beatId: string) => {
+    const [row] = await db
+      .select()
+      .from(scenePromptLayers)
+      .where(and(eq(scenePromptLayers.projectId, projectId), eq(scenePromptLayers.beatId, beatId)))
+      .orderBy(desc(scenePromptLayers.version), desc(scenePromptLayers.createdAt))
+      .limit(1);
+    return row ?? null;
   };
 
-  const listScenePromptLayerHistory = (projectId: string, beatId: string) => {
-    return db.query(`
-      SELECT * FROM scene_prompt_layers
-      WHERE projectId = ? AND beatId = ?
-      ORDER BY version DESC, createdAt DESC
-    `).all(projectId, beatId) as any[];
+  const listScenePromptLayerHistory = async (projectId: string, beatId: string) => {
+    return db
+      .select()
+      .from(scenePromptLayers)
+      .where(and(eq(scenePromptLayers.projectId, projectId), eq(scenePromptLayers.beatId, beatId)))
+      .orderBy(desc(scenePromptLayers.version), desc(scenePromptLayers.createdAt));
   };
 
-  const listLatestScenePromptLayers = (projectId: string) => {
-    const rows = db.query(`
-      SELECT * FROM scene_prompt_layers
-      WHERE projectId = ?
-      ORDER BY beatId ASC, version DESC, createdAt DESC
-    `).all(projectId) as any[];
+  const listLatestScenePromptLayers = async (projectId: string) => {
+    const rows = await db
+      .select()
+      .from(scenePromptLayers)
+      .where(eq(scenePromptLayers.projectId, projectId))
+      .orderBy(asc(scenePromptLayers.beatId), desc(scenePromptLayers.version), desc(scenePromptLayers.createdAt));
     const seen = new Set<string>();
     const items: any[] = [];
     for (const row of rows) {
@@ -626,7 +677,7 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     return items;
   };
 
-  const createSceneVideoPromptTrace = (args: {
+  const createSceneVideoPromptTrace = async (args: {
     traceId: string;
     projectId: string;
     packageId: string;
@@ -634,51 +685,30 @@ export const createProjectsDb = ({ db, generateId }: CreateProjectsDbArgs) => {
     payload: any;
   }) => {
     const now = Date.now();
-    db.query(`
-      INSERT INTO scene_video_prompt_traces (
-        traceId, projectId, packageId, beatId, payload, createdAt
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      String(args.traceId || ''),
-      String(args.projectId || ''),
-      String(args.packageId || ''),
-      String(args.beatId || ''),
-      JSON.stringify(args.payload || {}),
-      now
-    );
-    const row = db.query('SELECT * FROM scene_video_prompt_traces WHERE traceId = ?').get(String(args.traceId || '')) as any;
+    await db.insert(sceneVideoPromptTraces).values({
+      traceId: String(args.traceId || ''),
+      projectId: String(args.projectId || ''),
+      packageId: String(args.packageId || ''),
+      beatId: String(args.beatId || ''),
+      payload: args.payload || {},
+      createdAt: now,
+    });
+    const [row] = await db
+      .select()
+      .from(sceneVideoPromptTraces)
+      .where(eq(sceneVideoPromptTraces.traceId, String(args.traceId || '')));
     if (!row) return null;
-    return {
-      ...row,
-      payload: (() => {
-        try {
-          return JSON.parse(String(row.payload || '{}'));
-        } catch {
-          return {};
-        }
-      })(),
-    };
+    return { ...row, payload: row.payload ?? {} };
   };
 
-  const listSceneVideoPromptTraces = (projectId: string, beatId: string, limit: number = 20) => {
-    const rows = db.query(`
-      SELECT traceId, projectId, packageId, beatId, payload, createdAt
-      FROM scene_video_prompt_traces
-      WHERE projectId = ? AND beatId = ?
-      ORDER BY createdAt DESC, traceId DESC
-      LIMIT ?
-    `).all(projectId, beatId, Math.max(1, Math.min(100, Number(limit || 20)))) as any[];
-
-    return rows.map(row => ({
-      ...row,
-      payload: (() => {
-        try {
-          return JSON.parse(String(row.payload || '{}'));
-        } catch {
-          return {};
-        }
-      })(),
-    }));
+  const listSceneVideoPromptTraces = async (projectId: string, beatId: string, limit: number = 20) => {
+    const rows = await db
+      .select()
+      .from(sceneVideoPromptTraces)
+      .where(and(eq(sceneVideoPromptTraces.projectId, projectId), eq(sceneVideoPromptTraces.beatId, beatId)))
+      .orderBy(desc(sceneVideoPromptTraces.createdAt), desc(sceneVideoPromptTraces.traceId))
+      .limit(Math.max(1, Math.min(100, Number(limit || 20))));
+    return rows.map(row => ({ ...row, payload: row.payload ?? {} }));
   };
 
   return {

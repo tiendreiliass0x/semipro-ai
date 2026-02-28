@@ -40,16 +40,16 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
     saveStorylinePackage,
   } = args;
 
-  const requestAccountId = getRequestAccountId(req);
+  const requestAccountId = await getRequestAccountId(req);
   const scopeAccountId = requestAccountId || undefined;
-  const canWrite = Boolean(requestAccountId) && verifyAccessKey(req);
+  const canWrite = Boolean(requestAccountId) && await verifyAccessKey(req);
 
   if (pathname.startsWith('/api/storylines') && !requestAccountId) {
     return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/storylines' && method === 'GET') {
-    return new Response(JSON.stringify(loadStorylines(scopeAccountId)), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify(await loadStorylines(scopeAccountId)), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/storylines/generate' && method === 'POST') {
@@ -64,7 +64,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
     try {
       const result = await generateStoryPackage(storyline, prompt);
       const storylineId = String(storyline.id || 'unknown-storyline');
-      const saved = saveStorylinePackage(storylineId, result, prompt, 'draft', scopeAccountId);
+      const saved = await saveStorylinePackage(storylineId, result, prompt, 'draft', scopeAccountId);
       return new Response(JSON.stringify({ success: true, result, package: saved }), { headers: jsonHeaders(corsHeaders) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate story package';
@@ -95,13 +95,13 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
   if (pathname === '/api/storylines/packages' && method === 'GET') {
     const storylineId = url.searchParams.get('storylineId');
     if (!storylineId) return new Response(JSON.stringify({ error: 'storylineId is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
-    return new Response(JSON.stringify({ items: listStorylinePackages(storylineId, scopeAccountId) }), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify({ items: await listStorylinePackages(storylineId, scopeAccountId) }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/storylines/package' && method === 'GET') {
     const storylineId = url.searchParams.get('storylineId');
     if (!storylineId) return new Response(JSON.stringify({ error: 'storylineId is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
-    const item = getLatestStorylinePackage(storylineId, scopeAccountId);
+    const item = await getLatestStorylinePackage(storylineId, scopeAccountId);
     return new Response(JSON.stringify({ item }), { headers: jsonHeaders(corsHeaders) });
   }
 
@@ -118,7 +118,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
     }
 
     try {
-      const item = saveStorylinePackage(storylineId, payload, prompt, status, scopeAccountId);
+      const item = await saveStorylinePackage(storylineId, payload, prompt, status, scopeAccountId);
       return new Response(JSON.stringify({ success: true, item }), { headers: jsonHeaders(corsHeaders) });
     } catch {
       return new Response(JSON.stringify({ error: 'Failed to save storyline package' }), { status: 500, headers: jsonHeaders(corsHeaders) });
@@ -134,7 +134,7 @@ export const handleStorylinesRoutes = async (args: StorylinesRouteArgs): Promise
     if (validationErrors.length) {
       return new Response(JSON.stringify({ error: 'Malformed storyline data', details: validationErrors }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
-    const success = saveStorylines(storylines, scopeAccountId);
+    const success = await saveStorylines(storylines, scopeAccountId);
     if (!success) return new Response(JSON.stringify({ error: 'Failed to save storylines' }), { status: 500, headers: jsonHeaders(corsHeaders) });
     return new Response(JSON.stringify({ success: true, count: storylines.length }), { headers: jsonHeaders(corsHeaders) });
   }

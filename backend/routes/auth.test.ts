@@ -1,11 +1,11 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { createTestDb, testGenerateId, resetIdCounter } from '../test-helpers/setupDb';
+import { createTestDb, testGenerateId, resetIdCounter, type TestDb } from '../test-helpers/setupDb';
 import { createAuthDb } from '../db/auth';
 import { createAuthHelpers, hashToken } from '../lib/auth';
 import { handleAuthRoutes } from './auth';
 
-const buildAuthDeps = (db: ReturnType<typeof createTestDb>) => {
-  const authDb = createAuthDb({ db, generateId: testGenerateId });
+const buildAuthDeps = (db: TestDb) => {
+  const authDb = createAuthDb({ db: db as any, generateId: testGenerateId });
   const { getAuthContext } = createAuthHelpers({
     adminAccessKey: '',
     getSessionByTokenHash: authDb.getSessionByTokenHash,
@@ -25,12 +25,12 @@ const jsonReq = (method: string, pathname: string, body?: any, headers?: Record<
 const corsHeaders = { 'Access-Control-Allow-Origin': '*' };
 
 describe('auth routes', () => {
-  let db: ReturnType<typeof createTestDb>;
+  let db: TestDb;
   let deps: ReturnType<typeof buildAuthDeps>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     resetIdCounter();
-    db = createTestDb();
+    db = await createTestDb();
     deps = buildAuthDeps(db);
   });
 
@@ -61,11 +61,9 @@ describe('auth routes', () => {
   });
 
   test('POST /api/auth/login with valid credentials returns token', async () => {
-    // Register first
     const regReq = jsonReq('POST', '/api/auth/register', { email: 'login@test.com', password: 'longpassword123' });
     await handleAuthRoutes({ req: regReq, pathname: '/api/auth/register', method: 'POST', corsHeaders, ...deps });
 
-    // Login
     const loginReq = jsonReq('POST', '/api/auth/login', { email: 'login@test.com', password: 'longpassword123' });
     const res = await handleAuthRoutes({ req: loginReq, pathname: '/api/auth/login', method: 'POST', corsHeaders, ...deps });
     expect(res?.status).toBe(200);
@@ -95,7 +93,7 @@ describe('auth routes', () => {
     expect(data.success).toBe(true);
 
     // Verify session is gone
-    const session = deps.getSessionByTokenHash(hashToken(token));
+    const session = await deps.getSessionByTokenHash(hashToken(token));
     expect(session).toBeNull();
   });
 

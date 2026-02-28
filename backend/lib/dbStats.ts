@@ -1,25 +1,43 @@
-import type { Database } from 'bun:sqlite';
+import { count, eq } from 'drizzle-orm';
+import type { Database } from '../data/database';
+import {
+  anecdotes,
+  media,
+  subscribers,
+  projects,
+  storyNotes,
+  storyBeats,
+  projectPackages,
+  storylinePackages,
+  storylinesCache,
+  storylinesCacheAccounts,
+} from '../data/drizzle-schema';
 
-export const getDbStats = (db: Database) => {
-  const anecdotes = (db.query('SELECT COUNT(*) as count FROM anecdotes').get() as { count: number }).count;
-  const media = (db.query('SELECT COUNT(*) as count FROM media').get() as { count: number }).count;
-  const subscribers = (db.query('SELECT COUNT(*) as count FROM subscribers').get() as { count: number }).count;
-  const projects = (db.query('SELECT COUNT(*) as count FROM projects').get() as { count: number }).count;
-  const storyNotes = (db.query('SELECT COUNT(*) as count FROM story_notes').get() as { count: number }).count;
-  const storyBeats = (db.query('SELECT COUNT(*) as count FROM story_beats').get() as { count: number }).count;
-  const projectPackages = (db.query('SELECT COUNT(*) as count FROM project_packages').get() as { count: number }).count;
-  const storylinePackages = (db.query('SELECT COUNT(*) as count FROM storyline_packages').get() as { count: number }).count;
-  const storylineRow = db.query('SELECT payload, updatedAt FROM storylines_cache WHERE id = 1').get() as { payload?: string; updatedAt?: number } | null;
-  const storylineAccountRows = db.query('SELECT payload, updatedAt FROM storylines_cache_accounts').all() as Array<{ payload?: string; updatedAt?: number }>;
+export const getDbStats = async (db: Database) => {
+  const [[anecdoteCount], [mediaCount], [subscriberCount], [projectCount], [noteCount], [beatCount], [packageCount], [storylinePackageCount]] = await Promise.all([
+    db.select({ count: count() }).from(anecdotes),
+    db.select({ count: count() }).from(media),
+    db.select({ count: count() }).from(subscribers),
+    db.select({ count: count() }).from(projects),
+    db.select({ count: count() }).from(storyNotes),
+    db.select({ count: count() }).from(storyBeats),
+    db.select({ count: count() }).from(projectPackages),
+    db.select({ count: count() }).from(storylinePackages),
+  ]);
+
+  const [storylineRow] = await db
+    .select({ payload: storylinesCache.payload, updatedAt: storylinesCache.updatedAt })
+    .from(storylinesCache)
+    .where(eq(storylinesCache.id, 1));
+
+  const storylineAccountRows = await db
+    .select({ payload: storylinesCacheAccounts.payload, updatedAt: storylinesCacheAccounts.updatedAt })
+    .from(storylinesCacheAccounts);
 
   let legacyStorylines = 0;
   if (storylineRow?.payload) {
-    try {
-      const parsed = JSON.parse(storylineRow.payload);
-      legacyStorylines = Array.isArray(parsed) ? parsed.length : 0;
-    } catch {
-      legacyStorylines = 0;
-    }
+    const parsed = storylineRow.payload;
+    legacyStorylines = Array.isArray(parsed) ? parsed.length : 0;
   }
 
   let accountStorylines = 0;
@@ -31,27 +49,23 @@ export const getDbStats = (db: Database) => {
         : Math.max(accountStorylinesUpdatedAt, row.updatedAt);
     }
     if (!row.payload) return;
-    try {
-      const parsed = JSON.parse(row.payload);
-      if (Array.isArray(parsed)) accountStorylines += parsed.length;
-    } catch {
-      // Ignore malformed row payloads in diagnostics.
-    }
+    const parsed = row.payload;
+    if (Array.isArray(parsed)) accountStorylines += parsed.length;
   });
 
   const storylines = accountStorylines > 0 ? accountStorylines : legacyStorylines;
   const storylinesUpdatedAt = accountStorylinesUpdatedAt || storylineRow?.updatedAt || null;
 
   return {
-    anecdotes,
-    media,
-    subscribers,
-    projects,
-    storyNotes,
-    storyBeats,
-    projectPackages,
+    anecdotes: anecdoteCount.count,
+    media: mediaCount.count,
+    subscribers: subscriberCount.count,
+    projects: projectCount.count,
+    storyNotes: noteCount.count,
+    storyBeats: beatCount.count,
+    projectPackages: packageCount.count,
     storylines,
-    storylinePackages,
+    storylinePackages: storylinePackageCount.count,
     storylinesUpdatedAt,
     storylinesLegacy: legacyStorylines,
     storylinesAccountScoped: accountStorylines,

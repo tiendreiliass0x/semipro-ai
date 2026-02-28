@@ -33,17 +33,17 @@ export const handleAnecdotesRoutes = async (args: AnecdotesRouteArgs): Promise<R
   } = args;
 
   if (pathname === '/api/anecdotes' && method === 'GET') {
-    return new Response(JSON.stringify(getAllAnecdotes()), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify(await getAllAnecdotes()), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/anecdotes\/year\/\d+$/) && method === 'GET') {
     const year = parseInt(pathname.split('/').pop()!);
-    return new Response(JSON.stringify(getAnecdotesByYear(year)), { headers: jsonHeaders(corsHeaders) });
+    return new Response(JSON.stringify(await getAnecdotesByYear(year)), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/anecdotes\/[^/]+$/) && method === 'GET' && !pathname.includes('/year/')) {
     const id = pathname.split('/').pop()!;
-    const anecdote = getAnecdoteById(id);
+    const anecdote = await getAnecdoteById(id);
     if (!anecdote) {
       return new Response(JSON.stringify({ error: 'Anecdote not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
@@ -51,21 +51,21 @@ export const handleAnecdotesRoutes = async (args: AnecdotesRouteArgs): Promise<R
   }
 
   if (pathname === '/api/anecdotes' && method === 'POST') {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!(await verifyAccessKey(req))) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const body = await req.json();
     const { date, year, title, story, storyteller, location, notes, media, tags } = body;
     if (!date || !year || !title || !story || !storyteller) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
-    const newAnecdote = createAnecdote({ date, year: parseInt(year), title, story, storyteller, location, notes, media, tags });
+    const newAnecdote = await createAnecdote({ date, year: parseInt(year), title, story, storyteller, location, notes, media, tags });
     return new Response(JSON.stringify(newAnecdote), { status: 201, headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname.match(/^\/api\/anecdotes\/[^/]+$/) && method === 'PUT' && !pathname.includes('/year/')) {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!(await verifyAccessKey(req))) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const id = pathname.split('/').pop()!;
     const body = await req.json();
-    const updated = updateAnecdote(id, body);
+    const updated = await updateAnecdote(id, body);
     if (!updated) {
       return new Response(JSON.stringify({ error: 'Anecdote not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
@@ -73,18 +73,18 @@ export const handleAnecdotesRoutes = async (args: AnecdotesRouteArgs): Promise<R
   }
 
   if (pathname.match(/^\/api\/anecdotes\/[^/]+$/) && method === 'DELETE' && !pathname.includes('/year/')) {
-    if (!verifyAccessKey(req)) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
+    if (!(await verifyAccessKey(req))) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     const id = pathname.split('/').pop()!;
-    const existing = getAnecdoteById(id);
+    const existing = await getAnecdoteById(id);
     if (!existing) {
       return new Response(JSON.stringify({ error: 'Anecdote not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
-    deleteAnecdote(id);
+    await deleteAnecdote(id);
     return new Response(JSON.stringify({ success: true, message: 'Anecdote deleted' }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/graph' && method === 'GET') {
-    const anecdotes = getAllAnecdotes();
+    const anecdotes = await getAllAnecdotes();
     const nodes: any[] = [];
     const links: any[] = [];
     const years = [...new Set(anecdotes.map((a: any) => a.year))].sort((a, b) => a - b);

@@ -1,4 +1,11 @@
-import type { Database } from 'bun:sqlite';
+import { eq, and, asc, lt, sql } from 'drizzle-orm';
+import type { Database } from '../data/database';
+import {
+  users,
+  accounts,
+  accountMemberships,
+  userSessions,
+} from '../data/drizzle-schema';
 
 type CreateAuthDbArgs = {
   db: Database;
@@ -6,112 +13,200 @@ type CreateAuthDbArgs = {
 };
 
 export const createAuthDb = ({ db, generateId }: CreateAuthDbArgs) => {
-  const getUserByEmail = (email: string) => {
-    return db.query('SELECT * FROM users WHERE lower(email) = lower(?) AND status = ?').get(email, 'active') as any;
+  const getUserByEmail = async (email: string) => {
+    const [row] = await db
+      .select()
+      .from(users)
+      .where(and(eq(sql`lower(${users.email})`, email.toLowerCase()), eq(users.status, 'active')));
+    return row ?? null;
   };
 
-  const getUserById = (id: string) => {
-    return db.query('SELECT id, email, name, status, createdAt, updatedAt FROM users WHERE id = ?').get(id) as any;
+  const getUserById = async (id: string) => {
+    const [row] = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        status: users.status,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+      })
+      .from(users)
+      .where(eq(users.id, id));
+    return row ?? null;
   };
 
-  const createUser = (args: { email: string; passwordHash: string; name?: string }) => {
+  const createUser = async (args: { email: string; passwordHash: string; name?: string }) => {
     const now = Date.now();
     const id = generateId();
-    db.query(`
-      INSERT INTO users (id, email, passwordHash, name, status, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, args.email.trim().toLowerCase(), args.passwordHash, String(args.name || '').trim(), 'active', now, now);
+    await db.insert(users).values({
+      id,
+      email: args.email.trim().toLowerCase(),
+      passwordHash: args.passwordHash,
+      name: String(args.name || '').trim(),
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
     return getUserById(id);
   };
 
-  const getAccountById = (id: string) => {
-    return db.query('SELECT * FROM accounts WHERE id = ?').get(id) as any;
+  const getAccountById = async (id: string) => {
+    const [row] = await db.select().from(accounts).where(eq(accounts.id, id));
+    return row ?? null;
   };
 
-  const getAccountBySlug = (slug: string) => {
-    return db.query('SELECT * FROM accounts WHERE slug = ?').get(slug) as any;
+  const getAccountBySlug = async (slug: string) => {
+    const [row] = await db.select().from(accounts).where(eq(accounts.slug, slug));
+    return row ?? null;
   };
 
-  const createAccount = (args: { name: string; slug: string; plan?: string }) => {
+  const createAccount = async (args: { name: string; slug: string; plan?: string }) => {
     const now = Date.now();
     const id = generateId();
-    db.query(`
-      INSERT INTO accounts (id, name, slug, plan, status, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, args.name.trim(), args.slug.trim().toLowerCase(), args.plan || 'free', 'active', now, now);
+    await db.insert(accounts).values({
+      id,
+      name: args.name.trim(),
+      slug: args.slug.trim().toLowerCase(),
+      plan: args.plan || 'free',
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
     return getAccountById(id);
   };
 
-  const updateAccount = (accountId: string, patch: { name?: string; slug?: string }) => {
-    const existing = getAccountById(accountId);
+  const updateAccount = async (accountId: string, patch: { name?: string; slug?: string }) => {
+    const existing = await getAccountById(accountId);
     if (!existing) return null;
     const now = Date.now();
     const nextName = typeof patch.name === 'string' && patch.name.trim() ? patch.name.trim() : String(existing.name || '').trim();
     const nextSlug = typeof patch.slug === 'string' && patch.slug.trim() ? patch.slug.trim().toLowerCase() : String(existing.slug || '').trim().toLowerCase();
-    db.query('UPDATE accounts SET name = ?, slug = ?, updatedAt = ? WHERE id = ?').run(nextName, nextSlug, now, accountId);
+    await db
+      .update(accounts)
+      .set({ name: nextName, slug: nextSlug, updatedAt: now })
+      .where(eq(accounts.id, accountId));
     return getAccountById(accountId);
   };
 
-  const addMembership = (args: { accountId: string; userId: string; role?: string }) => {
+  const addMembership = async (args: { accountId: string; userId: string; role?: string }) => {
     const now = Date.now();
-    const existing = db.query('SELECT * FROM account_memberships WHERE accountId = ? AND userId = ?').get(args.accountId, args.userId) as any;
+    const [existing] = await db
+      .select()
+      .from(accountMemberships)
+      .where(and(eq(accountMemberships.accountId, args.accountId), eq(accountMemberships.userId, args.userId)));
+
     if (existing) {
-      db.query('UPDATE account_memberships SET role = ?, status = ?, updatedAt = ? WHERE id = ?').run(args.role || existing.role || 'member', 'active', now, existing.id);
-      return db.query('SELECT * FROM account_memberships WHERE id = ?').get(existing.id) as any;
+      await db
+        .update(accountMemberships)
+        .set({ role: args.role || existing.role || 'member', status: 'active', updatedAt: now })
+        .where(eq(accountMemberships.id, existing.id));
+      const [updated] = await db.select().from(accountMemberships).where(eq(accountMemberships.id, existing.id));
+      return updated ?? null;
     }
 
     const id = generateId();
-    db.query(`
-      INSERT INTO account_memberships (id, accountId, userId, role, status, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, args.accountId, args.userId, args.role || 'member', 'active', now, now);
-    return db.query('SELECT * FROM account_memberships WHERE id = ?').get(id) as any;
+    await db.insert(accountMemberships).values({
+      id,
+      accountId: args.accountId,
+      userId: args.userId,
+      role: args.role || 'member',
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
+    const [row] = await db.select().from(accountMemberships).where(eq(accountMemberships.id, id));
+    return row ?? null;
   };
 
-  const listUserMemberships = (userId: string) => {
-    return db.query(`
-      SELECT m.id, m.accountId, m.userId, m.role, m.status, m.createdAt, m.updatedAt,
-             a.name as accountName, a.slug as accountSlug, a.plan as accountPlan
-      FROM account_memberships m
-      JOIN accounts a ON a.id = m.accountId
-      WHERE m.userId = ? AND m.status = 'active' AND a.status = 'active'
-      ORDER BY m.createdAt ASC
-    `).all(userId) as any[];
+  const listUserMemberships = async (userId: string) => {
+    return db
+      .select({
+        id: accountMemberships.id,
+        accountId: accountMemberships.accountId,
+        userId: accountMemberships.userId,
+        role: accountMemberships.role,
+        status: accountMemberships.status,
+        createdAt: accountMemberships.createdAt,
+        updatedAt: accountMemberships.updatedAt,
+        accountName: accounts.name,
+        accountSlug: accounts.slug,
+        accountPlan: accounts.plan,
+      })
+      .from(accountMemberships)
+      .innerJoin(accounts, eq(accounts.id, accountMemberships.accountId))
+      .where(
+        and(
+          eq(accountMemberships.userId, userId),
+          eq(accountMemberships.status, 'active'),
+          eq(accounts.status, 'active'),
+        ),
+      )
+      .orderBy(asc(accountMemberships.createdAt));
   };
 
-  const createSession = (args: { userId: string; accountId: string; tokenHash: string; expiresAt: number }) => {
+  const createSession = async (args: { userId: string; accountId: string; tokenHash: string; expiresAt: number }) => {
     const now = Date.now();
     const id = generateId();
-    db.query(`
-      INSERT INTO user_sessions (id, userId, accountId, tokenHash, expiresAt, createdAt, lastSeenAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, args.userId, args.accountId, args.tokenHash, args.expiresAt, now, now);
-    return db.query('SELECT * FROM user_sessions WHERE id = ?').get(id) as any;
+    await db.insert(userSessions).values({
+      id,
+      userId: args.userId,
+      accountId: args.accountId,
+      tokenHash: args.tokenHash,
+      expiresAt: args.expiresAt,
+      createdAt: now,
+      lastSeenAt: now,
+    });
+    const [row] = await db.select().from(userSessions).where(eq(userSessions.id, id));
+    return row ?? null;
   };
 
-  const getSessionByTokenHash = (tokenHash: string) => {
-    return db.query(`
-      SELECT s.*, u.email, u.name as userName, u.status as userStatus, a.name as accountName, a.slug as accountSlug, a.status as accountStatus
-      FROM user_sessions s
-      JOIN users u ON u.id = s.userId
-      JOIN accounts a ON a.id = s.accountId
-      WHERE s.tokenHash = ?
-      LIMIT 1
-    `).get(tokenHash) as any;
+  const getSessionByTokenHash = async (tokenHash: string) => {
+    const [row] = await db
+      .select({
+        id: userSessions.id,
+        userId: userSessions.userId,
+        accountId: userSessions.accountId,
+        tokenHash: userSessions.tokenHash,
+        expiresAt: userSessions.expiresAt,
+        createdAt: userSessions.createdAt,
+        lastSeenAt: userSessions.lastSeenAt,
+        email: users.email,
+        userName: users.name,
+        userStatus: users.status,
+        accountName: accounts.name,
+        accountSlug: accounts.slug,
+        accountStatus: accounts.status,
+      })
+      .from(userSessions)
+      .innerJoin(users, eq(users.id, userSessions.userId))
+      .innerJoin(accounts, eq(accounts.id, userSessions.accountId))
+      .where(eq(userSessions.tokenHash, tokenHash))
+      .limit(1);
+    return row ?? null;
   };
 
-  const touchSession = (id: string) => {
-    db.query('UPDATE user_sessions SET lastSeenAt = ? WHERE id = ?').run(Date.now(), id);
+  const touchSession = async (id: string) => {
+    await db
+      .update(userSessions)
+      .set({ lastSeenAt: Date.now() })
+      .where(eq(userSessions.id, id));
   };
 
-  const revokeSessionByTokenHash = (tokenHash: string) => {
-    const result = db.query('DELETE FROM user_sessions WHERE tokenHash = ?').run(tokenHash) as { changes?: number };
-    return Number(result?.changes || 0) > 0;
+  const revokeSessionByTokenHash = async (tokenHash: string) => {
+    const deleted = await db
+      .delete(userSessions)
+      .where(eq(userSessions.tokenHash, tokenHash))
+      .returning();
+    return deleted.length > 0;
   };
 
-  const revokeExpiredSessions = () => {
-    const result = db.query('DELETE FROM user_sessions WHERE expiresAt < ?').run(Date.now()) as { changes?: number };
-    return Number(result?.changes || 0);
+  const revokeExpiredSessions = async () => {
+    const deleted = await db
+      .delete(userSessions)
+      .where(lt(userSessions.expiresAt, Date.now()))
+      .returning();
+    return deleted.length;
   };
 
   return {

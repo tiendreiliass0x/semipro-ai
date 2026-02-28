@@ -1,4 +1,6 @@
-import type { Database } from 'bun:sqlite';
+import { desc } from 'drizzle-orm';
+import type { Database } from '../data/database';
+import { subscribers } from '../data/drizzle-schema';
 
 type CreateSubscribersDbArgs = {
   db: Database;
@@ -8,18 +10,25 @@ type CreateSubscribersDbArgs = {
 export const createSubscribersDb = ({ db, generateId }: CreateSubscribersDbArgs) => {
   const addSubscriber = (email: string, name: string) => {
     const now = Date.now();
-    db.query('INSERT INTO subscribers (id, email, name, subscribedAt) VALUES (?, ?, ?, ?)')
-      .run(generateId(), email.toLowerCase().trim(), name || '', now);
+    db.insert(subscribers).values({
+      id: generateId(),
+      email: email.toLowerCase().trim(),
+      name: name || '',
+      subscribedAt: now,
+    }).execute();
     return { success: true, message: 'Subscribed successfully', subscribedAt: now };
   };
 
   const listSubscribers = () => {
-    return db.query('SELECT email, name, subscribedAt FROM subscribers ORDER BY subscribedAt DESC').all() as any[];
+    return db
+      .select({ email: subscribers.email, name: subscribers.name, subscribedAt: subscribers.subscribedAt })
+      .from(subscribers)
+      .orderBy(desc(subscribers.subscribedAt));
   };
 
-  const exportSubscribersCsv = () => {
-    const subscribers = listSubscribers();
-    return ['Email,Name,Subscribed At', ...subscribers.map(s => `${s.email},"${s.name || ''}",${new Date(s.subscribedAt).toISOString()}`)].join('\n');
+  const exportSubscribersCsv = async () => {
+    const rows = await listSubscribers();
+    return ['Email,Name,Subscribed At', ...rows.map(s => `${s.email},"${s.name || ''}",${new Date(s.subscribedAt).toISOString()}`)].join('\n');
   };
 
   return {

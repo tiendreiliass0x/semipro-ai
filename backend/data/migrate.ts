@@ -1,35 +1,19 @@
-import { Database } from 'bun:sqlite';
 import { join } from 'path';
 import { readFileSync, existsSync } from 'fs';
-import { initializeSchema } from './schema';
+import { createDatabase } from './database';
+import { anecdotes, media, subscribers, storylinesCache } from './drizzle-schema';
+import { count } from 'drizzle-orm';
 
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://yenengalabs:yenengalabs@localhost:5432/yenengalabs';
 const dataDir = import.meta.dir;
-const DB_PATH = join(dataDir, 'anecdotes.db');
 const JSON_PATH = join(dataDir, 'anecdotes.json');
 const SUBSCRIBERS_JSON_PATH = join(dataDir, 'subscribers.json');
 
-// Initialize database with shared schema
-const db = new Database(DB_PATH);
-initializeSchema(db);
+const db = createDatabase(DATABASE_URL);
 
-// JSON-to-SQLite seeding (one-time migration from legacy JSON files)
-const anecdoteCount = db.query('SELECT COUNT(*) as count FROM anecdotes').get() as { count: number };
-const subscriberCount = db.query('SELECT COUNT(*) as count FROM subscribers').get() as { count: number };
-
-const insertAnecdote = db.query(`
-  INSERT INTO anecdotes (id, date, year, title, story, storyteller, location, notes, tags, createdAt, updatedAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
-
-const insertMedia = db.query(`
-  INSERT INTO media (id, anecdoteId, type, url, caption, createdAt)
-  VALUES (?, ?, ?, ?, ?, ?)
-`);
-
-const insertSubscriber = db.query(`
-  INSERT INTO subscribers (id, email, name, subscribedAt)
-  VALUES (?, ?, ?, ?)
-`);
+// JSON-to-DB seeding (one-time migration from legacy JSON files)
+const [anecdoteCount] = await db.select({ count: count() }).from(anecdotes);
+const [subscriberCount] = await db.select({ count: count() }).from(subscribers);
 
 let migratedAnecdotes = 0;
 let migratedSubscribers = 0;
@@ -37,33 +21,33 @@ let migratedSubscribers = 0;
 if (anecdoteCount.count === 0 && existsSync(JSON_PATH)) {
   const jsonData = JSON.parse(readFileSync(JSON_PATH, 'utf8'));
   if (Array.isArray(jsonData) && jsonData.length > 0) {
-    console.log(`Migrating ${jsonData.length} anecdotes from JSON to SQLite...`);
+    console.log(`Migrating ${jsonData.length} anecdotes from JSON to database...`);
 
     for (const a of jsonData) {
-      insertAnecdote.run(
-        a.id,
-        a.date,
-        a.year,
-        a.title,
-        a.story,
-        a.storyteller,
-        a.location || '',
-        a.notes || '',
-        JSON.stringify(a.tags || []),
-        a.createdAt || Date.now(),
-        a.updatedAt || Date.now()
-      );
+      await db.insert(anecdotes).values({
+        id: a.id,
+        date: a.date,
+        year: a.year,
+        title: a.title,
+        story: a.story,
+        storyteller: a.storyteller,
+        location: a.location || '',
+        notes: a.notes || '',
+        tags: a.tags || [],
+        createdAt: a.createdAt || Date.now(),
+        updatedAt: a.updatedAt || Date.now(),
+      });
 
       if (a.media && a.media.length > 0) {
         for (const m of a.media) {
-          insertMedia.run(
-            crypto.randomUUID(),
-            a.id,
-            m.type || 'image',
-            m.url,
-            m.caption || '',
-            m.createdAt || Date.now()
-          );
+          await db.insert(media).values({
+            id: crypto.randomUUID(),
+            anecdoteId: a.id,
+            type: m.type || 'image',
+            url: m.url,
+            caption: m.caption || '',
+            createdAt: m.createdAt || Date.now(),
+          });
         }
       }
     }
@@ -80,15 +64,15 @@ if (anecdoteCount.count === 0 && existsSync(JSON_PATH)) {
 if (subscriberCount.count === 0 && existsSync(SUBSCRIBERS_JSON_PATH)) {
   const subscribersJson = JSON.parse(readFileSync(SUBSCRIBERS_JSON_PATH, 'utf8'));
   if (Array.isArray(subscribersJson) && subscribersJson.length > 0) {
-    console.log(`Migrating ${subscribersJson.length} subscribers from JSON to SQLite...`);
+    console.log(`Migrating ${subscribersJson.length} subscribers from JSON to database...`);
     for (const s of subscribersJson) {
       if (!s?.email) continue;
-      insertSubscriber.run(
-        s.id || crypto.randomUUID(),
-        String(s.email).toLowerCase().trim(),
-        s.name || '',
-        typeof s.subscribedAt === 'number' ? s.subscribedAt : Date.now()
-      );
+      await db.insert(subscribers).values({
+        id: s.id || crypto.randomUUID(),
+        email: String(s.email).toLowerCase().trim(),
+        name: s.name || '',
+        subscribedAt: typeof s.subscribedAt === 'number' ? s.subscribedAt : Date.now(),
+      });
     }
     migratedSubscribers = subscribersJson.length;
   } else {
@@ -101,28 +85,14 @@ if (subscriberCount.count === 0 && existsSync(SUBSCRIBERS_JSON_PATH)) {
 }
 
 console.log('Migration complete!');
-console.log(`Database: ${DB_PATH}`);
+console.log(`Database: PostgreSQL (${DATABASE_URL.replace(/\/\/[^@]*@/, '//***@')})`);
 console.log(`Migrated anecdotes: ${migratedAnecdotes}`);
 console.log(`Migrated subscribers: ${migratedSubscribers}`);
 
 // Verify
-const newCount = db.query('SELECT COUNT(*) as count FROM anecdotes').get() as { count: number };
-console.log(`Total anecdotes in database: ${newCount.count}`);
-const newSubscriberCount = db.query('SELECT COUNT(*) as count FROM subscribers').get() as { count: number };
+const [newAnecdoteCount] = await db.select({ count: count() }).from(anecdotes);
+console.log(`Total anecdotes in database: ${newAnecdoteCount.count}`);
+const [newSubscriberCount] = await db.select({ count: count() }).from(subscribers);
 console.log(`Total subscribers in database: ${newSubscriberCount.count}`);
-const storylineRowsByAccount = db.query('SELECT payload FROM storylines_cache_accounts').all() as Array<{ payload?: string }>;
-let storylineTotal = 0;
-storylineRowsByAccount.forEach(row => {
-  if (!row.payload) return;
-  try {
-    const parsed = JSON.parse(row.payload);
-    if (Array.isArray(parsed)) storylineTotal += parsed.length;
-  } catch {
-    // no-op
-  }
-});
-if (storylineTotal === 0) {
-  const storylineRow = db.query('SELECT payload FROM storylines_cache WHERE id = 1').get() as { payload?: string } | null;
-  storylineTotal = storylineRow?.payload ? (JSON.parse(storylineRow.payload).length || 0) : 0;
-}
-console.log(`Total storylines in database: ${storylineTotal}`);
+
+process.exit(0);

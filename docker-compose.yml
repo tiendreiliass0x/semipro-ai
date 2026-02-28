@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: yenengalabs-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: yenengalabs
+      POSTGRES_PASSWORD: yenengalabs
+      POSTGRES_DB: yenengalabs
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

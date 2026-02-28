@@ -1,6 +1,8 @@
 import { basename, join } from 'path';
 import { existsSync } from 'fs';
-import type { Database } from 'bun:sqlite';
+import { eq, desc } from 'drizzle-orm';
+import type { Database } from '../data/database';
+import { anecdotes, media } from '../data/drizzle-schema';
 
 type CreateAnecdotesDbArgs = {
   db: Database;
@@ -9,96 +11,128 @@ type CreateAnecdotesDbArgs = {
 };
 
 export const createAnecdotesDb = ({ db, uploadsDir, generateId }: CreateAnecdotesDbArgs) => {
-  const getAllAnecdotes = () => {
-    const anecdotes = db.query('SELECT * FROM anecdotes ORDER BY year DESC, date DESC').all() as any[];
-    return anecdotes.map(a => ({
+  const getAllAnecdotes = async () => {
+    const rows = await db.select().from(anecdotes).orderBy(desc(anecdotes.year), desc(anecdotes.date));
+    const allMedia = await db.select().from(media);
+    const mediaByAnecdote = new Map<string, typeof allMedia>();
+    for (const m of allMedia) {
+      const list = mediaByAnecdote.get(m.anecdoteId) || [];
+      list.push(m);
+      mediaByAnecdote.set(m.anecdoteId, list);
+    }
+    return rows.map(a => ({
       ...a,
-      tags: JSON.parse(a.tags || '[]'),
-      media: db.query('SELECT * FROM media WHERE anecdoteId = ?').all(a.id) as any[],
+      tags: a.tags ?? [],
+      media: mediaByAnecdote.get(a.id) || [],
     }));
   };
 
-  const getAnecdoteById = (id: string) => {
-    const a = db.query('SELECT * FROM anecdotes WHERE id = ?').get(id) as any;
+  const getAnecdoteById = async (id: string) => {
+    const [a] = await db.select().from(anecdotes).where(eq(anecdotes.id, id));
     if (!a) return null;
+    const anecdoteMedia = await db.select().from(media).where(eq(media.anecdoteId, id));
     return {
       ...a,
-      tags: JSON.parse(a.tags || '[]'),
-      media: db.query('SELECT * FROM media WHERE anecdoteId = ?').all(id) as any[],
+      tags: a.tags ?? [],
+      media: anecdoteMedia,
     };
   };
 
-  const getAnecdotesByYear = (year: number) => {
-    const anecdotes = db.query('SELECT * FROM anecdotes WHERE year = ? ORDER BY date DESC').all(year) as any[];
-    return anecdotes.map(a => ({
+  const getAnecdotesByYear = async (year: number) => {
+    const rows = await db.select().from(anecdotes).where(eq(anecdotes.year, year)).orderBy(desc(anecdotes.date));
+    const ids = rows.map(r => r.id);
+    const allMedia = ids.length
+      ? await db.select().from(media)
+      : [];
+    const mediaByAnecdote = new Map<string, typeof allMedia>();
+    for (const m of allMedia) {
+      if (!ids.includes(m.anecdoteId)) continue;
+      const list = mediaByAnecdote.get(m.anecdoteId) || [];
+      list.push(m);
+      mediaByAnecdote.set(m.anecdoteId, list);
+    }
+    return rows.map(a => ({
       ...a,
-      tags: JSON.parse(a.tags || '[]'),
-      media: db.query('SELECT * FROM media WHERE anecdoteId = ?').all(a.id) as any[],
+      tags: a.tags ?? [],
+      media: mediaByAnecdote.get(a.id) || [],
     }));
   };
 
-  const createAnecdote = (data: any) => {
+  const createAnecdote = async (data: any) => {
     const id = generateId();
     const now = Date.now();
-    db.query(`
-      INSERT INTO anecdotes (id, date, year, title, story, storyteller, location, notes, tags, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, data.date, data.year, data.title, data.story, data.storyteller, data.location || '', data.notes || '', JSON.stringify(data.tags || []), now, now);
+    await db.insert(anecdotes).values({
+      id,
+      date: data.date,
+      year: data.year,
+      title: data.title,
+      story: data.story,
+      storyteller: data.storyteller,
+      location: data.location || '',
+      notes: data.notes || '',
+      tags: data.tags || [],
+      createdAt: now,
+      updatedAt: now,
+    });
 
     if (data.media && data.media.length > 0) {
-      for (const m of data.media) {
-        db.query('INSERT INTO media (id, anecdoteId, type, url, caption, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(generateId(), id, m.type, m.url, m.caption || '', now);
-      }
+      await db.insert(media).values(
+        data.media.map((m: any) => ({
+          id: generateId(),
+          anecdoteId: id,
+          type: m.type,
+          url: m.url,
+          caption: m.caption || '',
+          createdAt: now,
+        })),
+      );
     }
 
     return getAnecdoteById(id);
   };
 
-  const updateAnecdote = (id: string, data: any) => {
-    const existing = getAnecdoteById(id);
+  const updateAnecdote = async (id: string, data: any) => {
+    const existing = await getAnecdoteById(id);
     if (!existing) return null;
 
     const now = Date.now();
-    db.query(`
-      UPDATE anecdotes SET
-        date = COALESCE(?, date),
-        year = COALESCE(?, year),
-        title = COALESCE(?, title),
-        story = COALESCE(?, story),
-        storyteller = COALESCE(?, storyteller),
-        location = COALESCE(?, location),
-        notes = COALESCE(?, notes),
-        tags = COALESCE(?, tags),
-        updatedAt = ?
-      WHERE id = ?
-    `).run(
-      data.date,
-      data.year,
-      data.title,
-      data.story,
-      data.storyteller,
-      data.location,
-      data.notes,
-      data.tags ? JSON.stringify(data.tags) : null,
-      now,
-      id
-    );
+    await db
+      .update(anecdotes)
+      .set({
+        date: data.date ?? existing.date,
+        year: data.year ?? existing.year,
+        title: data.title ?? existing.title,
+        story: data.story ?? existing.story,
+        storyteller: data.storyteller ?? existing.storyteller,
+        location: data.location ?? existing.location,
+        notes: data.notes ?? existing.notes,
+        tags: data.tags ?? existing.tags,
+        updatedAt: now,
+      })
+      .where(eq(anecdotes.id, id));
 
     if (data.media) {
-      db.query('DELETE FROM media WHERE anecdoteId = ?').run(id);
-      for (const m of data.media) {
-        db.query('INSERT INTO media (id, anecdoteId, type, url, caption, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(generateId(), id, m.type, m.url, m.caption || '', now);
+      await db.delete(media).where(eq(media.anecdoteId, id));
+      if (data.media.length > 0) {
+        await db.insert(media).values(
+          data.media.map((m: any) => ({
+            id: generateId(),
+            anecdoteId: id,
+            type: m.type,
+            url: m.url,
+            caption: m.caption || '',
+            createdAt: now,
+          })),
+        );
       }
     }
 
     return getAnecdoteById(id);
   };
 
-  const deleteAnecdote = (id: string) => {
-    const media = db.query('SELECT url FROM media WHERE anecdoteId = ?').all(id) as any[];
-    for (const m of media) {
+  const deleteAnecdote = async (id: string) => {
+    const mediaRows = await db.select({ url: media.url }).from(media).where(eq(media.anecdoteId, id));
+    for (const m of mediaRows) {
       if (m.url && m.url.startsWith('/uploads/')) {
         const fp = join(uploadsDir, basename(m.url));
         if (existsSync(fp)) {
@@ -108,7 +142,7 @@ export const createAnecdotesDb = ({ db, uploadsDir, generateId }: CreateAnecdote
       }
     }
 
-    db.query('DELETE FROM anecdotes WHERE id = ?').run(id);
+    await db.delete(anecdotes).where(eq(anecdotes.id, id));
     return true;
   };
 

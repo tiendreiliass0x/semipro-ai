@@ -51,12 +51,12 @@ const emailLocalToWorkspaceName = (email: string) => {
   return `${title || 'Creator'} Workspace`;
 };
 
-const uniqueSlug = (desired: string, getAccountBySlug: (slug: string) => any) => {
+const uniqueSlug = async (desired: string, getAccountBySlug: (slug: string) => any) => {
   let base = toSlug(desired);
   if (!base) base = `workspace-${Date.now()}`;
   let candidate = base;
   let counter = 2;
-  while (getAccountBySlug(candidate)) {
+  while (await getAccountBySlug(candidate)) {
     candidate = `${base}-${counter}`;
     counter += 1;
   }
@@ -72,7 +72,7 @@ const getBearerToken = (req: Request) => {
   return authHeader.slice(7).trim();
 };
 
-const issueSession = (args: {
+const issueSession = async (args: {
   userId: string;
   accountId: string;
   createSession: (args: { userId: string; accountId: string; tokenHash: string; expiresAt: number }) => any;
@@ -80,7 +80,7 @@ const issueSession = (args: {
   const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
   const tokenHash = hashToken(token);
   const expiresAt = Date.now() + sessionTtlMs;
-  args.createSession({ userId: args.userId, accountId: args.accountId, tokenHash, expiresAt });
+  await args.createSession({ userId: args.userId, accountId: args.accountId, tokenHash, expiresAt });
   return { token, expiresAt };
 };
 
@@ -128,21 +128,21 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
       return new Response(JSON.stringify({ error: 'password must be at least 10 characters' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
 
-    const existingUser = getUserByEmail(email);
+    const existingUser = await getUserByEmail(email);
     if (existingUser) {
       return new Response(JSON.stringify({ error: 'email already in use' }), { status: 409, headers: jsonHeaders(corsHeaders) });
     }
 
     const accountName = accountNameInput || emailLocalToWorkspaceName(email);
-    const slug = uniqueSlug(accountName, getAccountBySlug);
+    const slug = await uniqueSlug(accountName, getAccountBySlug);
 
     const passwordHash = await Bun.password.hash(password);
-    const user = createUser({ email, passwordHash, name: email.split('@')[0] });
-    const account = createAccount({ name: accountName, slug, plan: 'free' });
-    addMembership({ accountId: account.id, userId: user.id, role: 'owner' });
-    const memberships = listUserMemberships(user.id);
+    const user = await createUser({ email, passwordHash, name: email.split('@')[0] });
+    const account = await createAccount({ name: accountName, slug, plan: 'free' });
+    await addMembership({ accountId: account.id, userId: user.id, role: 'owner' });
+    const memberships = await listUserMemberships(user.id);
 
-    const { token, expiresAt } = issueSession({ userId: user.id, accountId: account.id, createSession });
+    const { token, expiresAt } = await issueSession({ userId: user.id, accountId: account.id, createSession });
     return new Response(JSON.stringify({
       success: true,
       token,
@@ -162,7 +162,7 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
       return new Response(JSON.stringify({ error: 'email and password are required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
 
-    const user = getUserByEmail(email);
+    const user = await getUserByEmail(email);
     if (!user?.passwordHash) {
       return new Response(JSON.stringify({ error: 'invalid credentials' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     }
@@ -172,7 +172,7 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
       return new Response(JSON.stringify({ error: 'invalid credentials' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     }
 
-    const memberships = listUserMemberships(user.id);
+    const memberships = await listUserMemberships(user.id);
     if (!memberships.length) {
       return new Response(JSON.stringify({ error: 'no active account membership' }), { status: 403, headers: jsonHeaders(corsHeaders) });
     }
@@ -183,7 +183,7 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
       return new Response(JSON.stringify({ error: 'account not found for this user' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
 
-    const { token, expiresAt } = issueSession({ userId: user.id, accountId: membership.accountId, createSession });
+    const { token, expiresAt } = await issueSession({ userId: user.id, accountId: membership.accountId, createSession });
     return new Response(JSON.stringify({
       success: true,
       token,
@@ -222,17 +222,17 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
       return new Response(JSON.stringify({ error: 'Google token audience mismatch' }), { status: 403, headers: jsonHeaders(corsHeaders) });
     }
 
-    let user = getUserByEmail(email);
+    let user = await getUserByEmail(email);
     if (!user) {
       const randomPasswordHash = await Bun.password.hash(crypto.randomUUID());
-      user = createUser({ email, passwordHash: randomPasswordHash, name: name || email.split('@')[0] });
+      user = await createUser({ email, passwordHash: randomPasswordHash, name: name || email.split('@')[0] });
     }
 
-    const memberships = listUserMemberships(user.id);
+    const memberships = await listUserMemberships(user.id);
     let chosenMembership = resolveMembershipForLogin(memberships, requestedAccountSlug);
 
     if (!chosenMembership && requestedAccountSlug) {
-      const account = getAccountBySlug(requestedAccountSlug);
+      const account = await getAccountBySlug(requestedAccountSlug);
       if (account) {
         return new Response(JSON.stringify({ error: 'You are not a member of that account' }), { status: 403, headers: jsonHeaders(corsHeaders) });
       }
@@ -240,10 +240,10 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
 
     if (!chosenMembership) {
       const accountName = requestedAccountName || emailLocalToWorkspaceName(email);
-      const slug = requestedAccountSlug || uniqueSlug(accountName, getAccountBySlug);
-      const account = createAccount({ name: accountName, slug, plan: 'free' });
-      addMembership({ accountId: account.id, userId: user.id, role: 'owner' });
-      const reloadedMemberships = listUserMemberships(user.id);
+      const slug = requestedAccountSlug || await uniqueSlug(accountName, getAccountBySlug);
+      const account = await createAccount({ name: accountName, slug, plan: 'free' });
+      await addMembership({ accountId: account.id, userId: user.id, role: 'owner' });
+      const reloadedMemberships = await listUserMemberships(user.id);
       chosenMembership = resolveMembershipForLogin(reloadedMemberships, slug) || reloadedMemberships[0];
     }
 
@@ -251,8 +251,8 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
       return new Response(JSON.stringify({ error: 'No active account membership available' }), { status: 403, headers: jsonHeaders(corsHeaders) });
     }
 
-    const finalMemberships = listUserMemberships(user.id);
-    const { token, expiresAt } = issueSession({ userId: user.id, accountId: chosenMembership.accountId, createSession });
+    const finalMemberships = await listUserMemberships(user.id);
+    const { token, expiresAt } = await issueSession({ userId: user.id, accountId: chosenMembership.accountId, createSession });
     return new Response(JSON.stringify({
       success: true,
       token,
@@ -273,12 +273,12 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
     if (!token) {
       return new Response(JSON.stringify({ error: 'bearer token required' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     }
-    const success = revokeSessionByTokenHash(hashToken(token));
+    const success = await revokeSessionByTokenHash(hashToken(token));
     return new Response(JSON.stringify({ success }), { headers: jsonHeaders(corsHeaders) });
   }
 
   if (pathname === '/api/auth/switch-account' && method === 'POST') {
-    const context = getAuthContext(req);
+    const context = await getAuthContext(req);
     if (!context) {
       return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     }
@@ -290,7 +290,7 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
       return new Response(JSON.stringify({ error: 'accountId or accountSlug is required' }), { status: 400, headers: jsonHeaders(corsHeaders) });
     }
 
-    const memberships = listUserMemberships(context.userId);
+    const memberships = await listUserMemberships(context.userId);
     const membership = memberships.find(item => {
       if (targetAccountId && String(item.accountId) === targetAccountId) return true;
       if (targetAccountSlug && String(item.accountSlug).toLowerCase() === targetAccountSlug) return true;
@@ -301,10 +301,10 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
       return new Response(JSON.stringify({ error: 'account membership not found' }), { status: 404, headers: jsonHeaders(corsHeaders) });
     }
 
-    const { token, expiresAt } = issueSession({ userId: context.userId, accountId: membership.accountId, createSession });
+    const { token, expiresAt } = await issueSession({ userId: context.userId, accountId: membership.accountId, createSession });
     const currentToken = getBearerToken(req);
     if (currentToken) {
-      revokeSessionByTokenHash(hashToken(currentToken));
+      await revokeSessionByTokenHash(hashToken(currentToken));
     }
 
     return new Response(JSON.stringify({
@@ -322,12 +322,12 @@ export const handleAuthRoutes = async (args: AuthRouteArgs): Promise<Response | 
   }
 
   if (pathname === '/api/auth/me' && method === 'GET') {
-    const context = getAuthContext(req);
+    const context = await getAuthContext(req);
     if (!context) {
       return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: jsonHeaders(corsHeaders) });
     }
 
-    const memberships = listUserMemberships(context.userId);
+    const memberships = await listUserMemberships(context.userId);
     return new Response(JSON.stringify({
       user: {
         id: context.userId,

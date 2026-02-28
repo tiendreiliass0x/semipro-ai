@@ -1,8 +1,7 @@
 import { serve } from 'bun';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
-import { Database } from 'bun:sqlite';
-import { initializeSchema } from './data/schema';
+import { createDatabase } from './data/database';
 import { generateId, createAuthHelpers, createUploadOwnershipHelpers, getUploadFilenameFromUrl } from './lib/auth';
 import { buildCorsHeaders } from './lib/cors';
 import { validateStorylinesPayload } from './lib/validation';
@@ -26,19 +25,16 @@ import { handleUploadsRoutes } from './routes/uploads';
 
 const PORT = parseInt(process.env.PORT || '3001');
 const ADMIN_ACCESS_KEY = process.env.ADMIN_ACCESS_KEY || '';
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://yenengalabs:yenengalabs@localhost:5432/yenengalabs';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-4.1-mini';
 
 // Ensure directories
-const dataDir = join(import.meta.dir, 'data');
 const uploadsDir = join(import.meta.dir, 'uploads');
-if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
 if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
 
 // Database
-const DB_PATH = join(dataDir, 'anecdotes.db');
-const db = new Database(DB_PATH);
-initializeSchema(db);
+const db = createDatabase(DATABASE_URL);
 
 // Database modules
 const {
@@ -97,7 +93,7 @@ const processSceneVideoQueue = async () => {
   sceneVideoWorkerActive = true;
   try {
     while (true) {
-      const job = claimNextQueuedSceneVideo();
+      const job = await claimNextQueuedSceneVideo();
       if (!job) break;
       try {
         console.log(`[queue] Processing scene video job ${job.id} (project: ${job.projectId}, beat: ${job.beatId})`);
@@ -108,16 +104,16 @@ const processSceneVideoQueue = async () => {
           modelKey: String(job.modelKey || 'seedance'),
           durationSeconds: Number(job.durationSeconds || 5),
         });
-        const project = getProjectById(String(job.projectId || ''));
+        const project = await getProjectById(String(job.projectId || ''));
         if (project?.accountId) {
           const filename = getUploadFilenameFromUrl(String(videoUrl || ''));
-          if (filename) registerUploadOwnership({ filename, accountId: String(project.accountId) });
+          if (filename) await registerUploadOwnership({ filename, accountId: String(project.accountId) });
         }
-        updateSceneVideoJob(job.id, { status: 'completed', videoUrl, error: '' });
+        await updateSceneVideoJob(job.id, { status: 'completed', videoUrl, error: '' });
         console.log(`[queue] Completed scene video job ${job.id}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to generate scene video';
-        updateSceneVideoJob(job.id, { status: 'failed', error: message });
+        await updateSceneVideoJob(job.id, { status: 'failed', error: message });
         console.error(`[queue] Failed scene video job ${job.id}: ${message}`);
       }
     }
@@ -132,33 +128,33 @@ const processFinalFilmQueue = async () => {
   finalFilmWorkerActive = true;
   try {
     while (true) {
-      const filmJob = claimNextQueuedProjectFinalFilm();
+      const filmJob = await claimNextQueuedProjectFinalFilm();
       if (!filmJob) break;
       try {
         const projectId = String(filmJob.projectId || '');
         console.log(`[queue] Processing final film job ${filmJob.id} (project: ${projectId})`);
-        const project = getProjectById(projectId);
-        if (!project) { updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'Project not found' }); continue; }
-        const latestPackage = getLatestProjectPackage(projectId);
+        const project = await getProjectById(projectId);
+        if (!project) { await updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'Project not found' }); continue; }
+        const latestPackage = await getLatestProjectPackage(projectId);
         const storyboard = Array.isArray(latestPackage?.payload?.storyboard) ? latestPackage.payload.storyboard : [];
-        if (!storyboard.length) { updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'No storyboard found. Generate scenes first.' }); continue; }
-        const sceneVideos = listLatestSceneVideos(projectId);
+        if (!storyboard.length) { await updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'No storyboard found. Generate scenes first.' }); continue; }
+        const sceneVideoList = await listLatestSceneVideos(projectId);
         const completedByBeatId = new Map<string, any>();
-        sceneVideos.forEach(item => {
+        sceneVideoList.forEach(item => {
           if (String(item?.status) === 'completed' && String(item?.videoUrl || '').trim()) completedByBeatId.set(String(item.beatId), item);
         });
         const clipUrls = storyboard
           .map((scene: any) => completedByBeatId.get(String(scene.beatId))?.videoUrl)
           .filter((url: any) => typeof url === 'string' && url.trim().length > 0);
-        if (!clipUrls.length) { updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'No completed scene videos found to compile.' }); continue; }
+        if (!clipUrls.length) { await updateProjectFinalFilm(filmJob.id, { status: 'failed', error: 'No completed scene videos found to compile.' }); continue; }
         const outputFilename = `final-film-${projectId}-${Date.now()}.mp4`;
         const videoUrl = await createFinalFilmFromClips({ uploadsDir, clipUrls, outputFilename });
-        if (project?.accountId) registerUploadOwnership({ filename: outputFilename, accountId: String(project.accountId) });
-        updateProjectFinalFilm(filmJob.id, { status: 'completed', sourceCount: clipUrls.length, videoUrl, error: '' });
+        if (project?.accountId) await registerUploadOwnership({ filename: outputFilename, accountId: String(project.accountId) });
+        await updateProjectFinalFilm(filmJob.id, { status: 'completed', sourceCount: clipUrls.length, videoUrl, error: '' });
         console.log(`[queue] Completed final film job ${filmJob.id}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to build final film';
-        updateProjectFinalFilm(filmJob.id, { status: 'failed', error: message });
+        await updateProjectFinalFilm(filmJob.id, { status: 'failed', error: message });
         console.error(`[queue] Failed final film job ${filmJob.id}: ${message}`);
       }
     }
@@ -170,17 +166,19 @@ const processFinalFilmQueue = async () => {
 // Periodic tasks
 setInterval(() => { processSceneVideoQueue().catch(() => null); }, 2500);
 setInterval(() => { processFinalFilmQueue().catch(() => null); }, 2500);
-setInterval(() => {
-  const removed = revokeExpiredSessions();
+setInterval(async () => {
+  const removed = await revokeExpiredSessions();
   if (removed > 0) console.log(`[auth] Removed ${removed} expired session(s)`);
 }, 5 * 60 * 1000);
 
-const requeuedCount = requeueStaleProcessingSceneVideos();
-if (requeuedCount > 0) console.log(`[queue] Re-queued ${requeuedCount} stale processing scene video job(s)`);
-const requeuedFinalFilmCount = requeueStaleProcessingProjectFinalFilms();
-if (requeuedFinalFilmCount > 0) console.log(`[queue] Re-queued ${requeuedFinalFilmCount} stale processing final film job(s)`);
-processSceneVideoQueue().catch(() => null);
-processFinalFilmQueue().catch(() => null);
+(async () => {
+  const requeuedCount = await requeueStaleProcessingSceneVideos();
+  if (requeuedCount > 0) console.log(`[queue] Re-queued ${requeuedCount} stale processing scene video job(s)`);
+  const requeuedFinalFilmCount = await requeueStaleProcessingProjectFinalFilms();
+  if (requeuedFinalFilmCount > 0) console.log(`[queue] Re-queued ${requeuedFinalFilmCount} stale processing final film job(s)`);
+  processSceneVideoQueue().catch(() => null);
+  processFinalFilmQueue().catch(() => null);
+})();
 
 // HTTP server
 serve({
@@ -202,7 +200,7 @@ serve({
 
     if (pathname === '/api/admin/db-stats' && method === 'GET') {
       if (!verifyAdminKey(req)) return new Response(JSON.stringify({ error: 'Admin key required' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      return new Response(JSON.stringify(getDbStats(db)), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify(await getDbStats(db)), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const authResponse = await handleAuthRoutes({ req, pathname, method, corsHeaders, getUserByEmail, createUser, getAccountBySlug, createAccount, addMembership, listUserMemberships, createSession, revokeSessionByTokenHash, getAuthContext });
@@ -262,4 +260,4 @@ const resolveVideoModelLog = (key: 'seedance' | 'kling' | 'veo3') => {
   }
 };
 console.log(`Video models: ${resolveVideoModelLog('seedance')} | ${resolveVideoModelLog('kling')} | ${resolveVideoModelLog('veo3')}`);
-console.log(`Database: ${DB_PATH}`);
+console.log(`Database: PostgreSQL (${DATABASE_URL.replace(/\/\/[^@]*@/, '//***@')})`);
