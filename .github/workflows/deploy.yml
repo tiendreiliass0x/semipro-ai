@@ -8,21 +8,21 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '22.12.0'
-    
+
     - name: Install frontend dependencies
       run: |
         cd app
         npm ci
-    
+
     - name: Build frontend
       run: |
         cd app
@@ -37,6 +37,7 @@ jobs:
         test -f backend/data/migrate.ts
         test -f backend/package.json
         test -f backend/bun.lock
+        test -f docker-compose.yml
 
     - name: Setup SSH key
       run: |
@@ -51,29 +52,53 @@ jobs:
         host: ${{ secrets.DROPLET_IP }}
         username: deploy
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        source: "app/dist/**,backend/**,!backend/node_modules/**,!backend/uploads/**,!backend/.env,!backend/data/anecdotes.db"
+        source: "app/dist/**,backend/**,docker-compose.yml,scripts/**,!backend/node_modules/**,!backend/uploads/**,!backend/.env"
         target: "/var/www/semipro-ai/"
         strip_components: 0
         overwrite: true
-    
-    - name: Restart PM2 services
+
+    - name: Setup database and restart services
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.DROPLET_IP }}
         username: deploy
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash
           export BUN_INSTALL="$HOME/.bun"
           export PATH="$BUN_INSTALL/bin:$PATH"
+          command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash
 
-          cd /var/www/semipro-ai/backend
+          cd /var/www/semipro-ai
+
+          # Start PostgreSQL via Docker Compose
+          docker compose up -d
+
+          # Wait for PostgreSQL to accept connections
+          echo "Waiting for PostgreSQL..."
+          for i in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready -U yenengalabs >/dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "PostgreSQL failed to start"
+              docker compose logs postgres
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # Install backend dependencies and sync schema
+          cd backend
           bun install --frozen-lockfile
-          bun run migrate
+          bun run db:push
+          bun run seed
+
+          # Restart application
           pm2 delete semipro-ai-api || true
           pm2 start server.ts --interpreter bun --name semipro-ai-api
           pm2 save
-          echo "✅ Deployment complete!"
+          echo "Deployment complete!"
 
     - name: Post-deploy health check (internal)
       uses: appleboy/ssh-action@v1.0.3
@@ -98,8 +123,8 @@ jobs:
       if: always()
       run: |
         if [ "${{ job.status }}" == "success" ]; then
-          echo "🎉 Deployment successful!"
+          echo "Deployment successful!"
         else
-          echo "❌ Deployment failed"
+          echo "Deployment failed"
           exit 1
         fi

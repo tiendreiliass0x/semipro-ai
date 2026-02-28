@@ -1,93 +1,94 @@
 #!/bin/bash
 
 # YenengaLabs - Deployment Prep Script
-# Builds frontend assets and validates backend runtime prerequisites.
+# Builds frontend assets, starts PostgreSQL, and syncs database schema.
 
 set -e
 
 echo "YenengaLabs - Deployment"
 echo "=============================================="
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Resolve project directory whether this script is at repo root
-# (./deploy.sh) or inside a nested folder (e.g., ./scripts/deploy.sh).
 if [ -d "$SCRIPT_DIR/app" ] && [ -d "$SCRIPT_DIR/backend" ]; then
     PROJECT_DIR="$SCRIPT_DIR"
 elif [ -d "$(dirname "$SCRIPT_DIR")/app" ] && [ -d "$(dirname "$SCRIPT_DIR")/backend" ]; then
     PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 else
-    echo -e "${RED}❌ Could not determine project directory from script location${NC}"
+    echo -e "${RED}Could not determine project directory from script location${NC}"
     exit 1
 fi
 
-# Check if Node.js is installed (frontend build tooling)
+# Check prerequisites
 if ! command -v node &> /dev/null; then
-    echo -e "${RED}❌ Node.js is not installed${NC}"
+    echo -e "${RED}Node.js is not installed${NC}"
     exit 1
 fi
+echo -e "${GREEN}Node.js version: $(node --version)${NC}"
 
-echo -e "${GREEN}✓ Node.js version: $(node --version)${NC}"
-
-# Check if Bun is installed (backend runtime)
 if ! command -v bun &> /dev/null; then
-    echo -e "${RED}❌ Bun is not installed${NC}"
+    echo -e "${RED}Bun is not installed${NC}"
     exit 1
 fi
+echo -e "${GREEN}Bun version: $(bun --version)${NC}"
 
-echo -e "${GREEN}✓ Bun version: $(bun --version)${NC}"
+if ! command -v docker &> /dev/null; then
+    echo -e "${RED}Docker is not installed${NC}"
+    exit 1
+fi
+echo -e "${GREEN}Docker: $(docker --version)${NC}"
+
+# Start PostgreSQL
+echo ""
+echo "Starting PostgreSQL..."
+cd "$PROJECT_DIR"
+docker compose up -d
+
+echo "Waiting for PostgreSQL..."
+for i in $(seq 1 30); do
+    if docker compose exec -T postgres pg_isready -U yenengalabs &> /dev/null; then
+        echo -e "${GREEN}PostgreSQL is ready${NC}"
+        break
+    fi
+    if [ "$i" -eq 30 ]; then
+        echo -e "${RED}PostgreSQL failed to start after 30s${NC}"
+        exit 1
+    fi
+    sleep 1
+done
 
 # Build frontend
 echo ""
-echo "📦 Building frontend..."
+echo "Building frontend..."
 cd "$PROJECT_DIR/app"
 
-# Install dependencies if node_modules doesn't exist
 if [ ! -d "node_modules" ]; then
     echo "Installing dependencies..."
     npm install
 fi
 
-# Build
 npm run build
+echo -e "${GREEN}Frontend built successfully${NC}"
 
-echo -e "${GREEN}✓ Frontend built successfully${NC}"
-
-# Check backend
+# Setup backend
 echo ""
-echo "🔧 Checking backend..."
+echo "Setting up backend..."
 cd "$PROJECT_DIR/backend"
-
-# Create data files if they don't exist
-if [ ! -f "data/anecdotes.json" ]; then
-    echo "[]" > data/anecdotes.json
-    echo -e "${YELLOW}⚠ Created empty anecdotes.json${NC}"
-fi
-
-if [ ! -f "data/subscribers.json" ]; then
-    echo "[]" > data/subscribers.json
-    echo -e "${YELLOW}⚠ Created empty subscribers.json${NC}"
-fi
-
-# Create uploads directory
 mkdir -p uploads
 
-# Run migrations
-bun run migrate >/dev/null 2>&1 || true
+bun run db:push
+bun run seed
 
-echo -e "${GREEN}✓ Backend ready${NC}"
+echo -e "${GREEN}Backend ready${NC}"
 
 # Summary
 echo ""
 echo "=============================================="
-echo -e "${GREEN}✅ Deployment preparation complete!${NC}"
+echo -e "${GREEN}Deployment preparation complete!${NC}"
 echo ""
 echo "To start the application:"
 echo ""
@@ -97,9 +98,7 @@ echo ""
 echo "  2. Serve the frontend (in another terminal):"
 echo "     cd app/dist && npx serve -s . -l 5173"
 echo ""
-echo "  Or use a static file server like nginx, Apache, or Vercel."
-echo ""
-echo "📁 Frontend build: app/dist/"
-echo "📁 Backend data:   backend/data/"
-echo "📁 Uploads:        backend/uploads/"
+echo "  Database: PostgreSQL (localhost:5432/yenengalabs)"
+echo "  Frontend: app/dist/"
+echo "  Uploads:  backend/uploads/"
 echo ""
