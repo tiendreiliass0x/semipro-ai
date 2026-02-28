@@ -39,7 +39,10 @@ type BrowserSpeechWindow = Window & {
 };
 
 export function ProjectStudio() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, account, memberships } = useAuth();
+  const currentMembership = account?.id ? memberships.find(m => m.accountId === account.id) : null;
+  const accountPlan = currentMembership?.accountPlan || 'free';
+  const accountRole = currentMembership?.role || 'member';
   const [projects, setProjects] = useState<MovieProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [notes, setNotes] = useState<StoryNote[]>([]);
@@ -122,6 +125,7 @@ export function ProjectStudio() {
   const [isGeneratingFinalFilm, setIsGeneratingFinalFilm] = useState(false);
   const [videoPromptByBeatId, setVideoPromptByBeatId] = useState<Record<string, string>>({});
   const [cinematographerPromptByBeatId, setCinematographerPromptByBeatId] = useState<Record<string, string>>({});
+  const [userPromptByBeatId, setUserPromptByBeatId] = useState<Record<string, string>>({});
   const [promptLayerVersionByBeatId, setPromptLayerVersionByBeatId] = useState<Record<string, number>>({});
   const [promptLayerHistoryByBeatId, setPromptLayerHistoryByBeatId] = useState<Record<string, ScenePromptLayer[]>>({});
   const [activePromptHistoryBeatId, setActivePromptHistoryBeatId] = useState<string | null>(null);
@@ -991,7 +995,7 @@ export function ProjectStudio() {
         cinematographerPrompt: cinematographerPromptByBeatId[beatId] || '',
         filmType: sceneFilmTypeByBeatId[beatId] || filmType,
         modelKey: sceneModelByBeatId[beatId] || 'seedance',
-        continuationMode: continuationModeByBeatId[beatId] || 'strict',
+        continuationMode: continuationModeByBeatId[beatId] || 'balanced',
         anchorBeatId: anchorBeatIdByBeatId[beatId] || '',
         autoRegenerateThreshold: autoRegenThresholdByBeatId[beatId] ?? 0.75,
         source,
@@ -1011,13 +1015,15 @@ export function ProjectStudio() {
     setIsGeneratingVideoBeatId(beatId);
     setBusyMessage('Queueing scene video render...');
     try {
+      const userPrompt = userPromptByBeatId[beatId]?.trim() || '';
       const response = await api.generateSceneVideo(selectedProject.id, beatId, {
-        directorPrompt: videoPromptByBeatId[beatId] || '',
-        cinematographerPrompt: cinematographerPromptByBeatId[beatId] || '',
+        ...(userPrompt ? { prompt: userPrompt } : {}),
+        directorPrompt: userPrompt || videoPromptByBeatId[beatId] || '',
+        cinematographerPrompt: userPrompt || cinematographerPromptByBeatId[beatId] || '',
         filmType: sceneFilmTypeByBeatId[beatId] || filmType,
         imageModelKey: storyboardImageModel,
         modelKey: sceneModelByBeatId[beatId] || 'seedance',
-        continuationMode: continuationModeByBeatId[beatId] || 'strict',
+        continuationMode: continuationModeByBeatId[beatId] || 'balanced',
         anchorBeatId: anchorBeatIdByBeatId[beatId] || '',
         autoRegenerateThreshold: autoRegenThresholdByBeatId[beatId] ?? 0.75,
       });
@@ -1057,13 +1063,15 @@ export function ProjectStudio() {
       for (const scene of generatedPackage.storyboard) {
         const existing = sceneVideosByBeatId[scene.beatId];
         if (existing?.status === 'queued' || existing?.status === 'processing') continue;
+        const sceneUserPrompt = userPromptByBeatId[scene.beatId]?.trim() || '';
         const response = await api.generateSceneVideo(selectedProject.id, scene.beatId, {
-          directorPrompt: videoPromptByBeatId[scene.beatId] || '',
-          cinematographerPrompt: cinematographerPromptByBeatId[scene.beatId] || '',
+          ...(sceneUserPrompt ? { prompt: sceneUserPrompt } : {}),
+          directorPrompt: sceneUserPrompt || videoPromptByBeatId[scene.beatId] || '',
+          cinematographerPrompt: sceneUserPrompt || cinematographerPromptByBeatId[scene.beatId] || '',
           filmType: sceneFilmTypeByBeatId[scene.beatId] || filmType,
           imageModelKey: storyboardImageModel,
           modelKey: sceneModelByBeatId[scene.beatId] || 'seedance',
-          continuationMode: continuationModeByBeatId[scene.beatId] || 'strict',
+          continuationMode: continuationModeByBeatId[scene.beatId] || 'balanced',
           anchorBeatId: anchorBeatIdByBeatId[scene.beatId] || '',
           autoRegenerateThreshold: autoRegenThresholdByBeatId[scene.beatId] ?? 0.75,
         }).catch(() => null);
@@ -1939,12 +1947,15 @@ export function ProjectStudio() {
                 videoStats={videoStats}
                 finalFilm={finalFilm}
                 isAuthenticated={isAuthenticated}
+                accountPlan={accountPlan}
+                accountRole={accountRole}
                 isRefreshingVideos={isRefreshingVideos}
                 isGeneratingAllVideos={isGeneratingAllVideos}
                 isGeneratingFinalFilm={isGeneratingFinalFilm}
                 isGeneratingVideoBeatId={isGeneratingVideoBeatId}
                 videoPromptByBeatId={videoPromptByBeatId}
                 cinematographerPromptByBeatId={cinematographerPromptByBeatId}
+                userPromptByBeatId={userPromptByBeatId}
                 promptLayerVersionByBeatId={promptLayerVersionByBeatId}
                 promptLayerHistoryByBeatId={promptLayerHistoryByBeatId}
                 activePromptHistoryBeatId={activePromptHistoryBeatId}
@@ -1980,6 +1991,7 @@ export function ProjectStudio() {
                 onChangeAutoRegenThreshold={(beatId, value) => setAutoRegenThresholdByBeatId(prev => ({ ...prev, [beatId]: value }))}
                 onChangeVideoPrompt={(beatId, prompt) => setVideoPromptByBeatId(prev => ({ ...prev, [beatId]: prompt }))}
                 onChangeCinematographerPrompt={(beatId, prompt) => setCinematographerPromptByBeatId(prev => ({ ...prev, [beatId]: prompt }))}
+                onChangeUserPrompt={(beatId, prompt) => setUserPromptByBeatId(prev => ({ ...prev, [beatId]: prompt }))}
                 onAppendCameraMove={appendCameraMoveToPrompt}
                 getSceneFrameUrl={getSceneFrameUrl}
                 getSceneVideoUrl={getSceneVideoUrl}

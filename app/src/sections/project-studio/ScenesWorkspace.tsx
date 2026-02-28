@@ -19,12 +19,15 @@ type ScenesWorkspaceProps = {
   videoStats: VideoStats;
   finalFilm: ProjectFinalFilm | null;
   isAuthenticated: boolean;
+  accountPlan: string;
+  accountRole: string;
   isRefreshingVideos: boolean;
   isGeneratingAllVideos: boolean;
   isGeneratingFinalFilm: boolean;
   isGeneratingVideoBeatId: string | null;
   videoPromptByBeatId: Record<string, string>;
   cinematographerPromptByBeatId: Record<string, string>;
+  userPromptByBeatId: Record<string, string>;
   promptLayerVersionByBeatId: Record<string, number>;
   promptLayerHistoryByBeatId: Record<string, ScenePromptLayer[]>;
   activePromptHistoryBeatId: string | null;
@@ -60,6 +63,7 @@ type ScenesWorkspaceProps = {
   onChangeAutoRegenThreshold: (beatId: string, value: number) => void;
   onChangeVideoPrompt: (beatId: string, prompt: string) => void;
   onChangeCinematographerPrompt: (beatId: string, prompt: string) => void;
+  onChangeUserPrompt: (beatId: string, prompt: string) => void;
   onAppendCameraMove: (beatId: string, move: string) => void;
   getSceneFrameUrl: (scene: StoryboardScene) => string;
   getSceneVideoUrl: (url: string) => string;
@@ -73,12 +77,15 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     videoStats,
     finalFilm,
     isAuthenticated,
+    accountPlan,
+    accountRole,
     isRefreshingVideos,
     isGeneratingAllVideos,
     isGeneratingFinalFilm,
     isGeneratingVideoBeatId,
     videoPromptByBeatId,
     cinematographerPromptByBeatId,
+    userPromptByBeatId,
     promptLayerVersionByBeatId,
     promptLayerHistoryByBeatId,
     activePromptHistoryBeatId,
@@ -114,12 +121,15 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
     onChangeAutoRegenThreshold,
     onChangeVideoPrompt,
     onChangeCinematographerPrompt,
+    onChangeUserPrompt,
     onAppendCameraMove,
     getSceneFrameUrl,
     getSceneVideoUrl,
   } = props;
 
   const orderedScenes = generatedPackage.storyboard || [];
+  const isPro = accountPlan === 'pro' || accountPlan === 'enterprise' || accountRole === 'admin' || accountRole === 'owner';
+  const isAdmin = accountRole === 'admin' || accountRole === 'owner';
   const [copiedDiagnosticsBeatId, setCopiedDiagnosticsBeatId] = useState<string | null>(null);
 
   const getContinuityBadge = (score: number, threshold: number) => {
@@ -169,7 +179,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
       `continuityScore=${Number(video.continuityScore ?? 0).toFixed(2)}`,
       `continuityThreshold=${Number(video.continuityThreshold ?? 0.75).toFixed(2)}`,
       `recommendRegenerate=${Boolean(video.recommendRegenerate)}`,
-      `continuationMode=${String(continuationModeByBeatId[beatId] || 'strict')}`,
+      `continuationMode=${String(continuationModeByBeatId[beatId] || 'balanced')}`,
       `anchorBeatId=${String(anchorBeatIdByBeatId[beatId] || '') || 'auto'}`,
       `directorChars=${String(videoPromptByBeatId[beatId] || '').trim().length}`,
       `cinematographerChars=${String(cinematographerPromptByBeatId[beatId] || '').trim().length}`,
@@ -386,71 +396,81 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Scene Continuation Mode</p>
-                    <select
-                      value={continuationModeByBeatId[scene.beatId] || 'strict'}
-                      onChange={event => onChangeContinuationMode(scene.beatId, event.target.value as 'off' | 'strict' | 'balanced' | 'loose')}
-                      className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200"
-                    >
-                      <option value="off">off</option>
-                      <option value="strict">strict</option>
-                      <option value="balanced">balanced</option>
-                      <option value="loose">loose</option>
-                    </select>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Anchor Scene Frame</p>
-                    <select
-                      value={anchorBeatIdByBeatId[scene.beatId] || ''}
-                      onChange={event => onChangeAnchorBeatId(scene.beatId, event.target.value)}
-                      className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200"
-                    >
-                      <option value="">Auto (current / previous scene)</option>
-                      {orderedScenes
-                        .filter(candidate => Number(candidate.sceneNumber || 0) < Number(scene.sceneNumber || 0))
-                        .map(candidate => (
-                          <option key={`${scene.beatId}-anchor-${candidate.beatId}`} value={candidate.beatId}>
-                            Scene {candidate.sceneNumber} · {candidate.slugline || candidate.beatId}
-                          </option>
+                  <textarea
+                    value={userPromptByBeatId[scene.beatId] || ''}
+                    onChange={event => onChangeUserPrompt(scene.beatId, event.target.value)}
+                    className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200 min-h-16"
+                    placeholder="User prompt"
+                  />
+                  {isPro && (
+                    <>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Scene Continuation Mode</p>
+                        <select
+                          value={continuationModeByBeatId[scene.beatId] || 'balanced'}
+                          onChange={event => onChangeContinuationMode(scene.beatId, event.target.value as 'off' | 'strict' | 'balanced' | 'loose')}
+                          className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200"
+                        >
+                          <option value="off">off</option>
+                          <option value="strict">strict</option>
+                          <option value="balanced">balanced</option>
+                          <option value="loose">loose</option>
+                        </select>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Anchor Scene Frame</p>
+                        <select
+                          value={anchorBeatIdByBeatId[scene.beatId] || ''}
+                          onChange={event => onChangeAnchorBeatId(scene.beatId, event.target.value)}
+                          className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200"
+                        >
+                          <option value="">Auto (current / previous scene)</option>
+                          {orderedScenes
+                            .filter(candidate => Number(candidate.sceneNumber || 0) < Number(scene.sceneNumber || 0))
+                            .map(candidate => (
+                              <option key={`${scene.beatId}-anchor-${candidate.beatId}`} value={candidate.beatId}>
+                                Scene {candidate.sceneNumber} · {candidate.slugline || candidate.beatId}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Auto-Regenerate Threshold</p>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={Number(autoRegenThresholdByBeatId[scene.beatId] ?? 0.75)}
+                          onChange={event => onChangeAutoRegenThreshold(scene.beatId, Number(event.target.value || 0.75))}
+                          className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200"
+                        />
+                      </div>
+                      <textarea
+                        value={videoPromptByBeatId[scene.beatId] || ''}
+                        onChange={event => onChangeVideoPrompt(scene.beatId, event.target.value)}
+                        className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200 min-h-16"
+                        placeholder="Director layer: performance, emotional tone, scene intent."
+                      />
+                      <textarea
+                        value={cinematographerPromptByBeatId[scene.beatId] || ''}
+                        onChange={event => onChangeCinematographerPrompt(scene.beatId, event.target.value)}
+                        className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200 min-h-16"
+                        placeholder="Cinematographer layer: camera, lens feel, movement, lighting."
+                      />
+                      <div className="flex flex-wrap gap-1">
+                        {cameraMoves.map(move => (
+                          <button
+                            key={`${scene.beatId}-${move}`}
+                            onClick={() => onAppendCameraMove(scene.beatId, move)}
+                            className="text-[10px] px-2 py-1 rounded border border-gray-700 text-gray-300 hover:text-cyan-200"
+                          >
+                            {move}
+                          </button>
                         ))}
-                    </select>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Auto-Regenerate Threshold</p>
-                    <input
-                      type="number"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={Number(autoRegenThresholdByBeatId[scene.beatId] ?? 0.75)}
-                      onChange={event => onChangeAutoRegenThreshold(scene.beatId, Number(event.target.value || 0.75))}
-                      className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200"
-                    />
-                  </div>
-                  <textarea
-                    value={videoPromptByBeatId[scene.beatId] || ''}
-                    onChange={event => onChangeVideoPrompt(scene.beatId, event.target.value)}
-                    className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200 min-h-16"
-                    placeholder="Director layer: performance, emotional tone, scene intent."
-                  />
-                  <textarea
-                    value={cinematographerPromptByBeatId[scene.beatId] || ''}
-                    onChange={event => onChangeCinematographerPrompt(scene.beatId, event.target.value)}
-                    className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200 min-h-16"
-                    placeholder="Cinematographer layer: camera, lens feel, movement, lighting."
-                  />
-                  <div className="flex flex-wrap gap-1">
-                    {cameraMoves.map(move => (
-                      <button
-                        key={`${scene.beatId}-${move}`}
-                        onClick={() => onAppendCameraMove(scene.beatId, move)}
-                        className="text-[10px] px-2 py-1 rounded border border-gray-700 text-gray-300 hover:text-cyan-200"
-                      >
-                        {move}
-                      </button>
-                    ))}
-                  </div>
+                      </div>
+                    </>
+                  )}
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[10px] text-gray-500">
                       Prompt snapshot version: v{promptLayerVersionByBeatId[scene.beatId] || 0}
@@ -500,7 +520,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
                             <PopoverContent align="end" className="w-72 bg-[#0a0a0a] border-gray-700 text-gray-200 p-3">
                               <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-2">Score Factors</p>
                               <div className="space-y-1 text-xs">
-                                <p>Mode: <span className="text-cyan-200">{continuationModeByBeatId[scene.beatId] || 'strict'}</span></p>
+                                <p>Mode: <span className="text-cyan-200">{continuationModeByBeatId[scene.beatId] || 'balanced'}</span></p>
                                 <p>Anchor frame: <span className="text-cyan-200">{anchorBeatIdByBeatId[scene.beatId] ? `Scene beat ${anchorBeatIdByBeatId[scene.beatId]}` : 'Auto selection'}</span></p>
                                 <p>Threshold: <span className="text-cyan-200">{Number(autoRegenThresholdByBeatId[scene.beatId] ?? 0.75).toFixed(2)}</span></p>
                                 <p>Director layer length: <span className="text-cyan-200">{String(videoPromptByBeatId[scene.beatId] || '').trim().length} chars</span></p>
@@ -533,12 +553,14 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
                       Regenerate (Recommended)
                     </button>
                   )}
-                  <button
-                    onClick={() => onOpenSceneVideoTraceHistory(scene.beatId)}
-                    className="text-[10px] px-2 py-1 rounded border border-cyan-500/40 text-cyan-100 hover:text-white"
-                  >
-                    Prompt Trace
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => onOpenSceneVideoTraceHistory(scene.beatId)}
+                      className="text-[10px] px-2 py-1 rounded border border-cyan-500/40 text-cyan-100 hover:text-white"
+                    >
+                      Prompt Trace
+                    </button>
+                  )}
                 </div>
               )}
               <p className="text-[11px] text-gray-500 line-clamp-2">{scene.imagePrompt || scene.visualDirection}</p>
@@ -633,7 +655,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
                       <p className="text-xs text-gray-200 whitespace-pre-wrap">{item.cinematographerPrompt || '(empty)'}</p>
                     </div>
                     <p className="text-[11px] text-gray-500">
-                      Continuation: {item.continuationMode || 'strict'} · Anchor: {item.anchorBeatId || 'auto'} · Threshold: {Number(item.autoRegenerateThreshold ?? 0.75).toFixed(2)}
+                      Continuation: {item.continuationMode || 'balanced'} · Anchor: {item.anchorBeatId || 'auto'} · Threshold: {Number(item.autoRegenerateThreshold ?? 0.75).toFixed(2)}
                     </p>
                   </div>
                 ))}
