@@ -128,8 +128,8 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
   } = props;
 
   const orderedScenes = generatedPackage.storyboard || [];
-  const isPro = accountPlan === 'pro' || accountPlan === 'enterprise' || accountRole === 'admin' || accountRole === 'owner';
   const isAdmin = accountRole === 'admin' || accountRole === 'owner';
+  const isPro = accountPlan === 'pro' || accountPlan === 'plus' || accountPlan === 'enterprise' || isAdmin;
   const [copiedDiagnosticsBeatId, setCopiedDiagnosticsBeatId] = useState<string | null>(null);
 
   const getContinuityBadge = (score: number, threshold: number) => {
