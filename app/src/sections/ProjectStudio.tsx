@@ -87,7 +87,7 @@ export function ProjectStudio() {
   const [continuationModeByBeatId, setContinuationModeByBeatId] = useState<Record<string, 'off' | 'strict' | 'balanced' | 'loose'>>({});
   const [anchorBeatIdByBeatId, setAnchorBeatIdByBeatId] = useState<Record<string, string>>({});
   const [autoRegenThresholdByBeatId, setAutoRegenThresholdByBeatId] = useState<Record<string, number>>({});
-  const [synopsisTab, setSynopsisTab] = useState<'pseudo' | 'polished' | 'screenplay' | 'scenesBible'>('pseudo');
+  const [synopsisTab, setSynopsisTab] = useState<'pseudo' | 'screenplay' | 'scenesBible'>('pseudo');
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [isRecordCreating, setIsRecordCreating] = useState(false);
@@ -457,6 +457,7 @@ export function ProjectStudio() {
     try {
       const response = await api.generateProjectScreenplay(selectedProject.id);
       setScreenplay(response.item?.payload || { title: '', format: 'hybrid', screenplay: '', scenes: [] });
+      setSynopsisTab('screenplay');
       setBusyMessage('Hybrid screenplay generated.');
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to generate screenplay');
@@ -498,6 +499,7 @@ export function ProjectStudio() {
     try {
       const response = await api.generateProjectScenesBible(selectedProject.id);
       if (response.item) setScenesBible(response.item);
+      setSynopsisTab('scenesBible');
       setBusyMessage('Scenes bible generated.');
     } catch (error) {
       setBusyMessage(error instanceof Error ? error.message : 'Failed to generate scenes bible');
@@ -1408,7 +1410,6 @@ export function ProjectStudio() {
                   <div className="flex flex-wrap gap-2 mb-3">
                     {([
                       { id: 'pseudo', label: 'Logline' },
-                      { id: 'polished', label: 'Polished Synopsis' },
                       { id: 'screenplay', label: 'Screenplay' },
                       { id: 'scenesBible', label: 'Scenes Bible' },
                     ] as const).map(tab => (
@@ -1436,16 +1437,21 @@ export function ProjectStudio() {
                   </div>
 
                   {synopsisTab === 'pseudo' && (
-                    <textarea
-                      value={editingProjectPseudoSynopsis}
-                      onChange={event => setEditingProjectPseudoSynopsis(event.target.value)}
-                      className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-28"
-                      placeholder="Logline"
-                      disabled={!isAuthenticated}
-                    />
-                  )}
-                  {synopsisTab === 'polished' && (
-                    <p className="text-sm text-gray-200 whitespace-pre-line">{selectedProject.polishedSynopsis || 'Not polished yet.'}</p>
+                    <>
+                      <textarea
+                        value={editingProjectPseudoSynopsis}
+                        onChange={event => setEditingProjectPseudoSynopsis(event.target.value)}
+                        className="w-full bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 min-h-28"
+                        placeholder="Logline"
+                        disabled={!isAuthenticated}
+                      />
+                      {selectedProject.polishedSynopsis && (
+                        <div className="mt-3">
+                          <p className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">Polished Synopsis</p>
+                          <p className="text-sm text-gray-200 whitespace-pre-line">{selectedProject.polishedSynopsis}</p>
+                        </div>
+                      )}
+                    </>
                   )}
                   {synopsisTab === 'screenplay' && (
                     <div className="space-y-2">
@@ -1552,13 +1558,31 @@ export function ProjectStudio() {
                   )}
 
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={refineSynopsis}
-                      disabled={!isAuthenticated || isRefiningSynopsis || isSavingProjectDetails}
-                      className="inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50"
-                    >
-                      {isRefiningSynopsis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} {isRefiningSynopsis ? 'Polishing...' : 'Create Polished Synopsis'}
-                    </button>
+                    {!selectedProject.polishedSynopsis ? (
+                      <button
+                        onClick={refineSynopsis}
+                        disabled={!isAuthenticated || isRefiningSynopsis || isSavingProjectDetails}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50"
+                      >
+                        {isRefiningSynopsis ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} {isRefiningSynopsis ? 'Polishing...' : 'Create Polished Synopsis'}
+                      </button>
+                    ) : !screenplay.screenplay ? (
+                      <button
+                        onClick={generateScreenplay}
+                        disabled={!isAuthenticated || isGeneratingScreenplay}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50"
+                      >
+                        {isGeneratingScreenplay ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} {isGeneratingScreenplay ? 'Generating...' : 'Generate Screenplay'}
+                      </button>
+                    ) : !scenesBible.overview ? (
+                      <button
+                        onClick={generateScenesBible}
+                        disabled={!isAuthenticated || isGeneratingScenesBible}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded bg-[#D0FF59] text-black text-sm font-semibold disabled:opacity-50"
+                      >
+                        {isGeneratingScenesBible ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} {isGeneratingScenesBible ? 'Generating...' : 'Generate Scenes Bible'}
+                      </button>
+                    ) : null}
                     {(isEditingProjectDetails || hasProjectDetailChanges) && (
                       <>
                         <button
