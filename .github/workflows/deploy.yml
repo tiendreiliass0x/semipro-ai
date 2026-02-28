@@ -72,8 +72,8 @@ jobs:
 
           cd /var/www/semipro-ai
 
-          # Start PostgreSQL via Docker Compose
-          docker compose up -d
+          # Start PostgreSQL via Docker Compose (reuse existing container if present)
+          docker compose up -d --no-recreate 2>/dev/null || docker start yenengalabs-postgres
 
           # Wait for PostgreSQL to accept connections
           echo "Waiting for PostgreSQL..."

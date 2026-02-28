@@ -40,7 +40,7 @@ if [ ! -f "docker-compose.yml" ]; then
     exit 1
 fi
 
-docker compose up -d
+docker compose up -d --no-recreate 2>/dev/null || docker start yenengalabs-postgres
 
 # 3. Wait for PostgreSQL to be ready
 export DATABASE_URL="postgresql://yenengalabs:yenengalabs@localhost:5432/yenengalabs"

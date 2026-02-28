@@ -39,7 +39,7 @@ trap cleanup INT TERM
 # Start PostgreSQL
 echo -e "${BLUE}Starting PostgreSQL...${NC}"
 cd "$PROJECT_DIR"
-docker compose up -d
+docker compose up -d --no-recreate 2>/dev/null || docker start yenengalabs-postgres
 
 echo "Waiting for PostgreSQL..."
 for i in $(seq 1 30); do
