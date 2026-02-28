@@ -32,7 +32,7 @@ export const compileSceneVideoPrompt = (args: {
   const styleBible = args.styleBible || {};
   const scenesBible = args.scenesBible || {};
 
-  const duration = Math.max(5, Math.min(10, Number(scene.durationSeconds || 5)));
+  const duration = Math.max(4, Math.min(10, Number(scene.durationSeconds || 5)));
 
   // --- Camera: merge scene camera + style bible grammar, keep unique ---
   const cameraRaw = [scene.camera, styleBible.cameraGrammar].map(v => String(v || '').trim()).filter(Boolean);
@@ -215,41 +215,14 @@ export const generateSceneVideoWithFal = async (args: {
   const model = resolveVideoModel(args.modelKey);
   const startedAt = Date.now();
   console.log(`[video] FAL scene generation started (model: ${model.key} -> ${model.modelId})`);
-  const duration = Math.max(5, Math.min(10, Number(args.durationSeconds || 5)));
+  const duration = Math.max(4, Math.min(10, Number(args.durationSeconds || 5)));
   const imageUrl = await resolveFalImageUrl({
     uploadsDir: args.uploadsDir,
     sourceImageUrl: args.sourceImageUrl,
     modelKey: model.key,
   });
 
-  const compactPromptForModel = (prompt: string, modelKey: string) => {
-    const raw = String(prompt || '').trim();
-    if (!raw) return raw;
-    if (modelKey !== 'veo3') return raw;
-
-    const lines = raw.split('\n').map(line => line.trim()).filter(Boolean);
-    const priority = lines.filter(line => {
-      const lower = line.toLowerCase();
-      return (
-        lower.startsWith('scene slugline:')
-        || lower.startsWith('visual direction:')
-        || lower.startsWith('camera language:')
-        || lower.startsWith('duration seconds:')
-        || lower.startsWith('film type:')
-        || lower.startsWith('continuation mode:')
-        || lower.startsWith('anchor beat:')
-        || lower.startsWith('director goals:')
-        || lower.startsWith('cinematography goals:')
-        || lower.startsWith('- ')
-      );
-    });
-
-    const candidate = (priority.length ? priority : lines).join('\n');
-    const max = 1400;
-    return candidate.length <= max ? candidate : `${candidate.slice(0, max)}...`;
-  };
-
-  const basePrompt = compactPromptForModel(args.prompt, model.key);
+  const basePrompt = String(args.prompt || '').trim();
 
   const baseInput: Record<string, unknown> = {
     prompt: basePrompt,
@@ -262,11 +235,14 @@ export const generateSceneVideoWithFal = async (args: {
     baseInput.image_url = imageUrl;
   }
 
+  // veo3 only accepts 4s, 6s, 8s — snap to nearest valid value
+  const veo3Duration = duration <= 5 ? '4s' : duration <= 7 ? '6s' : '8s';
+
   const modelInput: Record<string, unknown> = {
     ...baseInput,
     ...(model.key === 'seedance' ? { resolution: '720p', duration: String(duration) } : {}),
-    ...(model.key === 'kling' ? { duration: String(duration), aspect_ratio: '16:9', negative_prompt: 'blur, distort, and low quality', cfg_scale: 0.5 } : {}),
-    ...(model.key === 'veo3' ? { duration: `${duration}s` } : {}),
+    ...(model.key === 'kling' ? { duration, aspect_ratio: '16:9', negative_prompt: 'blur, distort, and low quality', cfg_scale: 0.5 } : {}),
+    ...(model.key === 'veo3' ? { duration: veo3Duration, aspect_ratio: '16:9' } : {}),
   };
 
   const queueUpdateLogger = (update: any) => {
@@ -289,11 +265,8 @@ export const generateSceneVideoWithFal = async (args: {
     const message = error instanceof Error ? error.message : String(error || 'Unknown FAL error');
     const isUnprocessable = message.toLowerCase().includes('unprocessable');
     if (isUnprocessable && model.key !== 'seedance') {
-      console.warn(`[video] ${model.key} rejected model-specific payload. Retrying with minimal input.`);
-      const retryInput = {
-        ...baseInput,
-        ...(model.key === 'veo3' ? { prompt: compactPromptForModel(basePrompt, 'veo3') } : {}),
-      };
+      console.warn(`[video] ${model.key} rejected model-specific payload: ${message}. Retrying with minimal input.`);
+      const retryInput = { ...baseInput };
       result = await fal.subscribe(model.modelId, {
         input: retryInput,
         logs: true,
