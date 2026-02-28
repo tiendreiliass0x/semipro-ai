@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, LogOut, Pencil, PlayCircle, X } from 'lucide-react';
+import { Film, Loader2, LogOut, MoreVertical, Pencil, PlayCircle, Plus, Settings, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 type GoogleCredentialResponse = {
@@ -147,6 +147,9 @@ export function AuthModal() {
     'from-pink-300 to-rose-500',
   ] as const;
   const workspaceBadgeTone = workspaceBadgeTones[(workspaceLabel.charCodeAt(0) || 0) % workspaceBadgeTones.length];
+  const currentMembership = account?.id ? memberships.find(m => m.accountId === account.id) : null;
+  const accountPlan = currentMembership?.accountPlan || 'free';
+  const planLabel = accountPlan === 'free' ? 'FREE' : accountPlan.toUpperCase();
 
   const submitAuth = async () => {
     setLocalError(null);
@@ -277,16 +280,51 @@ export function AuthModal() {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={openSettingsPanel}
-                ref={settingsTriggerRef}
-                className="inline-flex items-center justify-center p-1 rounded-full border border-white/30 bg-black/40"
-                title={`Open account settings for ${workspaceLabel}`}
-              >
-                <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full bg-gradient-to-br ${workspaceBadgeTone} text-black font-semibold text-sm md:text-base flex items-center justify-center`}>
-                  {workspaceInitial}
+              <div className="inline-flex items-center gap-3">
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => window.dispatchEvent(new CustomEvent('yenengalabs:create-project'))}
+                    className="p-1.5 text-white/60 hover:text-white transition"
+                    title="Create new project"
+                  >
+                    <Plus className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => window.dispatchEvent(new CustomEvent('yenengalabs:open-projects'))}
+                    className="p-1.5 text-white/60 hover:text-white transition"
+                    title="Projects"
+                  >
+                    <Film className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={openSettingsPanel}
+                    className="p-1.5 text-white/60 hover:text-white transition"
+                    title="Settings"
+                  >
+                    <Settings className="w-5 h-5" />
+                  </button>
+                  <button
+                    className="p-1.5 text-white/60 hover:text-white transition"
+                    title="More"
+                  >
+                    <MoreVertical className="w-5 h-5" />
+                  </button>
                 </div>
-              </button>
+
+                <button
+                  onClick={openSettingsPanel}
+                  ref={settingsTriggerRef}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-white/8 border border-white/12 pl-2.5 pr-1 py-1"
+                  title={`Account: ${workspaceLabel}`}
+                >
+                  <span className="text-[11px] font-bold tracking-wide text-white/90 uppercase">
+                    {planLabel}
+                  </span>
+                  <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${workspaceBadgeTone} text-white font-semibold text-sm flex items-center justify-center`}>
+                    {workspaceInitial}
+                  </div>
+                </button>
+              </div>
             )}
           </nav>
         </div>
