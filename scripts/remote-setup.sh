@@ -40,14 +40,14 @@ if [ ! -f "docker-compose.yml" ]; then
     exit 1
 fi
 
-docker compose up -d --no-recreate 2>/dev/null || docker start yenengalabs-postgres
+docker compose up -d 2>/dev/null || docker start yenengalabs-postgres
 
 # 3. Wait for PostgreSQL to be ready
 export DATABASE_URL="postgresql://yenengalabs:yenengalabs@localhost:5432/yenengalabs"
 
 echo "Waiting for PostgreSQL to accept connections..."
 for i in {1..30}; do
-    if docker compose exec -T postgres pg_isready -U yenengalabs -d yenengalabs &> /dev/null; then
+    if docker exec yenengalabs-postgres pg_isready -U yenengalabs -d yenengalabs &> /dev/null; then
         echo -e "${GREEN}PostgreSQL is ready${NC}"
         break
     fi

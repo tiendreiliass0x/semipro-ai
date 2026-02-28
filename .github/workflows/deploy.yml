@@ -73,12 +73,12 @@ jobs:
           cd /var/www/semipro-ai
 
           # Start PostgreSQL via Docker Compose (reuse existing container if present)
-          docker compose up -d --no-recreate 2>/dev/null || docker start yenengalabs-postgres
+          docker compose up -d 2>/dev/null || docker start yenengalabs-postgres
 
           # Wait for PostgreSQL to accept connections
           echo "Waiting for PostgreSQL..."
           for i in $(seq 1 30); do
-            if docker compose exec -T postgres pg_isready -U yenengalabs -d yenengalabs >/dev/null 2>&1; then
+            if docker exec yenengalabs-postgres pg_isready -U yenengalabs -d yenengalabs >/dev/null 2>&1; then
               echo "PostgreSQL is ready"
               break
             fi

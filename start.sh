@@ -39,11 +39,11 @@ trap cleanup INT TERM
 # Start PostgreSQL
 echo -e "${BLUE}Starting PostgreSQL...${NC}"
 cd "$PROJECT_DIR"
-docker compose up -d --no-recreate 2>/dev/null || docker start yenengalabs-postgres
+docker compose up -d 2>/dev/null || docker start yenengalabs-postgres
 
 echo "Waiting for PostgreSQL..."
 for i in $(seq 1 30); do
-    if docker compose exec -T postgres pg_isready -U yenengalabs &> /dev/null; then
+    if docker exec yenengalabs-postgres pg_isready -U yenengalabs &> /dev/null; then
         echo -e "${GREEN}PostgreSQL is ready${NC}"
         break
     fi
