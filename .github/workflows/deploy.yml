@@ -64,9 +64,12 @@ jobs:
         username: deploy
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          export PATH="/usr/bin:/usr/local/bin:/usr/sbin:/usr/local/sbin:$PATH"
+          source ~/.profile 2>/dev/null || true
+          source ~/.bashrc 2>/dev/null || true
+          export PATH="/usr/bin:/usr/local/bin:/usr/sbin:/usr/local/sbin:/snap/bin:$PATH"
           export BUN_INSTALL="$HOME/.bun"
           export PATH="$BUN_INSTALL/bin:$PATH"
+          command -v docker || echo "WARN: docker not found in PATH=$PATH"
           command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash
 
           export DATABASE_URL="postgresql://yenengalabs:yenengalabs@localhost:5432/yenengalabs"
@@ -113,7 +116,8 @@ jobs:
         username: deploy
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          export PATH="/usr/bin:/usr/local/bin:$PATH"
+          source ~/.profile 2>/dev/null || true
+          export PATH="/usr/bin:/usr/local/bin:/snap/bin:$PATH"
           for i in {1..15}; do
             if curl -fsS http://127.0.0.1:3001/api/health >/tmp/health.json; then
               cat /tmp/health.json
