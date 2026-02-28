@@ -68,6 +68,8 @@ jobs:
           export PATH="$BUN_INSTALL/bin:$PATH"
           command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash
 
+          export DATABASE_URL="postgresql://yenengalabs:yenengalabs@localhost:5432/yenengalabs"
+
           cd /var/www/semipro-ai
 
           # Start PostgreSQL via Docker Compose
@@ -76,7 +78,7 @@ jobs:
           # Wait for PostgreSQL to accept connections
           echo "Waiting for PostgreSQL..."
           for i in $(seq 1 30); do
-            if docker compose exec -T postgres pg_isready -U yenengalabs >/dev/null 2>&1; then
+            if docker compose exec -T postgres pg_isready -U yenengalabs -d yenengalabs >/dev/null 2>&1; then
               echo "PostgreSQL is ready"
               break
             fi
@@ -91,8 +93,11 @@ jobs:
           # Install backend dependencies and sync schema
           cd backend
           bun install --frozen-lockfile
-          bun run db:push
-          bun run seed
+          DATABASE_URL="$DATABASE_URL" bun run db:push
+          DATABASE_URL="$DATABASE_URL" bun run seed
+
+          # Ensure .env has DATABASE_URL for PM2
+          grep -q '^DATABASE_URL=' .env 2>/dev/null || echo "DATABASE_URL=$DATABASE_URL" >> .env
 
           # Restart application
           pm2 delete semipro-ai-api || true

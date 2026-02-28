@@ -43,9 +43,11 @@ fi
 docker compose up -d
 
 # 3. Wait for PostgreSQL to be ready
+export DATABASE_URL="postgresql://yenengalabs:yenengalabs@localhost:5432/yenengalabs"
+
 echo "Waiting for PostgreSQL to accept connections..."
 for i in {1..30}; do
-    if docker compose exec -T postgres pg_isready -U yenengalabs &> /dev/null; then
+    if docker compose exec -T postgres pg_isready -U yenengalabs -d yenengalabs &> /dev/null; then
         echo -e "${GREEN}PostgreSQL is ready${NC}"
         break
     fi
@@ -71,10 +73,10 @@ fi
 cd "$DEPLOY_DIR/backend"
 echo ""
 echo "Syncing database schema..."
-bun run db:push
+DATABASE_URL="$DATABASE_URL" bun run db:push
 
 echo "Seeding data (if tables are empty)..."
-bun run seed
+DATABASE_URL="$DATABASE_URL" bun run seed
 
 echo ""
 echo "=============================================="
