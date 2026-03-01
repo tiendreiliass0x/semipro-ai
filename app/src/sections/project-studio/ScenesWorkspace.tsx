@@ -37,13 +37,13 @@ type ScenesWorkspaceProps = {
   isLoadingTraceHistory: boolean;
   isSavingPromptLayerByBeatId: Record<string, boolean>;
   sceneFilmTypeByBeatId: Record<string, string>;
-  sceneModelByBeatId: Record<string, 'seedance' | 'kling' | 'veo3'>;
+  sceneModelByBeatId: Record<string, string>;
   continuationModeByBeatId: Record<string, 'off' | 'strict' | 'balanced' | 'loose'>;
   anchorBeatIdByBeatId: Record<string, string>;
   autoRegenThresholdByBeatId: Record<string, number>;
   filmType: string;
   filmTypeOptions: string[];
-  videoModelOptions: Array<{ key: 'seedance' | 'kling' | 'veo3'; label: string }>;
+  videoModelOptions: Array<{ key: string; label: string }>;
   cameraMoves: readonly string[];
   onRefreshSceneVideos: () => void;
   onGenerateAllSceneVideos: () => void;
@@ -57,7 +57,7 @@ type ScenesWorkspaceProps = {
   onRestoreScenePromptLayer: (beatId: string, layer: ScenePromptLayer) => void;
   onToggleSceneLock: (beatId: string, locked: boolean) => void;
   onChangeSceneFilmType: (beatId: string, filmType: string) => void;
-  onChangeSceneModel: (beatId: string, value: 'seedance' | 'kling' | 'veo3') => void;
+  onChangeSceneModel: (beatId: string, value: string) => void;
   onChangeContinuationMode: (beatId: string, value: 'off' | 'strict' | 'balanced' | 'loose') => void;
   onChangeAnchorBeatId: (beatId: string, value: string) => void;
   onChangeAutoRegenThreshold: (beatId: string, value: number) => void;
@@ -356,7 +356,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
                 <div className="flex items-center gap-2">
                   <select
                     value={sceneModelByBeatId[scene.beatId] || 'seedance'}
-                    onChange={event => onChangeSceneModel(scene.beatId, event.target.value as 'seedance' | 'kling' | 'veo3')}
+                    onChange={event => onChangeSceneModel(scene.beatId, event.target.value)}
                     className="max-w-[108px] bg-black/40 border border-gray-700 rounded px-2 py-1 text-[11px] text-gray-200"
                     title="Generation model"
                   >
@@ -400,7 +400,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
                     value={userPromptByBeatId[scene.beatId] || ''}
                     onChange={event => onChangeUserPrompt(scene.beatId, event.target.value)}
                     className="w-full bg-black/40 border border-gray-800 rounded px-2 py-1 text-xs text-gray-200 min-h-16"
-                    placeholder="User prompt"
+                    placeholder="Custom prompt"
                   />
                   {isPro && (
                     <>
@@ -497,7 +497,7 @@ export function ScenesWorkspace(props: ScenesWorkspaceProps) {
               {sceneVideosByBeatId[scene.beatId] && (
                 <div className="space-y-1">
                   <p className="text-[11px] text-cyan-200/80">
-                    Video status: {sceneVideosByBeatId[scene.beatId].status}{sceneVideosByBeatId[scene.beatId].error ? ` · ${sceneVideosByBeatId[scene.beatId].error}` : ''}
+                    Video status: {sceneVideosByBeatId[scene.beatId].status}{sceneVideosByBeatId[scene.beatId].error ? ` · ${String(sceneVideosByBeatId[scene.beatId].error).replace(/^.*failed:\s*/i, '').replace(/\s*\|.*$/, '').slice(0, 80) || 'Generation failed'}` : ''}
                   </p>
                   {typeof sceneVideosByBeatId[scene.beatId].continuityScore === 'number' && (() => {
                     const score = Number(sceneVideosByBeatId[scene.beatId].continuityScore || 0);

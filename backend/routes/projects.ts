@@ -1,5 +1,6 @@
 import { evaluateSceneContinuation } from '../lib/sceneContinuation';
 import { resolveSceneAnchor } from '../lib/sceneAnchor';
+import { VIDEO_MODEL_OPTIONS, resolveVideoModel } from '../lib/videoModel';
 
 type ProjectsRouteArgs = {
   req: Request;
@@ -72,7 +73,7 @@ type ProjectsRouteArgs = {
   polishNotesIntoBeatsWithLlm: (args: { synopsis: string; notes: any[]; durationMinutes?: number; style?: string; styleBible?: any }) => Promise<any>;
   generateProjectStoryboardWithLlm: (args: { title: string; synopsis: string; beats: any[]; prompt?: string; style?: string; styleBible?: any; filmType?: string }) => Promise<any>;
   generateStoryboardFrameWithLlm: (prompt: string, imageModelKey?: string) => Promise<string>;
-  compileSceneVideoPrompt: (args: { modelKey: string; scene: any; styleBible?: any; scenesBible?: any; filmType?: string; directorLayer?: string; cinematographerLayer?: string }) => string;
+  compileSceneVideoPrompt: (args: { modelKey: string; scene: any; styleBible?: any; scenesBible?: any; filmType?: string; userPrompt?: string; directorLayer?: string; cinematographerLayer?: string }) => string;
   createFinalFilmFromClips: (args: { uploadsDir: string; clipUrls: string[]; outputFilename: string }) => Promise<string>;
   extractLastFrameFromVideo: (args: { uploadsDir: string; videoUrl: string; outputFilename: string }) => Promise<string>;
   registerUploadOwnership: (args: { filename: string; accountId: string }) => void;
@@ -638,7 +639,8 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const directorLayer = typeof body?.directorPrompt === 'string' ? body.directorPrompt.trim() : '';
     const cinematographerLayer = typeof body?.cinematographerPrompt === 'string' ? body.cinematographerPrompt.trim() : '';
     const activeFilmType = typeof body?.filmType === 'string' ? body.filmType.trim() : '';
-    const modelKey = ['seedance', 'kling', 'veo3'].includes(String(body?.modelKey || '').trim().toLowerCase())
+    const validModelKeys = VIDEO_MODEL_OPTIONS.map(o => o.key as string);
+    const modelKey = validModelKeys.includes(String(body?.modelKey || '').trim().toLowerCase())
       ? String(body.modelKey).trim().toLowerCase()
       : 'seedance';
     const continuationMode = ['off', 'strict', 'balanced', 'loose'].includes(String(body?.continuationMode || '').trim())
@@ -887,10 +889,11 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
     const styleBible = await getProjectStyleBible(projectId);
     const scenesBible = await getProjectScenesBible(projectId) || null;
     const latestLayer = await getLatestScenePromptLayer(projectId, beatId);
-    const directorLayer = directorLayerInput || promptOverride || String(latestLayer?.directorPrompt || '').trim();
+    const directorLayer = directorLayerInput || String(latestLayer?.directorPrompt || '').trim();
     const cinematographerLayer = cinematographerLayerInput || String(latestLayer?.cinematographerPrompt || '').trim();
     const activeFilmType = filmType || String(latestLayer?.filmType || '').trim();
-    const activeModelKey = (['seedance', 'kling', 'veo3'].includes(modelKeyInput)
+    const validKeys = VIDEO_MODEL_OPTIONS.map(o => o.key as string);
+    const activeModelKey = (validKeys.includes(modelKeyInput)
       ? modelKeyInput
       : String(latestLayer?.generationModel || 'seedance').trim().toLowerCase()) || 'seedance';
     const activeContinuationMode = continuationModeInput || String(latestLayer?.continuationMode || 'strict').trim() || 'strict';
@@ -948,6 +951,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       styleBible,
       scenesBible,
       filmType: activeFilmType,
+      userPrompt: promptOverride,
       directorLayer,
       cinematographerLayer,
     });
@@ -1029,7 +1033,7 @@ export const handleProjectsRoutes = async (args: ProjectsRouteArgs): Promise<Res
       projectId,
       packageId: latestPackage.id,
       beatId,
-      provider: `fal-${activeModelKey}`,
+      provider: resolveVideoModel(activeModelKey).provider,
       modelKey: activeModelKey,
       prompt: compiledPrompt,
       sourceImageUrl: resolvedSourceImageUrl,

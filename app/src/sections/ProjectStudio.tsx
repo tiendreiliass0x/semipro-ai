@@ -86,7 +86,7 @@ export function ProjectStudio() {
   const [filmType, setFilmType] = useState('cinematic live-action');
   const [storyboardImageModel, setStoryboardImageModel] = useState<'fal' | 'flux' | 'grok'>('fal');
   const [sceneFilmTypeByBeatId, setSceneFilmTypeByBeatId] = useState<Record<string, string>>({});
-  const [sceneModelByBeatId, setSceneModelByBeatId] = useState<Record<string, 'seedance' | 'kling' | 'veo3'>>({});
+  const [sceneModelByBeatId, setSceneModelByBeatId] = useState<Record<string, string>>({});
   const [continuationModeByBeatId, setContinuationModeByBeatId] = useState<Record<string, 'off' | 'strict' | 'balanced' | 'loose'>>({});
   const [anchorBeatIdByBeatId, setAnchorBeatIdByBeatId] = useState<Record<string, string>>({});
   const [autoRegenThresholdByBeatId, setAutoRegenThresholdByBeatId] = useState<Record<string, number>>({});
@@ -151,10 +151,11 @@ export function ProjectStudio() {
     'retro 80s cyberpunk',
     'documentary realism',
   ];
-  const videoModelOptions: Array<{ key: 'seedance' | 'kling' | 'veo3'; label: string }> = [
+  const videoModelOptions: Array<{ key: string; label: string }> = [
     { key: 'seedance', label: 'Seedance' },
     { key: 'kling', label: 'Kling' },
     { key: 'veo3', label: 'Veo 3' },
+    { key: 'gen4_turbo', label: 'Runway Gen-4 Turbo' },
   ];
   const storyboardImageModelOptions: Array<{ key: 'fal' | 'flux' | 'grok'; label: string }> = [
     { key: 'fal', label: 'Nano Banana Pro' },
@@ -317,7 +318,7 @@ export function ProjectStudio() {
       const directorByBeat: Record<string, string> = {};
       const cinematographerByBeat: Record<string, string> = {};
       const filmTypeByBeat: Record<string, string> = {};
-      const modelByBeat: Record<string, 'seedance' | 'kling' | 'veo3'> = {};
+      const modelByBeat: Record<string, string> = {};
       const continuationModeByBeat: Record<string, 'off' | 'strict' | 'balanced' | 'loose'> = {};
       const anchorByBeat: Record<string, string> = {};
       const thresholdByBeat: Record<string, number> = {};
@@ -329,7 +330,7 @@ export function ProjectStudio() {
         if (String(item.filmType || '').trim()) {
           filmTypeByBeat[item.beatId] = String(item.filmType);
         }
-        if (item.generationModel === 'seedance' || item.generationModel === 'kling' || item.generationModel === 'veo3') {
+        if (item.generationModel) {
           modelByBeat[item.beatId] = item.generationModel;
         }
         if (item.continuationMode === 'off' || item.continuationMode === 'strict' || item.continuationMode === 'balanced' || item.continuationMode === 'loose') {
@@ -394,7 +395,7 @@ export function ProjectStudio() {
     if (String(layer.filmType || '').trim()) {
       setSceneFilmTypeByBeatId(prev => ({ ...prev, [beatId]: String(layer.filmType) }));
     }
-    if (layer.generationModel === 'seedance' || layer.generationModel === 'kling' || layer.generationModel === 'veo3') {
+    if (layer.generationModel) {
       setSceneModelByBeatId(prev => ({ ...prev, [beatId]: layer.generationModel }));
     }
     if (layer.continuationMode === 'off' || layer.continuationMode === 'strict' || layer.continuationMode === 'balanced' || layer.continuationMode === 'loose') {
@@ -1018,8 +1019,8 @@ export function ProjectStudio() {
       const userPrompt = userPromptByBeatId[beatId]?.trim() || '';
       const response = await api.generateSceneVideo(selectedProject.id, beatId, {
         ...(userPrompt ? { prompt: userPrompt } : {}),
-        directorPrompt: userPrompt || videoPromptByBeatId[beatId] || '',
-        cinematographerPrompt: userPrompt || cinematographerPromptByBeatId[beatId] || '',
+        directorPrompt: videoPromptByBeatId[beatId] || '',
+        cinematographerPrompt: cinematographerPromptByBeatId[beatId] || '',
         filmType: sceneFilmTypeByBeatId[beatId] || filmType,
         imageModelKey: storyboardImageModel,
         modelKey: sceneModelByBeatId[beatId] || 'seedance',

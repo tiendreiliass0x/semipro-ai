@@ -13,8 +13,9 @@ import { createProjectsDb } from './db/projects';
 import { createStorylinesDb } from './db/storylines';
 import { createSubscribersDb } from './db/subscribers';
 import { generateHybridScreenplayWithLlm, generateProjectStoryboardWithLlm, generateScenesBibleWithLlm, generateStoryboardFrameWithLlm, generateStoryPackageWithLlm, polishNotesIntoBeatsWithLlm, refineSynopsisWithLlm, regenerateStoryboardSceneWithLlm } from './lib/storylineLlm';
-import { compileSceneVideoPrompt, createFinalFilmFromClips, extractLastFrameFromVideo, generateSceneVideoWithFal } from './lib/sceneVideo';
-import { resolveVideoModel } from './lib/videoModel';
+import { compileSceneVideoPrompt, createFinalFilmFromClips, extractLastFrameFromVideo } from './lib/sceneVideo';
+import { generateSceneVideo } from './lib/videoProviders';
+import { resolveVideoModel, VIDEO_MODEL_OPTIONS } from './lib/videoModel';
 import { handleAnecdotesRoutes } from './routes/anecdotes';
 import { handleAccountRoutes } from './routes/account';
 import { handleAuthRoutes } from './routes/auth';
@@ -97,11 +98,12 @@ const processSceneVideoQueue = async () => {
       if (!job) break;
       try {
         console.log(`[queue] Processing scene video job ${job.id} (project: ${job.projectId}, beat: ${job.beatId})`);
-        const videoUrl = await generateSceneVideoWithFal({
+        const model = resolveVideoModel(String(job.modelKey || 'seedance'));
+        const videoUrl = await generateSceneVideo({
+          model,
           uploadsDir,
           sourceImageUrl: String(job.sourceImageUrl || ''),
           prompt: String(job.prompt || ''),
-          modelKey: String(job.modelKey || 'seedance'),
           durationSeconds: Number(job.durationSeconds || 5),
         });
         const project = await getProjectById(String(job.projectId || ''));

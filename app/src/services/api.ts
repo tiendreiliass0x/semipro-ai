@@ -354,7 +354,7 @@ export const api = {
     cinematographerPrompt?: string;
     filmType?: string;
     imageModelKey?: 'fal' | 'flux' | 'grok';
-    modelKey?: 'seedance' | 'kling' | 'veo3';
+    modelKey?: string;
     continuationMode?: 'off' | 'strict' | 'balanced' | 'loose';
     anchorBeatId?: string;
     autoRegenerateThreshold?: number;
@@ -385,7 +385,7 @@ export const api = {
     directorPrompt?: string;
     cinematographerPrompt?: string;
     filmType?: string;
-    modelKey?: 'seedance' | 'kling' | 'veo3';
+    modelKey?: string;
     continuationMode?: 'off' | 'strict' | 'balanced' | 'loose';
     anchorBeatId?: string;
     autoRegenerateThreshold?: number;
